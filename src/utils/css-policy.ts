@@ -8,6 +8,24 @@
  * `url()` só aceita http(s), caminho absoluto de um `/`, `./`, `../` ou `#fragmento`.
  */
 
+// Chaves de CSSStyleDeclaration que não são propriedades CSS: cssText injeta CSS arbitrário e
+// os métodos não podem ser sobrescritos. Valem para style em forma de objeto (cliente e SSR).
+const STYLE_FORBIDDEN_KEYS = new Set([
+  "cssText",
+  "length",
+  "parentRule",
+  "__proto__",
+  "constructor",
+  "prototype",
+  "setProperty",
+  "getPropertyValue",
+  "getPropertyPriority",
+  "removeProperty",
+  "item",
+]);
+
+export const isForbiddenStyleKey = (key: string): boolean => STYLE_FORBIDDEN_KEYS.has(key);
+
 export const CSS_PROP_NAME = /^-{0,2}[a-z][a-z0-9-]*$/i;
 const CSS_FORBIDDEN_VALUE = /[;{}<\\]|expression\s*\(|javascript:|vbscript:|behaviou?r\s*:|-moz-binding|@import/i;
 const CSS_URL_ALLOWED = /^(https?:\/\/|\/(?!\/)|\.\.?\/|#)/i;

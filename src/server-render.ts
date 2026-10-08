@@ -3,7 +3,7 @@ import htm from "htm";
 import { isDevMode, isWarningsEnabled } from "./dev-warnings";
 import { isSafeHtml, SafeHtml } from "./safe-html";
 import type { Child, Props, Reactive } from "./types";
-import { isSafeCssDeclaration, sanitizeStyleString } from "./utils/css-policy";
+import { isForbiddenStyleKey, isSafeCssDeclaration, sanitizeStyleString } from "./utils/css-policy";
 import { isReactive } from "./utils/guards";
 import { escapeJsonForScript } from "./utils/script-json";
 import { isSafeUrl } from "./safe-url";
@@ -160,6 +160,10 @@ function styleObjectToString(style: Record<string, unknown>): string {
   const decls: string[] = [];
   for (const [k, v] of Object.entries(style)) {
     if (v == null || v === false) continue;
+    if (isForbiddenStyleKey(k)) {
+      if (process.env.NODE_ENV !== "production") warnOnce("declaração de style rejeitada (nome ou valor CSS inseguro)");
+      continue;
+    }
     const name = k.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
     const value = String(v).trim();
     if (!isSafeCssDeclaration(name, value)) {

@@ -9,7 +9,7 @@
 import { isSafeHtml } from "../safe-html";
 import { isSafeUrl } from "../safe-url";
 import type { Elementish } from "../types";
-import { sanitizeStyleString, isSafeCssValue } from "../utils/css-policy";
+import { isForbiddenStyleKey, isSafeCssValue, sanitizeStyleString } from "../utils/css-policy";
 import { isEventHandler, isEventTuple } from "../utils/guards";
 import { processClassValue } from "../utils/helpers";
 import { securityWarn } from "../utils/security-warn";
@@ -43,19 +43,6 @@ const PROTOTYPE_PROPS = new Set(["__proto__", "constructor", "prototype"]);
 // que não seja chave de CSSStyleDeclaration que não é propriedade CSS
 // (cssText injeta CSS arbitrário; métodos não podem ser sobrescritos).
 const STYLE_KEY = /^(?:--[A-Za-z0-9_-]+|-?[A-Za-z][A-Za-z0-9-]*)$/;
-const STYLE_FORBIDDEN_KEYS = new Set([
-  "cssText",
-  "length",
-  "parentRule",
-  "__proto__",
-  "constructor",
-  "prototype",
-  "setProperty",
-  "getPropertyValue",
-  "getPropertyPriority",
-  "removeProperty",
-  "item",
-]);
 
 /**
  * Tipos de operações de props (Functional Core)
@@ -187,7 +174,7 @@ export function computePropUpdate(
       const v = (value as Record<string, unknown>)[k];
       // Mesma política de valores do SSR (url/expression/javascript, funções de URL...)
       const emptyValue = v == null || v === false;
-      if (STYLE_KEY.test(k) && !STYLE_FORBIDDEN_KEYS.has(k) && (emptyValue || isSafeCssValue(String(v).trim()))) {
+      if (STYLE_KEY.test(k) && !isForbiddenStyleKey(k) && (emptyValue || isSafeCssValue(String(v).trim()))) {
         safe[k] = v;
       } else {
         dropped.push(k);
