@@ -16,7 +16,7 @@ const pkg = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf-8'));
 
 // Textos de avisos de dev (src/): presentes no build de dev, ausentes no de produção.
 // Substrings estáveis (nomes de API e de atributo, que sobrevivem à tradução das mensagens).
-const DEV_WARNING_TEXTS = ['unsafeHtml()', 'unsafeUrl()', 'data-reactive-*', 'onClick=${fn}', 'Unexpected object in child position'];
+const DEV_WARNING_TEXTS = ['unsafeHtml()', 'unsafeUrl()', 'data-reactive-*', 'onClick=${fn}', 'Unexpected object in child position', 'called from'];
 // Erros de runtime: console.error NUNCA pode ser removido de nenhum build.
 const CONSOLE_ERROR = 'console.error';
 

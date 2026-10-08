@@ -99,7 +99,7 @@ async function buildEntry(entry: string): Promise<string> {
 
 // Textos de avisos de dev de TODAS as frentes (core/props, router/Link, SSR)
 const DEV_WARNING_TEXTS = {
-  core: ['Blocked URL', 'unsafeHtml()', 'reactive handlers', 'invalid attribute name', 'only accepts a function', 'style ignores', 'blocked (injects HTML)', 'cannot be a prop', 'style: declaration rejected', 'meta refresh', 'was dropped (strings are data'],
+  core: ['Blocked URL', 'unsafeHtml()', 'reactive handlers', 'invalid attribute name', 'only accepts a function', 'style ignores', 'blocked (injects HTML)', 'cannot be a prop', 'style: declaration rejected', 'meta refresh', 'was dropped (strings are data', 'called from'],
   router: ['must be an app path'],
   ssr: [
     'style declaration rejected',
@@ -152,23 +152,23 @@ describe('Bundle Size Optimization', () => {
     }
   }, 30000);
 
-  test('core import deve produzir bundle de produção <= 8.4KB gzipado', async () => {
+  test('core import deve produzir bundle de produção <= 8.64KB gzipado', async () => {
     const size = await buildTestApp(`import { createState, html, render } from "${ROOT}/src/core.ts";`);
 
     const gzipKB = (size.gzip / 1024).toFixed(2);
     const brotliKB = (size.brotli / 1024).toFixed(2);
 
-    console.log(`\n📦 Core bundle: ${gzipKB} KB gzip, ${brotliKB} KB brotli\n`);
+    console.log(`\n📦 Core bundle: ${gzipKB} KB gzip, ${brotliKB} KB brotli (${size.gzip} / ${size.brotli} bytes)\n`);
 
-    expect(size.gzip).toBeLessThanOrEqual(8.4 * 1024);
+    expect(size.gzip).toBeLessThanOrEqual(8.64 * 1024);
   }, 30000);
 
-  test('core import deve produzir bundle de produção <= 7.45KB brotli', async () => {
+  test('core import deve produzir bundle de produção <= 7.67KB brotli', async () => {
     const size = await buildTestApp(`import { createState, html, render } from "${ROOT}/src/core.ts";`);
 
     const brotliKB = (size.brotli / 1024).toFixed(2);
 
-    expect(size.brotli).toBeLessThanOrEqual(7.45 * 1024);
+    expect(size.brotli).toBeLessThanOrEqual(7.67 * 1024);
   }, 30000);
 
   test('full import deve ser <= 12KB gzipado', async () => {

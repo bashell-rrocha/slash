@@ -6,11 +6,9 @@ import { appendChildSmart } from "./children";
 export type RootView = Child | (() => Child);
 export type RenderContainer = Element | string | null | undefined;
 
-const isDev = typeof process !== "undefined" && process?.env?.NODE_ENV !== "production";
-
 function callerInfo(): string | undefined {
   try {
-    const stack = new Error().stack?.split("\n").slice(3);
+    const stack = new Error().stack?.split("\n").slice(4);
     if (!stack?.length) return undefined;
     const frame = stack.find((line) => /\.(ts|tsx|js)/.test(line));
     if (!frame) return undefined;
@@ -22,12 +20,16 @@ function callerInfo(): string | undefined {
   }
 }
 
+function callerSuffix(): string {
+  const hint = callerInfo();
+  return hint ? ` (called from ${hint})` : "";
+}
+
 function resolveContainer(target: RenderContainer): Element {
   if (typeof target === "string") {
     const el = document.querySelector(target);
     if (!el) {
-      const hint = isDev ? callerInfo() : undefined;
-      const extra = hint ? ` (called from ${hint})` : "";
+      const extra = process.env.NODE_ENV !== "production" ? callerSuffix() : "";
       throw new Error(
         `[slash] render(): selector "${target}" not found — ensure the element exists before calling render()${extra}`,
       );
@@ -35,8 +37,7 @@ function resolveContainer(target: RenderContainer): Element {
     return el;
   }
   if (target instanceof Element) return target;
-  const hint = isDev ? callerInfo() : undefined;
-  const extra = hint ? ` (called from ${hint})` : "";
+  const extra = process.env.NODE_ENV !== "production" ? callerSuffix() : "";
   throw new Error(
     `[slash] render(): container Element is required (received null/undefined)${extra}`,
   );
