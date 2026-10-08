@@ -55,7 +55,7 @@ jobs:
         if: steps.check.outputs.publish == 'true'
         run: bun run build
 
-      - name: Verificar dist (import e require de cada entrypoint)
+      - name: Verificar dist e dist/dev (import e require de cada entrypoint, produção e desenvolvimento)
         if: steps.check.outputs.publish == 'true'
         run: bun run verify:dist
 
