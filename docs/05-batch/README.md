@@ -547,11 +547,14 @@ animateElement()
 const set = (payload: S) => {
   // ...
 
-  if (isInBatch()) {
-    __recordBatchUpdate() // Apenas registra
-  } else {
-    _notifyHandlers(deepClone(_state)) // Notifica imediatamente
+  if (shouldNotifyWatchers(command)) {
+    if (isInBatch()) {
+      __enqueueBatchNotify(_notifyFinal) // Enfileira o notificador (deduplicado)
+    } else {
+      _notifyHandlers(deepClone(_state)) // Notifica imediatamente
+    }
   }
+  // No fim do batch mais externo, cada notificador enfileirado roda uma única vez
 }
 ```
 
