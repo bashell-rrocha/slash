@@ -42,9 +42,13 @@ export function deepClone<T>(obj: T): T {
   const keys = Object.keys(obj as object);
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i];
-    // Chaves que poderiam alterar o prototipo (SEC-12) sao ignoradas
-    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
-    cloned[key] = deepClone((obj as any)[key]);
+    const value = deepClone((obj as any)[key]);
+    if (key === '__proto__') {
+      // Copia como propriedade propria: atribuir invocaria o setter do prototipo (SEC-12)
+      Object.defineProperty(cloned, key, { value, enumerable: true, writable: true, configurable: true });
+    } else {
+      cloned[key] = value;
+    }
   }
   return cloned;
 }
