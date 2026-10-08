@@ -74,7 +74,7 @@ Tudo abaixo vale no cliente e no SSR, sem configuração. Referência completa: 
 
 ### Tamanho do bundle
 
-Bundle de produção do core (app com `createState`, `html` e `render`, minificado): **7,94 KB gzip / 7,03 KB brotli**, contra 5,02 KB / 4,39 KB antes do ciclo de segurança. O aumento é o custo da camada de segurança: política de URLs, política de CSS estrita, `SafeHtml`/`SafeUrl` e tratamento de `meta refresh` (além da validação de atributos e do `srcdoc`); as mensagens de aviso de dev são removidas do build de produção. Limites do teste de tamanho: 8,2 KB gzip / 7,25 KB brotli.
+Bundle de produção do core (app com `createState`, `html` e `render`, minificado): **8,00 KB gzip / 7,10 KB brotli**, contra 5,02 KB / 4,39 KB antes do ciclo de segurança. O aumento é o custo da camada de segurança: política de URLs, política de CSS estrita, `SafeHtml`/`SafeUrl` e tratamento de `meta refresh` (além da validação de atributos e do `srcdoc`); as mensagens de aviso de dev são removidas do build de produção. Limites do teste de tamanho: 8,2 KB gzip / 7,25 KB brotli.
 
 ## [0.0.2] — 2026-10-08
 
