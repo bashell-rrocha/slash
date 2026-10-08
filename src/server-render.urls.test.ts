@@ -2,6 +2,7 @@
 // global ao processo e vaza para outros arquivos). A política em si é testada em
 // utils/url-policy.test.ts; aqui prova-se, por comportamento, quais atributos a usam.
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { unsafeUrl } from "./safe-url";
 import { htmlString, renderToString } from "./server-render";
 
 const U = "javascript:alert(1)";
@@ -27,6 +28,11 @@ describe("SSR aplica a política de URLs nos atributos de URL", () => {
     ["object", "data"],
     ["a", "xlink:href"],
     ["td", "background"],
+    ["html", "manifest"],
+    ["applet", "codebase"],
+    ["img", "longdesc"],
+    ["img", "lowsrc"],
+    ["link", "imagesrcset"],
   ])("<%s %s>", (tag, attr) => {
     const html = render(() => htmlString`<${tag} ...${{ [attr]: U }}></${tag}>`);
     expect(html).toContain(`${attr}="${BLOCKED}"`);
@@ -78,5 +84,79 @@ describe("atributos de animacao SVG", () => {
     const html = render(() => htmlString`<div ...${{ to: U, values: U }}></div>`);
     expect(html).toContain(`to="${U}"`);
     expect(html).toContain(`values="${U}"`);
+  });
+});
+
+describe("URLs de ataque do audit (SEC-04) no SSR", () => {
+  const attacks = [
+    "javascript:alert(1)",
+    "JaVaScRiPt:alert(1)",
+    "  javascript:alert(1)",
+    "java\tscript:alert(1)",
+    "java\nscript:alert(1)",
+    "\x01javascript:alert(1)",
+    "vbscript:msgbox(1)",
+    "data:text/html,<script>alert(1)</script>",
+    "data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==",
+    "data:image/svg+xml,<svg onload=alert(1)>",
+    "blob:https://x/uuid",
+    "file:///etc/passwd",
+  ];
+  const sinks: Array<[string, string]> = [
+    ["a", "href"],
+    ["form", "action"],
+    ["button", "formaction"],
+    ["iframe", "src"],
+    ["embed", "src"],
+    ["base", "href"],
+    ["a", "xlink:href"],
+    ["object", "data"],
+  ];
+  for (const attack of attacks) {
+    test(`${JSON.stringify(attack)} bloqueado em todos os atributos de URL`, () => {
+      for (const [tag, attr] of sinks) {
+        const html = render(() => htmlString`<${tag} ...${{ [attr]: attack }}></${tag}>`);
+        expect(html).toContain(`${attr}="${BLOCKED}"`);
+      }
+    });
+  }
+
+  test("data:image so em atributos de imagem de tags de imagem", () => {
+    const png = "data:image/png;base64,AAAA";
+    expect(render(() => htmlString`<img src=${png} />`)).toBe(`<img src="${png}">`);
+    expect(render(() => htmlString`<a href=${png}>x</a>`)).toContain(BLOCKED);
+    expect(render(() => htmlString`<iframe src=${png}></iframe>`)).toContain(BLOCKED);
+  });
+
+  test("entidades escritas pelo atacante ficam inertes (valor literal, escapado depois)", () => {
+    const html = render(() => htmlString`<a href=${"&#106;avascript:alert(1)"}>x</a>`);
+    expect(html).toBe('<a href="&amp;#106;avascript:alert(1)">x</a>');
+  });
+
+  test("srcset: so o candidato perigoso e substituido", () => {
+    const html = render(() => htmlString`<img srcset=${`/a.png 1x, ${U} 2x, /c.png 3x`} />`);
+    expect(html).toBe(`<img srcset="/a.png 1x, ${BLOCKED} 2x, /c.png 3x">`);
+  });
+
+  test("imagesrcset em link recebe a mesma regra por candidato", () => {
+    const html = render(() => htmlString`<link imagesrcset=${`/a.png 1x, ${U} 2x`} />`);
+    expect(html).toBe(`<link imagesrcset="/a.png 1x, ${BLOCKED} 2x">`);
+  });
+});
+
+describe("unsafeUrl (SafeUrl) no SSR", () => {
+  test("SafeUrl passa sem sanitizar, mas ainda e escapado", () => {
+    const html = render(() => htmlString`<a href=${unsafeUrl('javascript:void("x")')}>x</a>`);
+    expect(html).toBe('<a href="javascript:void(&quot;x&quot;)">x</a>');
+  });
+  test("SafeUrl em reativo tambem passa", () => {
+    const rx = { get: () => unsafeUrl("javascript:void(0)"), subscribe: () => () => {} };
+    const html = render(() => htmlString`<a href=${rx as never}>x</a>`);
+    expect(html).toContain('href="javascript:void(0)"');
+  });
+  test("objeto que so imita SafeUrl nao passa", () => {
+    const fake = { value: U, toString: () => U };
+    expect(render(() => htmlString`<a href=${fake as never}>x</a>`)).toContain(BLOCKED);
+    expect(render(() => htmlString`<a href=${JSON.parse('{"value":"javascript:x"}')}>x</a>`)).not.toContain("javascript");
   });
 });

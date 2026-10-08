@@ -5,7 +5,8 @@ import { isSafeHtml, SafeHtml } from "./safe-html";
 import type { Child, Props, Reactive } from "./types";
 import { isReactive } from "./utils/guards";
 import { escapeJsonForScript } from "./utils/script-json";
-import { sanitizeUrl } from "./utils/url-policy";
+import { isSafeUrl } from "./safe-url";
+import { isUrlAttribute, sanitizeUrl } from "./utils/url-policy";
 
 // Flag global para indicar modo SSR
 declare global {
@@ -104,22 +105,6 @@ const ATTR_NAME = /^[^\s"'<>/=\u0000-\u001f\u007f-\u009f]+$/;
 const EVENT_ATTR = /^on/i;
 const CAMEL_EVENT_ATTR = /^on[A-Z]/;
 const RAW_TEXT_ELEMENTS = new Set(["script", "style"]);
-const URL_ATTRS = new Set([
-  "href",
-  "src",
-  "action",
-  "formaction",
-  "xlink:href",
-  "poster",
-  "cite",
-  "background",
-  "srcset",
-  "ping",
-  "data",
-]);
-// Animações SVG que podem alterar href/xlink:href: to/from/values são tratados como URL
-const SVG_ANIMATION_TAGS = new Set(["animate", "set", "animatemotion"]);
-const SVG_ANIMATION_URL_ATTRS = new Set(["to", "from", "values"]);
 const RESERVED_ATTR_PREFIX = "data-reactive-";
 const BOOLEAN_ATTRS = new Set(["checked", "selected", "disabled", "readonly"]);
 
@@ -230,11 +215,11 @@ function genericAttr(tag: string, key: string, value: unknown): string {
   }
 
   let str = String(value);
-  if (
-    URL_ATTRS.has(lower) ||
-    (SVG_ANIMATION_URL_ATTRS.has(lower) && SVG_ANIMATION_TAGS.has(tag.toLowerCase()))
-  ) {
-    // TODO(SEC-B): aceitar SafeUrl (unsafeUrl) sem sanitizar
+  // SafeUrl (unsafeUrl) é isento da política; qualquer outro valor segue a mesma regra do cliente.
+  // O tag é SEMPRE passado: sem ele data:image falha fechado.
+  if (isSafeUrl(value)) {
+    str = value.value;
+  } else if (isUrlAttribute(lower, tag)) {
     str = sanitizeUrl(lower, str, tag);
   } else if (lower === "style") {
     str = styleStringToString(str);
