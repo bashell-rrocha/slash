@@ -87,6 +87,7 @@ router.back();
 router.forward();
 router.go(-2);
 router.currentRoute();            // RouteMatch | null
+await router.ready;               // navegação inicial concluída
 ```
 
 ## Componentes
@@ -139,6 +140,14 @@ createRouter({
   ],
 });
 ```
+
+### Guards na URL inicial
+
+No browser, a URL inicial passa pelos mesmos guards (globais e da rota), redirects e fallback de `push`, com `replace` (não empilha histórico). Se a rota inicial não tem guard aplicável, ela já está disponível logo após `createRouter`. Se há guard, o estado inicial é `currentRoute: null, isNavigating: true` até a decisão (nenhum conteúdo protegido é renderizado antes); depois vem a rota, o destino do redirect ou, se o guard bloquear, `currentRoute: null`. `router.ready` resolve quando isso termina (já resolvido no caso síncrono).
+
+`initialPath` explícito e o estado do servidor (hidratação) continuam sendo resolvidos de forma síncrona, sem guards no cliente. No SSR o casamento também é síncrono e os guards não rodam (`renderToString` é síncrono): a autorização no servidor é responsabilidade do servidor.
+
+Em `mode: "hash"` a rota inicial vem de `location.hash` (por exemplo `/#/sobre?x=1`), não do pathname.
 
 ## Rotas aninhadas
 
