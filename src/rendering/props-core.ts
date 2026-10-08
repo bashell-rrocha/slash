@@ -102,6 +102,15 @@ export function computePropUpdate(
     return { type: "NO_OP", key, value };
   }
 
+  // 1.0) unsafeUrl()/SafeUrl só isenta atributos de URL (e o content de um meta refresh).
+  // Em qualquer outro lugar vale como a string, que segue as regras do atributo.
+  if (isSafeUrl(value) && !(isUrlAttribute(key, elementType) || (isMetaRefresh && key.toLowerCase() === "content"))) {
+    const update = computePropUpdate(elementType, key, value.value, hasProperty, isMetaRefresh);
+    if (process.env.NODE_ENV === "production") return update;
+    const warning = update.metadata?.warning ?? `${key}: unsafeUrl() só vale em atributos de URL; tratado como a string`;
+    return { ...update, metadata: { ...update.metadata, warning } };
+  }
+
   // 1.1) Nome de atributo inválido (S5): descarta, nunca chega ao DOM
   if (!isValidAttributeName(key)) {
     return blocked(key, value, process.env.NODE_ENV !== "production" ? `atributo inválido: ${JSON.stringify(key)}` : "");

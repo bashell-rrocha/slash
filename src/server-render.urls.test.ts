@@ -3,7 +3,7 @@
 // utils/url-policy.test.ts; aqui prova-se, por comportamento, quais atributos a usam.
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { unsafeUrl } from "./safe-url";
-import { htmlString, renderToString } from "./server-render";
+import { htmlString, renderToString, resetSsrWarningsForTests } from "./server-render";
 
 const U = "javascript:alert(1)";
 const BLOCKED = "about:blank#blocked";
@@ -182,5 +182,22 @@ describe("meta http-equiv=refresh", () => {
   });
   test("content de outras tags nao e tocado", () => {
     expect(render(() => htmlString`<div content=${"0;url=javascript:x"}></div>`)).toContain('content="0;url=javascript:x"');
+  });
+});
+
+describe("unsafeUrl so vale em atributos de URL (SSR)", () => {
+  test("fora de atributo de URL vira a string (e segue as regras do atributo)", () => {
+    expect(render(() => htmlString`<div title=${unsafeUrl("t")}></div>`)).toBe('<div title="t"></div>');
+    expect(render(() => htmlString`<div class=${unsafeUrl("a b")}></div>`)).toBe('<div class="a b"></div>');
+    expect(render(() => htmlString`<div style=${unsafeUrl("color:red;background:url(javascript:x)")}></div>`)).toBe('<div style="color:red"></div>');
+    expect(render(() => htmlString`<iframe srcdoc=${unsafeUrl("<script>1</script>")}></iframe>`)).toBe("<iframe></iframe>");
+  });
+  test("emite um aviso de dev", () => {
+    resetSsrWarningsForTests();
+    render(() => htmlString`<div title=${unsafeUrl("t")}></div>`);
+    expect(warn.mock.calls.some((c: unknown[]) => String(c[0]).includes("unsafeUrl"))).toBe(true);
+  });
+  test("meta refresh content aceita SafeUrl", () => {
+    expect(render(() => htmlString`<meta http-equiv="refresh" content=${unsafeUrl("0;url=javascript:void(0)")} />`)).toContain('content="0;url=javascript:void(0)"');
   });
 });

@@ -262,6 +262,39 @@ describe("S5 cliente: nomes de atributo e de tag", () => {
   });
 });
 
+describe("unsafeUrl so vale em atributos de URL (cliente)", () => {
+  const J = "javascript:alert(1)";
+  test("em atributo de URL passa sem sanitizar", () => {
+    expect((h("a", { href: unsafeUrl(J) }) as Element).getAttribute("href")).toBe(J);
+    expect((h("form", { action: unsafeUrl(J) }) as Element).getAttribute("action")).toBe(J);
+    expect(warn).not.toHaveBeenCalled();
+  });
+  test("fora de atributo de URL e tratado como a string, com aviso", () => {
+    expect((h("div", { title: unsafeUrl("t") }) as Element).getAttribute("title")).toBe("t");
+    expect(warn).toHaveBeenCalled();
+    expect(String(warn.mock.calls[0]?.[0])).toContain("unsafeUrl");
+  });
+  test("style: a string e sanitizada como qualquer string", () => {
+    expect((h("div", { style: unsafeUrl("color:red;background:url(javascript:x)") }) as Element).getAttribute("style")).toBe("color:red");
+  });
+  test("srcdoc e on*: continuam bloqueados", () => {
+    expect((h("iframe", { srcdoc: unsafeUrl("<script>1</script>") }) as Element).getAttribute("srcdoc")).toBeNull();
+    expect((h("button", { onclick: unsafeUrl("alert(1)") }) as Element).getAttribute("onclick")).toBeNull();
+  });
+  test("class recebe o texto, nao as chaves do objeto SafeUrl", () => {
+    expect((h("div", { class: unsafeUrl("a b") }) as Element).getAttribute("class")).toBe("a b");
+  });
+  test("content de meta refresh e URL (aceita); content de meta comum nao", () => {
+    expect((h("meta", { "http-equiv": "refresh", content: unsafeUrl("0;url=javascript:void(0)") }) as Element).getAttribute("content")).toBe("0;url=javascript:void(0)");
+    expect((h("meta", { name: "x", content: unsafeUrl("v") }) as Element).getAttribute("content")).toBe("v");
+  });
+  test("computePropUpdate devolve valor string e aviso", () => {
+    const u = computePropUpdate("div", "title", unsafeUrl("t"), false);
+    expect(u.value).toBe("t");
+    expect(u.metadata?.warning).toContain("unsafeUrl");
+  });
+});
+
 describe("meta http-equiv=refresh no cliente", () => {
   test("content com URL perigosa e sanitizado, em qualquer ordem", () => {
     const a = h("meta", { "http-equiv": "refresh", content: "0;url=javascript:alert(1)" }) as HTMLMetaElement;

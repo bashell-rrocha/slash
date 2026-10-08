@@ -222,6 +222,16 @@ function hasRefreshHttpEquiv(props: NonNullable<Props>): boolean {
   return false;
 }
 
+// unsafeUrl()/SafeUrl só isenta atributos de URL (e o content de um meta refresh); em qualquer
+// outro atributo vale como a string, que segue as regras do atributo (mesma regra do cliente)
+function demoteSafeUrl(tag: string, key: string, value: unknown, metaRefresh: boolean): unknown {
+  if (!isSafeUrl(value)) return value;
+  const lower = key.toLowerCase();
+  if (isUrlAttribute(lower, tag) || (metaRefresh && lower === "content")) return value;
+  if (process.env.NODE_ENV !== "production") warnOnce("unsafeUrl() só vale em atributos de URL; tratado como a string");
+  return value.value;
+}
+
 // Atributos de um elemento nativo
 function propsToAttrs(ctx: RenderContext, tag: string, props: Props | null): string {
   if (!props) return "";
@@ -258,7 +268,7 @@ function propsToAttrs(ctx: RenderContext, tag: string, props: Props | null): str
     const accessedId = captureAccessedValue(ctx, val);
     const reactive = !accessedId && isReactive(val);
     const marker = accessedId ?? (reactive ? captureSignal(ctx, val as Reactive) : undefined);
-    const value = reactive ? (val as Reactive).get() : val;
+    const value = demoteSafeUrl(tag, key, reactive ? (val as Reactive).get() : val, metaRefresh);
 
     if (marker) {
       if (key === "class" || key === "className") {
