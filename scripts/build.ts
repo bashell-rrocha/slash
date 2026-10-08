@@ -41,7 +41,9 @@ const config: BuildConfig = {
   } : false,
   naming: isDev ? '[dir]/[name].[ext]' : '[dir]/[name].[ext]',
   target: 'browser',
-  splitting: true, // Habilitado para compartilhar código comum entre chunks
+  // Compartilha código comum entre chunks. Só no ESM: o Bun não suporta splitting
+  // em CJS (os chunks saem sem require entre si e quebram em runtime).
+  splitting: format === 'esm',
   drop: isDev ? [] : ['console', 'debugger'],
   define: {
     'process.env.NODE_ENV': isDev ? '"development"' : '"production"',
