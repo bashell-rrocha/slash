@@ -156,7 +156,7 @@ createRouter({
 
 Passe `initialPath` para que o roteador resolva a rota de forma síncrona na criação (no servidor e na hidratação). No cliente, sem `initialPath`, ele usa `window.location`.
 
-No servidor, `Router({ router })` funciona dentro de `htmlString`/`renderToString`: o HTML da rota é emitido de verdade (não escapado), entre marcadores `<!--reactive-start:id-->`, e não é gravado no estado serializado. Regra de confiança: no SSR, uma string (filho comum ou retornada por um reativo) que começa com `<` é tratada como HTML já renderizado e emitida como está; nunca devolva de um reativo/componente texto vindo do usuário que comece com `<` sem escapá-lo (a saída de `htmlString` é segura).
+No servidor, `Router({ router })` funciona dentro de `htmlString`/`renderToString`: o HTML da rota é emitido de verdade (não escapado), entre marcadores `<!--reactive-start:id-->`, e não é gravado no estado serializado. Regra de confiança: no SSR, uma string (filho comum ou retornada por um reativo) que começa com `<` é tratada como HTML já renderizado e emitida como está, incluindo `${state.get()}` dentro de `htmlString`; nunca devolva de um reativo, componente ou `state.get()` texto vindo do usuário que comece com `<` sem escapá-lo (a saída de `htmlString` é segura).
 
 ```typescript
 import { Router, createRouter } from "@_bashell/slash/router";
