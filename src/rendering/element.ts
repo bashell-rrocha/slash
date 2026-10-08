@@ -78,33 +78,36 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
         reads.add(state);
       };
 
-      let out: Node | Child;
       try {
         // Executar componente
-        out = (tag as (p: Record<string, unknown>) => Node | Child)({
+        const out = (tag as (p: Record<string, unknown>) => Node | Child)({
           ...(props || {}),
           children,
         });
+
+        // Montagem da saída (ex.: reativos que leem states): ninguém rastreia,
+        // nem este componente nem o pai que o envolve
+        (globalThis as any).__SLASH_TRACK_STATE__ = () => {};
+
+        // Uma renderização mais nova começou durante esta: ela já entregou o resultado
+        if (gen !== renderGen) return;
+        lastReads = reads;
+
+        // Renderizar resultado
+        const frag = document.createDocumentFragment();
+        if (out instanceof Node) {
+          frag.appendChild(out);
+        } else {
+          appendChildSmart(frag, out as Child);
+        }
+
+        // Inserir antes do marcador final
+        const parent = end.parentNode;
+        if (parent) {
+          parent.insertBefore(frag, end);
+        }
       } finally {
         (globalThis as any).__SLASH_TRACK_STATE__ = originalTracker;
-      }
-
-      // Uma renderização mais nova começou durante esta: ela já entregou o resultado
-      if (gen !== renderGen) return;
-      lastReads = reads;
-
-      // Renderizar resultado
-      const frag = document.createDocumentFragment();
-      if (out instanceof Node) {
-        frag.appendChild(out);
-      } else {
-        appendChildSmart(frag, out as Child);
-      }
-
-      // Inserir antes do marcador final
-      const parent = end.parentNode;
-      if (parent) {
-        parent.insertBefore(frag, end);
       }
 
       // Só reconcilia em sucesso: em erro, os watchers anteriores permanecem
