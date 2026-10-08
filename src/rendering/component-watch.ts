@@ -125,7 +125,16 @@ export function createTrackedState<T>(initialState: T): State<T> & {
     },
 
     set(payload: T): void {
-      Object.assign(state._state as object, JSON.parse(JSON.stringify(payload)));
+      // Copia chaves proprias com defineProperty: Object.assign usaria o setter de __proto__ (SEC-12)
+      const incoming = JSON.parse(JSON.stringify(payload)) as Record<string, unknown>;
+      for (const key of Object.keys(incoming)) {
+        Object.defineProperty(state._state as object, key, {
+          value: incoming[key],
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
+      }
       const current = JSON.parse(JSON.stringify(state._state));
 
       // Notificar todos os watchers
