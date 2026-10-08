@@ -2,6 +2,7 @@
 import { describe, expect, test } from 'bun:test';
 import { resolve } from 'node:path';
 import { mkdtempSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { gzipSync, brotliCompressSync } from 'node:zlib';
@@ -194,4 +195,36 @@ describe('Bundle Size Optimization', () => {
 
     expect(delta).toBeLessThanOrEqual(3.5 * 1024);
   }, 30000);
+});
+
+// I2/D1: dois builds selecionados por condição de export. O de produção é o padrão;
+// "development" (Vite/webpack em dev, node --conditions=development) carrega os avisos.
+describe('package exports: builds de desenvolvimento e produção', () => {
+  const pkg = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf-8'));
+
+  test('cada subpath tem condição development apontando para dist/dev, antes de import/require/default', () => {
+    for (const [subpath, cond] of Object.entries<any>(pkg.exports)) {
+      const keys = Object.keys(cond);
+      expect(keys.indexOf('development')).toBeGreaterThan(-1);
+      expect(keys.indexOf('development')).toBeLessThan(keys.indexOf('import'));
+      expect(keys.indexOf('types')).toBe(0);
+      expect(keys.indexOf('bun')).toBeLessThan(keys.indexOf('development'));
+      expect(cond.development.import).toMatch(/^\.\/dist\/dev\/.+\.mjs$/);
+      expect(cond.development.require).toMatch(/^\.\/dist\/dev\/.+\.cjs$/);
+      expect(cond.import).not.toContain('/dev/');
+      expect(cond.require).not.toContain('/dev/');
+      expect(cond.default).not.toContain('/dev/');
+      expect(subpath.startsWith('.')).toBe(true);
+    }
+  });
+
+  test('files publica dist (inclui dist/dev)', () => {
+    expect(pkg.files).toContain('dist');
+  });
+
+  test('build.ts nunca remove console.*, só debugger', () => {
+    const script = readFileSync(resolve(ROOT, 'scripts/build.ts'), 'utf-8');
+    expect(script).not.toMatch(/drop:[^\n]*console/);
+    expect(script).toMatch(/drop:\s*\[\s*'debugger'\s*\]/);
+  });
 });

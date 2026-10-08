@@ -3,7 +3,15 @@ import { resolve } from 'node:path';
 import { rename, readFile, writeFile } from 'node:fs/promises';
 import { writeFileSync, unlinkSync } from 'node:fs';
 
-const isDev = process.env.NODE_ENV !== 'production';
+// Dois builds publicados (selecionados por condição de export no package.json):
+//   produção  -> dist/      NODE_ENV="production": avisos de dev eliminados por define
+//   dev       -> dist/dev/  DIST_VARIANT=dev: NODE_ENV="development", avisos presentes
+// Ambos minificados, ESM+CJS. console.* nunca é removido (erros de runtime do
+// ErrorBoundary/router/batch precisam chegar ao usuário); só `debugger` cai.
+// Sem DIST_VARIANT, NODE_ENV!=production é o modo watch (sem minify, sourcemap inline, dist/).
+const devVariant = process.env.DIST_VARIANT === 'dev';
+const isDev = devVariant || process.env.NODE_ENV !== 'production';
+const publishable = devVariant || !isDev; // build minificado e renomeado para .mjs/.cjs
 const format = process.env.FORMAT || 'esm';
 const watch = process.argv.includes('--watch');
 
@@ -31,20 +39,20 @@ const entrypoints = [
 
 const config: BuildConfig = {
   entrypoints,
-  outdir: resolve(ROOT, 'dist'),
+  outdir: resolve(ROOT, devVariant ? 'dist/dev' : 'dist'),
   format: format as 'esm' | 'cjs',
-  sourcemap: isDev ? 'inline' : 'external',
-  minify: !isDev ? {
+  sourcemap: publishable ? 'external' : 'inline',
+  minify: publishable ? {
     whitespace: true,
     syntax: true,
     identifiers: true,
   } : false,
-  naming: isDev ? '[dir]/[name].[ext]' : '[dir]/[name].[ext]',
+  naming: '[dir]/[name].[ext]',
   target: 'browser',
   // Compartilha código comum entre chunks. Só no ESM: o Bun não suporta splitting
   // em CJS (os chunks saem sem require entre si e quebram em runtime).
   splitting: format === 'esm',
-  drop: isDev ? [] : ['console', 'debugger'],
+  drop: ['debugger'],
   define: {
     'process.env.NODE_ENV': isDev ? '"development"' : '"production"',
   },
@@ -83,7 +91,7 @@ if (!result.success) {
 }
 
 // Renomear arquivos para extensões corretas (.mjs ou .cjs)
-if (!isDev && result.outputs.length > 0) {
+if (publishable && result.outputs.length > 0) {
   const ext = format === 'esm' ? 'mjs' : 'cjs';
   for (const output of result.outputs) {
     const oldPath = output.path;
@@ -156,7 +164,7 @@ if (!watch) {
 }
 
 if (!watch) {
-  const mode = isDev ? 'dev' : 'prod';
+  const mode = isDev ? (devVariant ? 'dist/dev' : 'watch') : 'prod';
   const size = result.outputs.reduce((acc, o) => acc + o.size, 0);
   const sizeKB = (size / 1024).toFixed(2);
   console.log(`✅ Built ${format} (${mode}) - ${sizeKB}KB`);
