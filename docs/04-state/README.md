@@ -170,7 +170,10 @@ watch(callback: (newValue: T) => void): () => void
 - Múltiplos watchers podem ser registrados
 - Watchers são notificados na ordem de registro
 - Não há notificação se valor não mudou (deep equal)
-- **O último valor vence:** se um watcher chamar `set()` no mesmo estado durante a notificação, a notificação aninhada entrega o valor atual a todos os watchers e a notificação antiga é interrompida. Nenhum watcher recebe um valor velho depois do novo, então o último valor recebido por qualquer watcher é sempre igual a `get()` ao fim do `set` mais externo. Watchers anteriores ao que fez o `set` veem o valor antigo e depois o novo. `set` segue síncrono, e um erro lançado na notificação aninhada chega a quem chamou `set`
+- **O último valor vence:** se um watcher chamar `set()` no mesmo estado durante a notificação, a notificação aninhada entrega o valor atual a todos os watchers e a notificação antiga é interrompida.
+  - Nenhum watcher recebe um valor velho depois do novo: o último valor recebido por qualquer watcher é sempre igual a `get()` ao fim do `set` mais externo.
+  - Watchers anteriores ao que fez o `set` veem o valor antigo e depois o novo.
+  - `set` segue síncrono, e um erro lançado na notificação aninhada chega a quem chamou `set`.
 
 ## Reatividade Automática
 
