@@ -156,10 +156,10 @@ createRouter({
 
 Passe `initialPath` para que o roteador resolva a rota de forma síncrona na criação (no servidor e na hidratação). No cliente, sem `initialPath`, ele usa `window.location`.
 
-No servidor, renderize o componente da rota atual diretamente com `htmlString`. Não use `Router({ router })` dentro de `renderToString`: o valor reativo do `Router` é serializado como texto e o HTML da rota sai escapado.
+No servidor, `Router({ router })` funciona dentro de `htmlString`/`renderToString`: o HTML da rota é emitido de verdade (não escapado), entre marcadores `<!--reactive-start:id-->`, e não é gravado no estado serializado.
 
 ```typescript
-import { createRouter } from "@_bashell/slash/router";
+import { Router, createRouter } from "@_bashell/slash/router";
 import { htmlString, renderToString } from "@_bashell/slash/ssr";
 
 const router = createRouter({
@@ -167,11 +167,10 @@ const router = createRouter({
   initialPath: "/",
 });
 
-const route = router.get().currentRoute;
-const { html: markup, state } = renderToString(
-  () => htmlString`<main>${route ? route.route.component(router.get()) : ""}</main>`,
+const { html: markup } = renderToString(
+  () => htmlString`<main>${Router({ router })}</main>`,
 );
-// markup: "<main><h1>Home</h1></main>"
+// markup: "<main><!--reactive-start:s0--><h1>Home</h1><!--reactive-end:s0--></main>"
 ```
 
 Veja o [README](./README.md) para o fluxo completo de SSR e hidratação.
