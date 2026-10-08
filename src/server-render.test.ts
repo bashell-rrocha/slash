@@ -1,6 +1,9 @@
 import { test, expect, describe } from "bun:test";
 import { renderToString, renderToStream, htmlString } from "./server-render";
 import { createState } from "./state";
+import { Router } from "./router/components";
+import { createRouter } from "./router/router";
+import { render } from "./rendering/render";
 
 describe("renderToString", () => {
   test("renderiza componente simples para HTML string", () => {
@@ -476,5 +479,64 @@ describe("renderToStream", () => {
     // Valida que o estado foi capturado
     expect(Object.keys(capturedState)).toHaveLength(1);
     expect(capturedState.s0).toEqual(["<li>task 1</li>", "<li>task 2</li>"]);
+  });
+});
+
+describe("Router no SSR", () => {
+  const mk = (component: () => unknown = () => htmlString`<h1>home</h1>`) =>
+    createRouter({
+      initialPath: "/",
+      routes: [{ path: "/", component: component as never }],
+    });
+
+  test("Router no SSR emite o HTML da rota", () => {
+    const router = mk();
+    const { html } = renderToString(() => htmlString`<main>${Router({ router })}</main>`);
+    expect(html).toContain("<h1>home</h1>");
+    expect(html).not.toContain("&lt;h1");
+    expect(html).toMatch(/<!--reactive-start:s0-->.*<!--reactive-end:s0-->/);
+  });
+
+  test("Router no SSR nao duplica a rota no estado", () => {
+    const router = mk();
+    const { state } = renderToString(() => htmlString`<main>${Router({ router })}</main>`);
+    expect(JSON.stringify(state)).not.toContain("<h1>");
+  });
+
+  test("reativo nao-State com texto simples e escapado", () => {
+    const rx = { get: () => "a & b <c", subscribe: () => () => {} };
+    const { html } = renderToString(() => htmlString`<p>${rx as never}</p>`);
+    expect(html).toContain("a &amp; b &lt;c");
+  });
+
+  test("rota nula renderiza vazio no SSR", () => {
+    const router = createRouter({ initialPath: "/nada", routes: [] });
+    const { html } = renderToString(() => htmlString`<main>${Router({ router })}</main>`);
+    expect(html).toBe("<main><!--reactive-start:s0--><!--reactive-end:s0--></main>");
+  });
+
+  test("SSR com Router hidrata no cliente sem erro", async () => {
+    const router = mk();
+    const { html, state } = renderToString(() => htmlString`<main>${Router({ router })}</main>`);
+    const el = document.createElement("div");
+    el.innerHTML = html;
+    const script = document.createElement("script");
+    script.id = "__SLASH_STATE__";
+    script.type = "application/json";
+    script.textContent = JSON.stringify(state);
+    el.appendChild(script);
+    document.body.appendChild(el);
+    const clientRouter = createRouter({
+      initialPath: "/",
+      routes: [
+        { path: "/", component: (() => document.createTextNode("home")) as never },
+        { path: "/b", component: (() => document.createTextNode("page-b")) as never },
+      ],
+    });
+    expect(() => render(Router({ router: clientRouter }) as never, el)).not.toThrow();
+    expect(el.textContent).toContain("home");
+    await clientRouter.push("/b");
+    expect(el.textContent).toContain("page-b");
+    el.remove();
   });
 });

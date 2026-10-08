@@ -177,6 +177,14 @@ function childToString(child: Child): string {
     return childToString(result as Child);
   }
 
+  // Reativo sem watch (ex.: Router): renderiza como filho comum, sem gravar no estado
+  if (isReactive(child) && typeof (child as { watch?: unknown }).watch !== "function") {
+    const id = `s${signalCounter++}`;
+    // Reserva o id sem serializar o valor (o cliente re-renderiza na hidratação)
+    const inner = childToString(child.get() as Child);
+    return `<!--reactive-start:${id}-->${inner}<!--reactive-end:${id}-->`;
+  }
+
   // Signal: capturar e renderizar com marcadores
   if (isReactive(child)) {
     const id = captureSignal(child);
