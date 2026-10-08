@@ -80,11 +80,75 @@ render(app, document.body);
   return { ...(await measureBundle(bundleContent)), code: bundleContent };
 }
 
+// Bundle de produção de um entry qualquer (sem app de exemplo): para checar o que sobra no código
+async function buildEntry(entry: string): Promise<string> {
+  const outdir = mkdtempSync(resolve(SCRATCHPAD, 'entry-'));
+  const result = await Bun.build({
+    entrypoints: [entry],
+    outdir,
+    format: 'esm',
+    minify: { whitespace: true, syntax: true, identifiers: true },
+    target: 'browser',
+    define: { 'process.env.NODE_ENV': '"production"' },
+  });
+  if (!result.success) throw new Error(`Build failed: ${entry}`);
+  const code = await result.outputs[0]!.text();
+  await rm(outdir, { recursive: true, force: true });
+  return code;
+}
+
+// Textos de avisos de dev de TODAS as frentes (core/props, router/Link, SSR)
+const DEV_WARNING_TEXTS = {
+  core: ['URL bloqueada', 'unsafeHtml()', 'handlers reativos', 'atributo inválido', 'só aceita função', 'style ignora', 'bloqueada (injeta HTML)', 'não pode ser prop', 'meta refresh'],
+  router: ['deve ser um caminho do app'],
+  ssr: [
+    'declaração de style rejeitada',
+    'srcdoc só aceita SafeHtml',
+    'nome de atributo inválido descartado',
+    'são reservados à hidratação',
+    'atributo on* descartado',
+    'string dentro de <script>',
+    'string renderizada como texto',
+    'Unexpected object in child position',
+  ],
+};
+
 describe('Bundle Size Optimization', () => {
-  test('bundle de produção não contém os textos dos avisos de dev', async () => {
+  test('bundle de produção não contém os textos dos avisos de dev (core)', async () => {
     const { code } = await buildTestApp(`import { createState, html, render } from "${ROOT}/src/core.ts";`);
-    for (const text of ['URL bloqueada', 'unsafeHtml()', 'handlers reativos', 'atributo inválido', 'só aceita função']) {
+    for (const text of DEV_WARNING_TEXTS.core) {
       expect(code).not.toContain(text);
+    }
+  }, 30000);
+
+  test('entry router em produção não contém os avisos do router nem do core', async () => {
+    const code = await buildEntry(`${ROOT}/src/router/index.ts`);
+    for (const text of [...DEV_WARNING_TEXTS.router, ...DEV_WARNING_TEXTS.core]) {
+      expect(code).not.toContain(text);
+    }
+  }, 30000);
+
+  test('entry ssr em produção não contém os avisos do SSR nem do core', async () => {
+    const code = await buildEntry(`${ROOT}/src/ssr.ts`);
+    for (const text of [...DEV_WARNING_TEXTS.ssr, ...DEV_WARNING_TEXTS.core]) {
+      expect(code).not.toContain(text);
+    }
+  }, 30000);
+
+  test('os textos listados existem no build de desenvolvimento (a checagem não é vazia)', async () => {
+    const outdir = mkdtempSync(resolve(SCRATCHPAD, 'dev-'));
+    const result = await Bun.build({
+      entrypoints: [`${ROOT}/src/ssr.ts`, `${ROOT}/src/router/index.ts`],
+      outdir,
+      format: 'esm',
+      target: 'browser',
+      define: { 'process.env.NODE_ENV': '"development"' },
+    });
+    expect(result.success).toBe(true);
+    const code = (await Promise.all(result.outputs.map((o) => o.text()))).join('\n');
+    await rm(outdir, { recursive: true, force: true });
+    for (const text of [...DEV_WARNING_TEXTS.ssr, ...DEV_WARNING_TEXTS.router, 'URL bloqueada']) {
+      expect(code).toContain(text);
     }
   }, 30000);
 

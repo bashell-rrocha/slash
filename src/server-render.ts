@@ -84,7 +84,10 @@ function unmark<T>(value: T): T | string {
   return value instanceof DynamicText ? value.value : value;
 }
 
-// Avisos de dev: uma vez por mensagem (mensagens fixas, sem dados do usuário)
+// Avisos de dev: uma vez por mensagem (mensagens fixas, sem dados do usuário).
+// Todo ponto de chamada é escrito com `if (process.env.NODE_ENV !== "production")` inline:
+// o bundler só elimina os textos quando a expressão aparece por extenso (uma constante
+// intermediária não é dobrada), e scripts/bundle-size.test.ts garante que sumiram.
 const warned = new Set<string>();
 
 function warnOnce(message: string): void {
@@ -178,7 +181,7 @@ function styleObjectToString(style: Record<string, unknown>): string {
     const name = k.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
     const value = String(v).trim();
     if (!isSafeCssDeclaration(name, value)) {
-      warnOnce("declaração de style rejeitada (nome ou valor CSS inseguro)");
+      if (process.env.NODE_ENV !== "production") warnOnce("declaração de style rejeitada (nome ou valor CSS inseguro)");
       continue;
     }
     decls.push(`${name}: ${value}`);
@@ -195,7 +198,7 @@ function styleStringToString(style: string): string {
     const name = idx > 0 ? decl.slice(0, idx).trim() : "";
     const value = idx > 0 ? decl.slice(idx + 1).trim() : "";
     if (!isSafeCssDeclaration(name, value)) {
-      warnOnce("declaração de style rejeitada (nome ou valor CSS inseguro)");
+      if (process.env.NODE_ENV !== "production") warnOnce("declaração de style rejeitada (nome ou valor CSS inseguro)");
       continue;
     }
     decls.push(decl);
@@ -211,7 +214,7 @@ function genericAttr(tag: string, key: string, value: unknown): string {
 
   if (lower === "srcdoc") {
     if (isSafeHtml(value)) return ` ${key}="${escapeHtml(value.value)}"`;
-    warnOnce("srcdoc só aceita SafeHtml; use srcdoc=${unsafeHtml(html)} (nunca com entrada do usuário)");
+    if (process.env.NODE_ENV !== "production") warnOnce("srcdoc só aceita SafeHtml; use srcdoc=${unsafeHtml(html)} (nunca com entrada do usuário)");
     return "";
   }
 
@@ -238,20 +241,20 @@ function propsToAttrs(ctx: RenderContext, tag: string, props: Props | null): str
     const val = unmark(rawVal);
 
     if (!ATTR_NAME.test(key)) {
-      warnOnce("nome de atributo inválido descartado");
+      if (process.env.NODE_ENV !== "production") warnOnce("nome de atributo inválido descartado");
       continue;
     }
 
     // Prefixo reservado aos marcadores de hidratação emitidos pelo próprio SSR
     if (key.toLowerCase().startsWith(RESERVED_ATTR_PREFIX)) {
-      warnOnce("atributos data-reactive-* são reservados à hidratação e foram descartados");
+      if (process.env.NODE_ENV !== "production") warnOnce("atributos data-reactive-* são reservados à hidratação e foram descartados");
       continue;
     }
 
     // Handlers nunca vão para o HTML (SSR não serializa funções, e string seria JS)
     if (EVENT_ATTR.test(key)) {
       if (!CAMEL_EVENT_ATTR.test(key)) {
-        warnOnce("atributo on* descartado; use onClick=${fn} (handlers só existem no cliente)");
+        if (process.env.NODE_ENV !== "production") warnOnce("atributo on* descartado; use onClick=${fn} (handlers só existem no cliente)");
       }
       continue;
     }
@@ -337,18 +340,18 @@ function childToString(child: Child, ctx: RenderContext, rawText = false): strin
   // Node ou outros objetos (não devem acontecer no SSR)
   if (typeof child === "object") {
     const name = (child as { constructor?: { name?: string } }).constructor?.name ?? "Object";
-    warnOnce(`Unexpected object in child position (${name}). Use htmlString instead of html.`);
+    if (process.env.NODE_ENV !== "production") warnOnce(`Unexpected object in child position (${name}). Use htmlString instead of html.`);
     return "[Object]";
   }
 
   // String e primitivos: sempre texto escapado; valor lido de state ganha marcador
   if (typeof child === "string") {
     if (rawText) {
-      warnOnce(
+      if (process.env.NODE_ENV !== "production") warnOnce(
         "string dentro de <script>/<style> é escapada; para JSON use unsafeHtml(serializeStateForScript(x))",
       );
     } else if (LOOKS_LIKE_MARKUP.test(child)) {
-      warnOnce("string renderizada como texto. Para HTML confiável use unsafeHtml() (nunca com entrada do usuário)");
+      if (process.env.NODE_ENV !== "production") warnOnce("string renderizada como texto. Para HTML confiável use unsafeHtml() (nunca com entrada do usuário)");
     }
   }
   const text = escapeHtml(String(child));
