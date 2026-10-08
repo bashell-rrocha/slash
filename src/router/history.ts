@@ -203,8 +203,13 @@ function setupHistoryInterception(): void {
     event.preventDefault()
     const href = anchor.getAttribute("href")!
 
-    // Use pushState which will trigger our monkey-patched version
-    window.history.pushState({}, "", href)
+    // Use pushState which will trigger our monkey-patched version. preventDefault already ran, so
+    // if pushState throws (SecurityError, listener error) fall back to native navigation.
+    try {
+      window.history.pushState({}, "", href)
+    } catch {
+      window.location.assign(href)
+    }
   }
 
   window.addEventListener("click", clickHandler)

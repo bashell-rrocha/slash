@@ -352,6 +352,32 @@ describe("Link interception", () => {
     expect(targetPath).toBe("/about")
   })
 
+  test("falls back to native navigation when pushState throws after preventDefault", () => {
+    createHistoryMode()
+    const link = document.createElement("a")
+    link.href = "/about"
+    document.body.appendChild(link)
+
+    const originalPush = window.history.pushState
+    const originalAssign = window.location.assign
+    const assigned: string[] = []
+    window.history.pushState = () => {
+      throw new Error("SecurityError")
+    }
+    window.location.assign = ((url: string) => {
+      assigned.push(url)
+    }) as typeof window.location.assign
+    try {
+      const event = new MouseEvent("click", { bubbles: true, cancelable: true })
+      expect(() => link.dispatchEvent(event)).not.toThrow()
+      expect(event.defaultPrevented).toBe(true)
+      expect(assigned).toEqual(["/about"])
+    } finally {
+      window.history.pushState = originalPush
+      window.location.assign = originalAssign
+    }
+  })
+
   test("should ignore clicks whose target is not an element", () => {
     // Arrange
     const history = createHistoryMode()
