@@ -45,6 +45,8 @@ export const createState = <S = unknown>(
   // Estado interno mutável (encapsulado)
   let _state = deepClone(initialState);
   const _watchers = new Set<StateWatcher<S>>();
+  // Geração da notificação mais recente (o último valor vence)
+  let _notifyGen = 0;
 
   // Histórico opcional (time-travel debugging)
   let _history: StateHistory<S> | null = options?.enableHistory
@@ -58,7 +60,11 @@ export const createState = <S = unknown>(
     // Isola erros: todos os watchers rodam e o primeiro erro é relançado no fim
     let firstError: unknown;
     let hasError = false;
+    // Se um watcher fizer set reentrante, a notificação aninhada (mais nova)
+    // já entregou o valor atual a todos: este laço para, sem entregar o velho
+    const gen = ++_notifyGen;
     for (const stateWatcher of _watchers) {
+      if (gen !== _notifyGen) break;
       try {
         stateWatcher(payload);
       } catch (error) {
