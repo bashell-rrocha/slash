@@ -187,7 +187,7 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
 
   if (props) {
     for (const [k, v] of Object.entries(props)) {
-      if (isSelect && k === "value") {
+      if (isSelect && k.toLowerCase() === "value") {
         selectValue = v;
       } else {
         setProp(el, k, v);

@@ -97,14 +97,18 @@ export function computePropUpdate(
   hasProperty: boolean,
   isMetaRefresh = false
 ): PropUpdate {
+  // Toda decisão de política usa o nome em minúsculas: setAttribute minusculiza o nome em HTML,
+  // então `STYLE`/`Style`/`HREF`/`SrcDoc` não podem escapar da política por diferença de caixa.
+  const lowerKey = key.toLowerCase();
+
   // 1) NO_OP: ignora 'children'
-  if (key === "children") {
+  if (lowerKey === "children") {
     return { type: "NO_OP", key, value };
   }
 
   // 1.0) unsafeUrl()/SafeUrl só isenta atributos de URL (e o content de um meta refresh).
   // Em qualquer outro lugar vale como a string, que segue as regras do atributo.
-  if (isSafeUrl(value) && !(isUrlAttribute(key, elementType) || (isMetaRefresh && key.toLowerCase() === "content"))) {
+  if (isSafeUrl(value) && !(isUrlAttribute(key, elementType) || (isMetaRefresh && lowerKey === "content"))) {
     const update = computePropUpdate(elementType, key, value.value, hasProperty, isMetaRefresh);
     if (process.env.NODE_ENV === "production") return update;
     const warning = update.metadata?.warning ?? `${key}: unsafeUrl() só vale em atributos de URL; tratado como a string`;
@@ -140,7 +144,6 @@ export function computePropUpdate(
   }
 
   // 1.3) Props que viram HTML ou alteram o protótipo (S4/SEC-05)
-  const lowerKey = key.toLowerCase();
   if (lowerKey === "srcdoc" && isSafeHtml(value)) {
     // srcdoc só é aceito como SafeHtml (unsafeHtml): grava o markup confiável como texto do atributo
     value = value.value;
@@ -157,7 +160,7 @@ export function computePropUpdate(
   }
 
   // 2) SET_CLASS: class ou className
-  if (key === "class" || key === "className") {
+  if (lowerKey === "class" || lowerKey === "classname") {
     const processedClassName = processClassValue(value);
     if (value == null || value === false) {
       return {
@@ -176,7 +179,7 @@ export function computePropUpdate(
   }
 
   // 3) SET_STYLE: style object
-  if (key === "style" && value && typeof value === "object") {
+  if (lowerKey === "style" && value && typeof value === "object") {
     // Mais de 8 KB no total: descarta o style inteiro
     if (styleObjectTooLong(value as Record<string, unknown>)) {
       return {
@@ -207,7 +210,7 @@ export function computePropUpdate(
   }
 
   // 3.1) style como string: só as declarações seguras (mesma política do SSR)
-  if (key === "style" && typeof value === "string") {
+  if (lowerKey === "style" && typeof value === "string") {
     const { value: safeStyle, rejected } = sanitizeStyleString(value);
     // Nada seguro sobrou: o atributo style é omitido (mesma regra do SSR)
     if (safeStyle === "") {
@@ -231,7 +234,7 @@ export function computePropUpdate(
   }
 
   // 4) SET_VALUE: input/textarea/select controlados
-  if (key === "value") {
+  if (lowerKey === "value") {
     const normalizedValue = value == null ? "" : String(value);
 
     if (elementType === "select") {
@@ -247,7 +250,7 @@ export function computePropUpdate(
   }
 
   // 5) SET_CHECKED: checkboxes
-  if (key === "checked") {
+  if (lowerKey === "checked") {
     return { type: "SET_CHECKED", key, value: Boolean(value) };
   }
 
@@ -261,7 +264,7 @@ export function computePropUpdate(
   let warning: string | undefined;
   if (isSafeUrl(value)) {
     finalValue = value.value;
-  } else if (isMetaRefresh && key.toLowerCase() === "content") {
+  } else if (isMetaRefresh && lowerKey === "content") {
     const result = evaluateMetaRefresh(String(value));
     finalValue = result.value;
     if (result.blocked) {

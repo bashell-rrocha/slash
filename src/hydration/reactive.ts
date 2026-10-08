@@ -24,11 +24,12 @@ export function hydrateReactiveAttributes(
     if (!reactive) continue;
 
     const unsub = reactive.subscribe((value) => {
-      if (prop === "value") {
+      const lower = prop.toLowerCase();
+      if (lower === "value") {
         (element as HTMLInputElement).value = String(value ?? "");
-      } else if (prop === "checked") {
+      } else if (lower === "checked") {
         (element as HTMLInputElement).checked = Boolean(value);
-      } else if (prop === "class") {
+      } else if (lower === "class") {
         element.className = processClassValue(value);
       } else {
         // SEC-13: o nome vem do DOM (data-reactive-*); passa pela mesma política das

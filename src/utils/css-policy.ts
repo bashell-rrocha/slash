@@ -25,22 +25,22 @@ import { isAllowedCssUrl } from "./url-policy";
 
 
 // Chaves de CSSStyleDeclaration que não são propriedades CSS: cssText injeta CSS arbitrário e
-// os métodos não podem ser sobrescritos. Valem para style em forma de objeto (cliente e SSR).
+// os métodos não podem ser sobrescritos. Comparados em minúsculas. Valem para style em forma de objeto (cliente e SSR).
 const STYLE_FORBIDDEN_KEYS = new Set([
-  "cssText",
+  "csstext",
   "length",
-  "parentRule",
+  "parentrule",
   "__proto__",
   "constructor",
   "prototype",
-  "setProperty",
-  "getPropertyValue",
-  "getPropertyPriority",
-  "removeProperty",
+  "setproperty",
+  "getpropertyvalue",
+  "getpropertypriority",
+  "removeproperty",
   "item",
 ]);
 
-export const isForbiddenStyleKey = (key: string): boolean => STYLE_FORBIDDEN_KEYS.has(key);
+export const isForbiddenStyleKey = (key: string): boolean => STYLE_FORBIDDEN_KEYS.has(key.toLowerCase());
 
 export const CSS_PROP_NAME = /^-{0,2}[a-z][a-z0-9-]*$/i;
 const CSS_FORBIDDEN_VALUE = /expression\s*\(|javascript:|vbscript:|behaviou?r\s*:|-moz-binding|@import/i;
@@ -91,8 +91,20 @@ export function isSafeCssValue(value: string): boolean {
   if (value.length > STYLE_MAX_LENGTH || value.includes("/*")) return false;
   // `text`: o que o navegador "vê" para as checagens de palavras (strings já decodificadas)
   let text = "";
+  let closers = ""; // pilha dos fechamentos esperados: ( [ fora de strings e de url() devem casar
   for (let i = 0; i < value.length; i++) {
     const c = value[i] as string;
+    if (c === ")" || c === "]") {
+      if (closers[closers.length - 1] !== c) return false;
+      closers = closers.slice(0, -1);
+      text += c;
+      continue;
+    }
+    if (c === "[") {
+      closers += "]";
+      text += c;
+      continue;
+    }
     if (c === "\\" || c === "\0" || c === ";" || c === "{" || c === "}" || c === "<") return false;
     if (c === '"' || c === "'") {
       const end = stringEnd(value, i);
@@ -121,9 +133,11 @@ export function isSafeCssValue(value: string): boolean {
       if (!isAllowedCssUrl(target.trim())) return false;
       text += "()";
     } else {
+      if (c === "(") closers += ")";
       text += c;
     }
   }
+  if (closers) return false;
   return !(CSS_FORBIDDEN_VALUE.test(text) || CSS_URL_FUNCTIONS.test(text));
 }
 

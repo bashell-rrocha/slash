@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isSafeCssDeclaration, isSafeCssValue, sanitizeStyleString, splitDeclarations, styleKeyToCssName, styleObjectTooLong } from "./css-policy";
+import { isForbiddenStyleKey, isSafeCssDeclaration, isSafeCssValue, sanitizeStyleString, splitDeclarations, styleKeyToCssName, styleObjectTooLong } from "./css-policy";
 
 describe("isSafeCssValue", () => {
   test.each([
@@ -504,5 +504,53 @@ describe("fuzz estrito: comentario dentro de url( e newline dentro de string", (
     expect(cases.length).toBeLessThan(700);
     expect(cases.filter((c) => isSafeCssValue(c))).toEqual([]);
     for (const c of cases) expect(sanitizeStyleString(`color:red;background:${c}`).value).toBe("color:red");
+  });
+});
+
+describe("colchetes e parenteses balanceados fora de strings", () => {
+  test.each([
+    "calc(1px",
+    "foo(",
+    "foo((a)",
+    "a)",
+    "rgb(1,2,3))",
+    "[x",
+    "x]",
+    "(]",
+    "([)]",
+    "[(])",
+    "(a [b)] c",
+    "url(/a.png))",
+    "var(--x, (1px)",
+    "(".repeat(100),
+  ])("bloqueia %s", (v) => expect(isSafeCssValue(v)).toBe(false));
+
+  test.each([
+    "calc((1px + 2px) * 3)",
+    "[a] 1fr [b]",
+    "repeat(2, [a] 1fr)",
+    "rgba(0,0,0,.5)",
+    "var(--x, calc(1px + 2px))",
+    "url(/a.png) no-repeat, linear-gradient(red, blue)",
+    '"((" ")" "[" "]"',
+    "'(' content",
+    "url(data:image/png;base64,AAAA==)",
+    "",
+  ])("permite %j", (v) => expect(isSafeCssValue(v)).toBe(true));
+
+  test("parentese aberto engole o resto (como no navegador): tudo cai junto, nada inseguro sobra", () => {
+    expect(sanitizeStyleString("color:red;width:calc(1px;height:2px;background:url(javascript:x)")).toEqual({ value: "color:red", rejected: true });
+    expect(sanitizeStyleString("color:red;width:a);height:2px")).toEqual({ value: "color:red; height:2px", rejected: true });
+  });
+});
+
+describe("chaves proibidas de objeto de style sem distinguir caixa", () => {
+  test.each(["cssText", "CSSTEXT", "CssText", "setProperty", "SETPROPERTY", "length", "LENGTH", "__PROTO__", "Constructor"])(
+    "%s",
+    (k) => expect(isForbiddenStyleKey(k)).toBe(true),
+  );
+  test("propriedades normais passam", () => {
+    expect(isForbiddenStyleKey("color")).toBe(false);
+    expect(isForbiddenStyleKey("backgroundColor")).toBe(false);
   });
 });

@@ -334,6 +334,17 @@ describe("paridade: style", () => {
       }
     }
   });
+  test("colchetes/parenteses desbalanceados fora de strings derrubam a declaracao", () => {
+    for (const v of ["calc(1px", "foo(", "a)", "[x", "x]", "(]", "([)]", "rgb(1,2,3))", "url(/a.png)) "]) {
+      // um "(" sem fechar engole as declaracoes seguintes (como no navegador): elas caem juntas
+      const style = `color:red;width:${v};height:1px`;
+      const c = clientAttr("div", { style }, "style");
+      expect(c).toBe(ssrAttr("div", { style }, "style"));
+      expect(c).toContain("color:red");
+      expect(c).not.toContain("width");
+    }
+    both("div", { style: "width:calc((1px + 2px) * 3);grid-template-columns:[a] 1fr [b]" }, "style", "width:calc((1px + 2px) * 3); grid-template-columns:[a] 1fr [b]");
+  });
   test("estrito: newlines entre declaracoes e CSS comum passam nos dois lados", () => {
     const style = `color: red;\n  background: url(a/b.png);\n  content: "\\2022"`;
     both("div", { style }, "style", "color: red; background: url(a/b.png); content: \"\\2022\"");
@@ -385,6 +396,74 @@ describe("paridade: style", () => {
     ]) {
       expect(out ?? "").toContain("red");
       expect(out ?? "").not.toMatch(/fixed|x:y/);
+    }
+  });
+});
+
+// Todo nome policiado e comparado em minusculas: STYLE/Style/sTyLe, HREF, SrcDoc, InnerHTML... nao
+// escapam da politica (setAttribute minusculiza o nome, entao a politica precisa fazer o mesmo)
+describe("paridade: variantes de caixa dos nomes policiados", () => {
+  const CASES = (name: string): string[] => [name.toUpperCase(), name[0]!.toUpperCase() + name.slice(1), [...name].map((c, i) => (i % 2 ? c : c.toUpperCase())).join("")];
+  const J = "javascript:alert(1)";
+
+  test("style string e objeto em qualquer caixa", () => {
+    for (const key of CASES("style")) {
+      both("div", { [key]: `color:red;background:url(${J})` }, "style", "color:red");
+      both("div", { [key]: "background:url(javascript:alert(1))" }, "style", null);
+      for (const out of [
+        clientAttr("div", { [key]: { color: "red", backgroundImage: `url(${J})` } }, "style"),
+        ssrAttr("div", { [key]: { color: "red", backgroundImage: `url(${J})` } }, "style"),
+      ]) {
+        expect(out ?? "").toContain("red");
+        expect(out ?? "").not.toMatch(/javascript|url/i);
+      }
+      // seguro continua funcionando
+      expect(clientAttr("div", { [key]: { color: "red" } }, "style")).toContain("red");
+      expect(ssrAttr("div", { [key]: { color: "red" } }, "style")).toBe("color: red");
+    }
+  });
+
+  test("atributos de URL em qualquer caixa", () => {
+    for (const [tag, attr] of [["a", "href"], ["img", "src"], ["form", "action"], ["button", "formaction"], ["video", "poster"]] as const) {
+      for (const key of CASES(attr)) both(tag, { [key]: J }, attr, B);
+    }
+    for (const key of CASES("srcset")) both("img", { [key]: `/a.png 1x, ${J} 2x` }, "srcset", `/a.png 1x, ${B} 2x`);
+  });
+
+  test("srcdoc e innerHTML/outerHTML em qualquer caixa", () => {
+    for (const key of CASES("srcdoc")) both("iframe", { [key]: "<script>alert(1)</script>" }, "srcdoc", null);
+    for (const key of ["INNERHTML", "InnerHTML", "innerHtml", "OUTERHTML", "OuterHTML"]) {
+      const c = h("div", { [key]: "<img src=x onerror=alert(1)>" }) as Element;
+      expect(c.querySelector("img")).toBeNull();
+      expect(c.getAttribute(key.toLowerCase())).toBeNull();
+    }
+  });
+
+  test("on* em qualquer caixa", () => {
+    for (const key of ["ONCLICK", "OnClick", "oNcLiCk", "ONERROR", "ONFOCUS"]) both("img", { [key]: "alert(1)" }, key.toLowerCase(), null);
+  });
+
+  test("meta refresh: HTTP-EQUIV e CONTENT em qualquer caixa", () => {
+    for (const [he, ct] of [["HTTP-EQUIV", "CONTENT"], ["Http-Equiv", "Content"], ["http-equiv", "CONTENT"]] as const) {
+      both("meta", { [he]: "REFRESH", [ct]: `0;url=${J}` }, "content", `0;url=${B}`);
+      both("meta", { [ct]: `0;url=${J}`, [he]: "Refresh" }, "content", `0;url=${B}`);
+    }
+  });
+
+  test("class/className/value/checked em qualquer caixa funcionam como a forma canonica", () => {
+    for (const key of ["CLASS", "Class", "CLASSNAME", "ClassName"]) {
+      expect((h("div", { [key]: { a: true, b: false } }) as Element).getAttribute("class")).toBe("a");
+      expect(ssrAttr("div", { [key]: { a: true, b: false } }, "class")).toBe("a");
+    }
+    for (const key of ["VALUE", "Value"]) expect((h("input", { [key]: "x" }) as HTMLInputElement).value).toBe("x");
+    for (const key of ["CHECKED", "Checked"]) expect((h("input", { type: "checkbox", [key]: true }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  test("chaves de objeto de style proibidas em qualquer caixa (cssText, setProperty...)", () => {
+    for (const k of ["CSSTEXT", "CssText", "cssText", "SETPROPERTY", "setproperty", "LENGTH", "PARENTRULE"]) {
+      const c = h("div", { style: { color: "red", [k]: "position:fixed" } }) as HTMLElement;
+      expect(c.getAttribute("style") ?? "").not.toMatch(/fixed/);
+      expect(ssrAttr("div", { style: { color: "red", [k]: "position:fixed" } }, "style") ?? "").not.toMatch(/fixed/);
     }
   });
 });

@@ -43,7 +43,7 @@ export function setPropReactive(element: Element, key: string, sig: Reactive<unk
 
 export function setProp(element: Elementish, key: string, val: unknown): void {
   // 1) NO_OP: ignora children
-  if (key === "children") return;
+  if (key.toLowerCase() === "children") return;
 
   // 2) Signals: converte para prop reativo
   if (isReactive(val)) {

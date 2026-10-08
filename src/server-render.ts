@@ -245,7 +245,8 @@ function propsToAttrs(ctx: RenderContext, tag: string, props: Props | null): str
   const metaRefresh = tag.toLowerCase() === "meta" && hasRefreshHttpEquiv(props);
 
   for (const [key, rawVal] of Object.entries(props)) {
-    if (key === "children") continue;
+    const lowerKey = key.toLowerCase();
+    if (lowerKey === "children") continue;
     const val = unmark(rawVal);
 
     if (!ATTR_NAME.test(key)) {
@@ -277,12 +278,12 @@ function propsToAttrs(ctx: RenderContext, tag: string, props: Props | null): str
     const value = demoteSafeUrl(tag, key, reactive ? (val as Reactive).get() : val, metaRefresh);
 
     if (marker) {
-      if (key === "class" || key === "className") {
+      if (lowerKey === "class" || lowerKey === "classname") {
         const className = processClass(value);
         if (className) attrs += ` class="${escapeHtml(className)}" data-reactive-class="${marker}"`;
-      } else if (key === "value") {
+      } else if (lowerKey === "value") {
         attrs += ` value="${escapeHtml(String(value ?? ""))}" data-reactive-value="${marker}"`;
-      } else if (key === "checked") {
+      } else if (lowerKey === "checked") {
         if (value) attrs += " checked";
         attrs += ` data-reactive-checked="${marker}"`;
       } else {
@@ -293,19 +294,19 @@ function propsToAttrs(ctx: RenderContext, tag: string, props: Props | null): str
       continue;
     }
 
-    if (key === "class" || key === "className") {
+    if (lowerKey === "class" || lowerKey === "classname") {
       const className = processClass(value);
       if (className) attrs += ` class="${escapeHtml(className)}"`;
       continue;
     }
 
-    if (key === "style" && value && typeof value === "object") {
+    if (lowerKey === "style" && value && typeof value === "object") {
       const styleStr = styleObjectToString(value as Record<string, unknown>);
       if (styleStr) attrs += ` style="${escapeHtml(styleStr)}"`;
       continue;
     }
 
-    if (BOOLEAN_ATTRS.has(key)) {
+    if (BOOLEAN_ATTRS.has(lowerKey)) {
       if (value) attrs += ` ${key}`;
       continue;
     }
