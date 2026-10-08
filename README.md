@@ -1,361 +1,277 @@
-# slash
+# Slash
 
-**htm + hyper + reactive signals** — Tiny, fast, DX-first framework with zero VDOM overhead.
+**htm + hyper + observable state** — a tiny, fast, DX-first framework with no virtual DOM.
+
+Slash renders [htm](https://github.com/developit/htm) tagged templates straight to DOM nodes, re-renders components when the state they read changes, and ships SSR with automatic hydration.
 
 ## Features
 
-- ✅ **Tagged templates** via [htm](https://github.com/developit/htm)
-- ✅ **Reactive signals** with fine-grained reactivity
-- ✅ **Zero VDOM** — Direct DOM manipulation
-- ✅ **SSR with automatic hydration** — Single API for client and server
-- ✅ **Tiny bundle** — Minimal runtime overhead
-- ✅ **TypeScript** support
+- **Tagged templates** via [htm](https://github.com/developit/htm), no build step required
+- **No virtual DOM**, templates create real DOM nodes
+- **`createState`**: `get` / `set` / `watch` state with automatic tracking in components, observer pattern and `batch()` updates
+- **Router** with dynamic params, guards and history/hash modes
+- **Form helpers** for two-way bindings and submit handling
+- **SSR** (`renderToString`, `renderToStream`) with automatic hydration in `render()`
+- **TypeScript** types included
+- **Subpath imports** so you only ship what you use
 
 ## Installation
 
 ```bash
-bun install slash
+npm i @_bashell/slash
 ```
 
-## Quick Start
+```bash
+bun add @_bashell/slash
+```
 
-### SPA (Client-Side Rendering)
+## Quick start
+
+### Client
 
 ```typescript
-import { html, render, createSignal } from "slash";
+import { html, render, createState } from "@_bashell/slash/core";
+
+// State lives outside the component so it survives re-renders
+const counter = createState({ count: 0 });
 
 function Counter() {
-  const count = createSignal(0);
-
   return html`
-    <div>
-      <button onClick=${() => count.set(c => c + 1)}>
-        Count: ${count}
-      </button>
-    </div>
+    <button onClick=${() => counter.set({ count: counter.get().count + 1 })}>
+      Count: ${counter.get().count}
+    </button>
   `;
 }
 
-render(() => Counter(), "#app");
+// Mount components as <${Component} /> so they re-render when their state changes
+render(html`<${Counter} />`, "#app");
 ```
 
-### SSR with Automatic Hydration
+### SSR
 
-**Server:**
+Server:
 
 ```typescript
-import { htmlString, renderToString } from "slash/server";
+import { createState } from "@_bashell/slash/core";
+import { htmlString, renderToString } from "@_bashell/slash/ssr";
+
+const counter = createState({ count: 0 });
 
 function App() {
-  const count = createSignal(0);
-
   return htmlString`
-    <div>
-      <button onClick=${() => count.set(c => c + 1)}>
-        Count: ${count}
-      </button>
-    </div>
+    <button>Count: ${counter.get().count}</button>
   `;
 }
 
 const { html, state } = renderToString(() => App());
 
-// Send to client
-const htmlResponse = `
-  <!DOCTYPE html>
-  <html>
-    <body>
-      <div id="app">${html}</div>
-      <script id="__SLASH_STATE__" type="application/json">
-        ${JSON.stringify(state)}
-      </script>
-      <script type="module" src="/client.js"></script>
-    </body>
-  </html>
+const page = `<!DOCTYPE html>
+<html>
+  <body>
+    <div id="app">${html}</div>
+    <script id="__SLASH_STATE__" type="application/json">${JSON.stringify(state)}</script>
+    <script type="module" src="/client.js"></script>
+  </body>
+</html>`;
+```
+
+Client (`client.js`):
+
+```typescript
+import { html, render, createState } from "@_bashell/slash/core";
+
+const counter = createState({ count: 0 });
+
+function App() {
+  return html`
+    <button onClick=${() => counter.set({ count: counter.get().count + 1 })}>
+      Count: ${counter.get().count}
+    </button>
+  `;
+}
+
+// Finds the pre-rendered markup and the __SLASH_STATE__ script and hydrates
+render(html`<${App} />`, "#app");
+```
+
+## State
+
+`createState(initial)` returns an object with three methods:
+
+```typescript
+import { createState, batch } from "@_bashell/slash/core";
+
+const user = createState({ name: "Ada", age: 36 });
+
+user.get();                          // { name: "Ada", age: 36 } (a copy)
+user.set({ name: "Grace", age: 85 }); // replaces the whole value
+
+const stop = user.watch((value) => console.log("changed", value));
+stop();                              // unsubscribe
+```
+
+- `set` replaces the state. To update one field, spread the current value: `user.set({ ...user.get(), age: 37 })`.
+- `get` returns a copy, so mutating the result never changes the state.
+- Watchers run only when the new value is deeply different from the old one.
+
+### Batching
+
+`batch()` groups several `set` calls and notifies watchers once, when it finishes.
+
+```typescript
+import { createState, batch } from "@_bashell/slash/core";
+
+const form = createState({ first: "", last: "" });
+form.watch((value) => console.log(value));
+
+batch(() => {
+  form.set({ first: "Ada", last: "" });
+  form.set({ first: "Ada", last: "Lovelace" });
+}); // logs once: { first: "Ada", last: "Lovelace" }
+```
+
+Pass `{ enableHistory: true }` as the second argument to `createState` to record changes and use `getHistory()` / `clearHistory()` (time-travel debugging).
+
+## Components and lifecycle
+
+A component is a function that receives its props plus `children` and returns a template. Use it in a template as `<${Component} />`:
+
+```typescript
+import { html, render, createState } from "@_bashell/slash/core";
+
+const todos = createState({ items: ["Learn Slash", "Build an app"] });
+
+function Item({ text }: { text: string }) {
+  return html`<li>${text}</li>`;
+}
+
+function List({ title, children }: { title: string; children?: unknown }) {
+  return html`
+    <section>
+      <h2>${title} (${todos.get().items.length})</h2>
+      <ul>
+        ${todos.get().items.map((text) => html`<${Item} text=${text} />`)}
+      </ul>
+      ${children}
+    </section>
+  `;
+}
+
+render(html`<${List} title="Todos"><footer>done</footer><//>`, "#app");
+
+todos.set({ items: [...todos.get().items, "Ship it"] }); // List re-renders
+```
+
+Lifecycle:
+
+- **Render:** the component runs and every state it reads with `get()` is tracked.
+- **Update:** when a tracked state changes, the component runs again and its previous nodes are replaced.
+- **Cleanup:** removed nodes are destroyed (`destroyNode`), which releases their watchers.
+- **Side effects:** use `state.watch()` outside the template for logging, persistence and the like.
+
+Wrap risky children in `ErrorBoundary`:
+
+```typescript
+import { html, ErrorBoundary } from "@_bashell/slash/core";
+
+html`
+  <${ErrorBoundary} fallback=${(error: Error) => html`<p>Failed: ${error.message}</p>`}>
+    <${Counter} />
+  <//>
 `;
 ```
 
-**Client:**
+## Router
 
 ```typescript
-import { html, render, createSignal } from "slash";
+import { html, render } from "@_bashell/slash/core";
+import { createRouter, Router, Link } from "@_bashell/slash/router";
 
-function App() {
-  const count = createSignal(0);
-
-  return html`
-    <div>
-      <button onClick=${() => count.set(c => c + 1)}>
-        Count: ${count}
-      </button>
-    </div>
-  `;
-}
-
-// render() automatically detects and hydrates server-rendered HTML!
-render(() => App(), "#app");
-```
-
-**That's it!** No need to call `hydrate()` — `render()` auto-detects when:
-- The container has pre-rendered HTML
-- A `__SLASH_STATE__` script tag exists
-
-The same `render()` call works for:
-- ✅ **SSR hydration** — Preserves server DOM, attaches events
-- ✅ **SPA rendering** — Creates fresh DOM from scratch
-
-### Zero Flash, Zero Re-render
-
-The hydration process:
-
-1. **Detects** server-rendered HTML + state script
-2. **Restores** signal values from serialized state
-3. **Re-executes** components to attach event listeners
-4. **Reconnects** signals to existing DOM markers
-5. **Preserves** 100% of server DOM — no flash, no re-render
-
-## API Reference
-
-### Client API
-
-#### `html`
-
-Tagged template for creating elements:
-
-```typescript
-html`<div class="container">${content}</div>`
-```
-
-#### `render(view, container)`
-
-Renders or hydrates a view into a container:
-
-```typescript
-render(() => App(), "#app");
-```
-
-Auto-detects:
-- **Hydration mode** if container has HTML + `__SLASH_STATE__`
-- **Normal mode** if container is empty
-
-#### `createSignal(initialValue)`
-
-Creates a reactive signal:
-
-```typescript
-const count = createSignal(0);
-
-count.get();           // Get current value
-count.set(5);          // Set new value
-count.set(c => c + 1); // Update with function
-count.subscribe(val => console.log(val)); // Subscribe to changes
-```
-
-#### `Repeat(listSignal, keyFn, renderFn)`
-
-Efficient keyed list rendering:
-
-```typescript
-const items = createSignal([
-  { id: 1, name: "Alice" },
-  { id: 2, name: "Bob" }
-]);
-
-Repeat(
-  items,
-  item => item.id,
-  item => html`<li>${item.name}</li>`
-);
-```
-
-### Server API
-
-#### `htmlString`
-
-Tagged template for SSR (same syntax as `html`):
-
-```typescript
-import { htmlString } from "slash/server";
-
-const view = htmlString`<div>${content}</div>`;
-```
-
-#### `renderToString(view)`
-
-Renders view to HTML string with serialized state:
-
-```typescript
-import { renderToString } from "slash/server";
-
-const { html, state } = renderToString(() => App());
-
-// html: "<div>...</div>"
-// state: { s0: 0, s1: "value", ... }
-```
-
-### Migration from `hydrate()`
-
-If you're using the old `hydrate()` API:
-
-**Before:**
-
-```typescript
-import { hydrate } from "slash";
-
-hydrate(() => App(), "#app", { state: window.__SLASH_STATE__ });
-```
-
-**After:**
-
-```typescript
-import { render } from "slash";
-
-render(() => App(), "#app"); // That's it!
-```
-
-The `hydrate()` function is now deprecated. Use `render()` for everything.
-
-## Examples
-
-### Counter with Signal
-
-```typescript
-import { html, render, createSignal } from "slash";
-
-function Counter() {
-  const count = createSignal(0);
-
-  return html`
-    <div>
-      <button onClick=${() => count.set(c => c - 1)}>-</button>
-      <span>${count}</span>
-      <button onClick=${() => count.set(c => c + 1)}>+</button>
-    </div>
-  `;
-}
-
-render(() => Counter(), "#app");
-```
-
-### Todo List with Repeat
-
-```typescript
-import { html, render, createSignal, Repeat } from "slash";
-
-function TodoList() {
-  const todos = createSignal([
-    { id: 1, text: "Learn Slash", done: false },
-    { id: 2, text: "Build app", done: false }
-  ]);
-
-  const addTodo = (text: string) => {
-    todos.set(t => [...t, { id: Date.now(), text, done: false }]);
-  };
-
-  const toggle = (id: number) => {
-    todos.set(t => t.map(todo =>
-      todo.id === id ? { ...todo, done: !todo.done } : todo
-    ));
-  };
-
-  return html`
-    <div>
-      <ul>
-        ${Repeat(
-          todos,
-          todo => todo.id,
-          todo => html`
-            <li>
-              <input
-                type="checkbox"
-                checked=${todo.done}
-                onClick=${() => toggle(todo.id)}
-              />
-              <span style=${{ textDecoration: todo.done ? 'line-through' : 'none' }}>
-                ${todo.text}
-              </span>
-            </li>
-          `
-        )}
-      </ul>
-    </div>
-  `;
-}
-
-render(() => TodoList(), "#app");
-```
-
-### Nested Components
-
-```typescript
-import { html, render, createSignal } from "slash";
-
-function Header({ title }: { title: string }) {
-  return html`<header><h1>${title}</h1></header>`;
-}
-
-function Counter() {
-  const count = createSignal(0);
-  return html`
-    <div>
-      <button onClick=${() => count.set(c => c + 1)}>
-        Clicks: ${count}
-      </button>
-    </div>
-  `;
-}
+const router = createRouter({
+  routes: [
+    { path: "/", component: () => html`<h1>Home</h1>` },
+    { path: "/users/:id", component: (state) => html`<h1>User ${state.params.id}</h1>` },
+    { path: "/404", component: () => html`<h1>Not found</h1>` },
+  ],
+  mode: "history", // or "hash"
+  fallback: "/404",
+});
 
 function App() {
   return html`
-    <main>
-      <${Header} title="My App" />
-      <${Counter} />
-    </main>
+    <div>
+      <nav>
+        <${Link} to="/" router=${router}>Home<//>
+        <${Link} to="/users/42" router=${router}>User 42<//>
+      </nav>
+      <main>${Router({ router })}</main>
+    </div>
   `;
 }
 
-render(() => App(), "#app");
+render(html`<${App} />`, "#app");
+
+await router.push("/users/7");
 ```
+
+The router is itself a state (`router.get()`, `router.watch()`) holding `currentRoute`, `params`, `query`, `meta` and `isNavigating`. It also exposes `push`, `replace`, `back`, `forward` and `go`. Guards (global or per route) return `false` to block or a path string to redirect. For SSR, pass `initialPath`. See [ROUTER.md](./ROUTER.md).
+
+## Forms
+
+```typescript
+import { html, createState } from "@_bashell/slash/core";
+import { textFieldControl, checkboxControl, onSubmit } from "@_bashell/slash/forms";
+
+const name = createState({ value: "" });
+const agree = createState({ value: false });
+
+function SignUp() {
+  return html`
+    <form onSubmit=${onSubmit((data) => console.log(data))}>
+      <input name="name" ...${textFieldControl(name)} />
+      <input name="agree" type="checkbox" ...${checkboxControl(agree)} />
+      <button type="submit">Send</button>
+    </form>
+  `;
+}
+```
+
+Available helpers: `textFieldControl`, `checkboxControl`, `radioControl`, `SelectControl`, `getText`, `getChecked`, `getSelectValue`, `delegate`, `formToObject`, `onSubmit`, `onReset`, `onButtonClick`, plus the form event types.
+
+## SSR and hydration
+
+- `htmlString` is the server twin of `html`: same syntax, returns a string.
+- `renderToString(view)` returns `{ html, state }`. Embed `state` as JSON in a `<script id="__SLASH_STATE__" type="application/json">` tag.
+- `renderToStream(view)` is an async generator that yields HTML chunks and ends with the `__SLASH_STATE__` script.
+- `render(view, container)` hydrates automatically when the container already has content and a `__SLASH_STATE__` script exists. Otherwise it renders from scratch. There is no separate `hydrate()` function.
+- Data loading helpers: `createLoader`, `invalidateLoader`, `serializeLoaderData`, `deserializeLoaderData`, `hydrateLoaderCache`, `isServer`.
+
+## Subpath exports
+
+| Import | Contents |
+| --- | --- |
+| `@_bashell/slash/core` | `html`, `h`, `render`, `destroyNode`, `createState`, `batch`, `ErrorBoundary`, `safeRender`, `catchAsync`, `setupGlobalErrorHandler`, dev-mode helpers |
+| `@_bashell/slash/router` | `createRouter`, `Router`, `Link`, route utilities and types |
+| `@_bashell/slash/forms` | form controls, event helpers and form types |
+| `@_bashell/slash/ssr` | `htmlString`, `renderToString`, `renderToStream`, loader helpers |
+| `@_bashell/slash` | everything above in one bundle |
+
+Prefer the subpaths: they keep your bundle small.
+
+## Templates
+
+- [slash-spa](https://github.com/bashell-rrocha/slash-spa): single-page app with router
+- [slash-ssr](https://github.com/bashell-rrocha/slash-ssr): server-side rendering with hydration
+- [slash-ssg](https://github.com/bashell-rrocha/slash-ssg): static site generation
 
 ## Development
 
-### Install Dependencies
-
 ```bash
 bun install
-```
-
-### Build
-
-```bash
+bun test
 bun run build
 ```
-
-### Run Tests
-
-```bash
-bun test
-```
-
-### Type Checking
-
-```bash
-bun run build:types
-```
-
-## Why Slash?
-
-- **No VDOM overhead** — Direct DOM manipulation is faster
-- **Fine-grained reactivity** — Only update what changed
-- **Simple mental model** — Tagged templates + signals
-- **SSR with zero config** — Automatic hydration detection
-- **Tiny runtime** — Minimal JavaScript shipped to client
-- **Great DX** — TypeScript support, simple API
 
 ## License
 
 MIT
-
----
-
-Created with [Bun](https://bun.sh)
