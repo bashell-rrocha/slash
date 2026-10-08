@@ -201,26 +201,26 @@ describe("renderToString", () => {
 
   test("reseta signal registry entre renderizações", () => {
     // Arrange
-    const sig1 = createState({ value: "first" });
-    const Component1 = () => htmlString`<div>${sig1}</div>`;
+    const sig1 = { get: () => "first", subscribe: () => () => {} };
+    const Component1 = () => htmlString`<div class=${sig1 as never}></div>`;
 
     // Act - primeira renderização
     const result1 = renderToString(Component1);
 
     // Assert - primeira renderização
     expect(Object.keys(result1.state)).toHaveLength(1);
-    expect(result1.state.s0).toEqual({ value: "first" });
+    expect(result1.state.s0).toBe("first");
 
     // Arrange - segunda renderização
-    const sig2 = createState({ value: "second" });
-    const Component2 = () => htmlString`<div>${sig2}</div>`;
+    const sig2 = { get: () => "second", subscribe: () => () => {} };
+    const Component2 = () => htmlString`<div class=${sig2 as never}></div>`;
 
     // Act - segunda renderização
     const result2 = renderToString(Component2);
 
     // Assert - segunda renderização (registry foi resetado)
     expect(Object.keys(result2.state)).toHaveLength(1);
-    expect(result2.state.s0).toEqual({ value: "second" }); // Counter resetou
+    expect(result2.state.s0).toBe("second"); // Counter resetou
   });
 });
 
@@ -538,5 +538,33 @@ describe("Router no SSR", () => {
     await clientRouter.push("/b");
     expect(el.textContent).toContain("page-b");
     el.remove();
+  });
+});
+
+describe("SSR usa a regra de reativo do cliente", () => {
+  test("SSR nao trata State como reativo (igual ao cliente)", () => {
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      const { html, state } = renderToString(() => htmlString`<p>${createState(7) as never}</p>`);
+      expect(html).not.toContain("reactive-start");
+      expect(state).toEqual({});
+    } finally {
+      console.warn = warn;
+    }
+  });
+
+  test("SSR com state.get() renderiza o valor sem marcadores", () => {
+    const count = createState(7);
+    const { html, state } = renderToString(() => htmlString`<p>${count.get()}</p>`);
+    expect(html).toBe("<p>7</p>");
+    expect(state).toEqual({});
+  });
+
+  test("reativo com subscribe continua marcado no SSR", () => {
+    const rx = { get: () => "<b>x</b>", subscribe: () => () => {} };
+    const { html, state } = renderToString(() => htmlString`<p>${rx as never}</p>`);
+    expect(html).toBe("<p><!--reactive-start:s0--><b>x</b><!--reactive-end:s0--></p>");
+    expect(state).toEqual({});
   });
 });

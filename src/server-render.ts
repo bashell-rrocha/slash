@@ -1,6 +1,7 @@
 // src/server-render.ts
 import htm from "htm";
 import type { Child, Props, Reactive } from "./types";
+import { isReactive } from "./utils/guards";
 
 // Flag global para indicar modo SSR
 declare global {
@@ -46,15 +47,6 @@ function escapeHtml(unsafe: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
-}
-
-function isReactive(x: unknown): x is Reactive {
-  return (
-    !!x &&
-    typeof (x as Record<string, unknown>).get === "function" &&
-    (typeof (x as Record<string, unknown>).watch === "function" ||
-     typeof (x as Record<string, unknown>).subscribe === "function")
-  );
 }
 
 function captureSignal(signal: Reactive): string {
@@ -177,24 +169,12 @@ function childToString(child: Child): string {
     return childToString(result as Child);
   }
 
-  // Reativo sem watch (ex.: Router): renderiza como filho comum, sem gravar no estado
-  if (isReactive(child) && typeof (child as { watch?: unknown }).watch !== "function") {
+  // Reativo (mesma regra do cliente: get + subscribe; State não entra):
+  // renderiza como filho comum, sem gravar o valor no estado serializado
+  if (isReactive(child)) {
     const id = `s${signalCounter++}`;
-    // Reserva o id sem serializar o valor (o cliente re-renderiza na hidratação)
     const inner = childToString(child.get() as Child);
     return `<!--reactive-start:${id}-->${inner}<!--reactive-end:${id}-->`;
-  }
-
-  // Signal: capturar e renderizar com marcadores
-  if (isReactive(child)) {
-    const id = captureSignal(child);
-    const value = child.get();
-
-    if (Array.isArray(value)) {
-      return `<!--reactive-start:${id}-->${value.map(childToString).join("")}<!--reactive-end:${id}-->`;
-    }
-
-    return `<!--reactive-start:${id}-->${escapeHtml(String(value ?? ""))}<!--reactive-end:${id}-->`;
   }
 
   // Array - verificar se veio de um state
