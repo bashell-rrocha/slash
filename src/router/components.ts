@@ -50,52 +50,78 @@ export function Router({ router }: { router: RouterInstance }): Reactive<Child> 
   }
 }
 
-// Caminho do app: "/x", "?q" ou "#h". "//host" e "/\\host" são protocol-relative
-// (o navegador as trata como outra origem), então NÃO são caminhos do app.
-// Mesma normalização do navegador: remove C0 (inclui \t \n \r) e espaços nas pontas.
-function isAppPath(to: string): boolean {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: remoção intencional de C0
-  const n = to.replace(/[\u0000-\u001f\u007f]/g, "").trim()
-  return /^(\/(?![/\\])|[?#])/.test(n)
+// Normaliza `to`: remove espaços nas pontas. Retorna null se houver caracteres
+// de controle (\t \n \r \0...), que os navegadores removem silenciosamente e
+// permitiriam disfarçar "//host" como "/\t/host".
+function normalizeTo(to: unknown): string | null {
+  if (typeof to !== "string") return null
+  const t = to.trim()
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: detecção intencional de C0
+  return /[\u0000-\u001f\u007f]/.test(t) ? null : t
 }
+
+// Caminho do app: "/x", "?q" ou "#h". "//host", "/\\host" e "\\host" NÃO são
+// (protocol-relative / outra origem).
+const APP_PATH = /^(?:\/(?![/\\])|[?#])/
+// Destinos externos aceitos com a prop `external`
+const EXTERNAL_URL = /^(?:https?:|mailto:|tel:)/i
 
 /**
  * Link component - navigation link that uses router.push
  *
- * `to` deve ser um caminho do app ("/x", "?q", "#h"). Qualquer outro valor não
- * navega pelo router: o href passa pela política de URLs (javascript: vira
- * about:blank#blocked) e um aviso de dev é emitido. No SSR renderiza <a href>
- * (usa o renderizador de string registrado em globalThis.__SLASH_SSR_H__).
+ * `to` deve ser um caminho do app ("/x", "?q", "#h"). Qualquer outro valor NUNCA
+ * navega: preventDefault, href = about:blank#blocked e aviso de dev.
+ * Exceção explícita: a prop `external` com URL absoluta http(s), mailto ou tel
+ * renderiza um link nativo com rel="noopener noreferrer" (href passa por
+ * sanitizeUrl). As formas "//", "\\" e "/\\" são sempre bloqueadas.
+ * No SSR renderiza <a href> (usa o renderizador de string registrado em
+ * globalThis.__SLASH_SSR_H__).
  */
 export function Link({
   to,
   router,
   children,
+  external,
   ...props
 }: {
   to: string
   router: RouterInstance
   children?: Child
+  /** Permite link nativo para URL absoluta http(s), mailto ou tel */
+  external?: boolean
   [key: string]: any
 }): Node {
-  const target = String(to)
-  const appPath = isAppPath(target)
-  const href = appPath ? target : sanitizeUrl("href", target, "a")
-  if (!appPath) {
-    securityWarn(`Link: "to" deve ser um caminho (/..., ?... ou #...), recebido ${JSON.stringify(target.slice(0, 40))}`)
+  const target = normalizeTo(to)
+  const appPath = target !== null && APP_PATH.test(target)
+  const nativeExternal =
+    !appPath && external === true && target !== null && EXTERNAL_URL.test(target)
+
+  let href: string
+  if (appPath) {
+    href = target as string
+  } else if (nativeExternal) {
+    href = sanitizeUrl("href", target as string, "a")
+  } else {
+    href = BLOCKED_URL
+    if (process.env.NODE_ENV !== "production") {
+      securityWarn(
+        `Link: "to" deve ser um caminho do app (/..., ?... ou #...) ou, com a prop external, uma URL http(s)/mailto/tel; recebido ${JSON.stringify(String(to).slice(0, 40))}`,
+        "link:to",
+      )
+    }
   }
 
   const handleClick = (e: Event) => {
     if (appPath) {
       e.preventDefault()
-      router.push(target).catch((err) => {
+      router.push(target as string).catch((err) => {
         console.error("Navigation error:", err)
       })
     } else if (href === BLOCKED_URL) {
-      // Destino bloqueado: não navega nem para about:blank
+      // Nunca navega (nem para about:blank)
       e.preventDefault()
     }
-    // Demais destinos (https externo): comportamento nativo do navegador
+    // external válido: comportamento nativo do navegador
   }
 
   const g = globalThis as { __SLASH_SSR__?: boolean; __SLASH_SSR_H__?: (...a: unknown[]) => unknown }
@@ -107,6 +133,7 @@ export function Link({
     {
       ...props,
       href,
+      ...(nativeExternal ? { rel: "noopener noreferrer" } : {}),
       onClick: handleClick,
     },
     children
