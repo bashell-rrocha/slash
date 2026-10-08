@@ -661,4 +661,53 @@ describe("navegação inicial e guards", () => {
       console.error = orig
     }
   })
+
+  describe("hashchange em modo hash", () => {
+    const tick = () => new Promise((r) => setTimeout(r, 30))
+    const fireHash = (hash: string) => {
+      ;(window as any).happyDOM.setURL(`http://localhost/${hash}`)
+      window.dispatchEvent(new HashChangeEvent("hashchange"))
+    }
+
+    test("guard roda uma vez na inicial e uma vez por push", async () => {
+      ;(window as any).happyDOM.setURL("http://localhost/#/about")
+      let calls = 0
+      const router = createRouter({ routes, mode: "hash", guards: [() => { calls++ }] })
+      await router.ready
+      await tick()
+      expect(calls).toBe(1)
+
+      await router.push("/sobre")
+      await tick()
+      expect(calls).toBe(2)
+      expect(router.get().currentRoute?.path).toBe("/sobre")
+      expect(router.get().isNavigating).toBe(false)
+    })
+
+    test("voltar para outra rota ainda navega", async () => {
+      ;(window as any).happyDOM.setURL("http://localhost/#/about")
+      let calls = 0
+      const router = createRouter({ routes, mode: "hash", guards: [() => { calls++ }] })
+      await router.ready
+      await router.push("/sobre")
+      await tick()
+
+      fireHash("#/about")
+      await tick()
+      expect(router.get().currentRoute?.path).toBe("/about")
+      expect(calls).toBe(3)
+    })
+
+    test("URL inicial bloqueada: evento para a mesma URL não reexecuta o guard", async () => {
+      ;(window as any).happyDOM.setURL("http://localhost/#/dashboard")
+      let calls = 0
+      const router = createRouter({ routes, mode: "hash", guards: [() => { calls++; return false }] })
+      await router.ready
+      expect(router.get().currentRoute).toBeNull()
+
+      fireHash("#/dashboard")
+      await tick()
+      expect(calls).toBe(1)
+    })
+  })
 })
