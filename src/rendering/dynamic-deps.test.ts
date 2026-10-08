@@ -185,6 +185,52 @@ describe("robustez de re-renderização", () => {
   });
 });
 
+describe("leituras na montagem da saída não inscrevem o pai", () => {
+  beforeEach(() => setHydrateContext(null));
+
+  it("reativo filho que lê state ao montar não inscreve o componente pai", () => {
+    const s = createState(0);
+    let appRuns = 0;
+    const reactive: any = {
+      get: () => html`<p>${s.get()}</p>`,
+      subscribe: (fn: (v: unknown) => void) => s.watch(() => fn(reactive.get())),
+    };
+    const Inner = () => reactive;
+    const App = () => {
+      appRuns++;
+      return html`<div><${Inner}/></div>`;
+    };
+    const el = document.createElement("div");
+    render(html`<${App}/>` as any, el);
+    s.set(1);
+    expect(appRuns).toBe(1);
+    expect(el.textContent).toBe("1");
+  });
+
+  it("state criado dentro da função do reativo não re-executa o pai", () => {
+    let appRuns = 0;
+    let setLocal: (v: string) => void = () => {};
+    const Tasks = () => {
+      const local = createState("all");
+      setLocal = (v) => local.set(v);
+      const reactive: any = {
+        get: () => html`<p>${local.get()}</p>`,
+        subscribe: (fn: (v: unknown) => void) => local.watch(() => fn(reactive.get())),
+      };
+      return reactive;
+    };
+    const App = () => {
+      appRuns++;
+      return html`<div><${Tasks}/></div>`;
+    };
+    const el = document.createElement("div");
+    render(html`<${App}/>` as any, el);
+    setLocal("done");
+    expect(appRuns).toBe(1);
+    expect(el.textContent).toBe("done");
+  });
+});
+
 describe("diffTrackedStates", () => {
   it("separa states novos, removidos e mantidos", () => {
     const a = {} as any, b = {} as any, c = {} as any;
