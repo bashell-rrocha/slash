@@ -159,14 +159,15 @@ describe("pre-processamento de newlines (CSS Syntax) antes de decodificar", () =
     expect(isSafeCssValue(`\\69${ws}mage-set('x' 1x)`)).toBe(false);
     expect(isSafeCssValue(`\\73${ws}rc(x)`)).toBe(false);
   });
-  test("so UM espaco apos o escape e consumido: dois espacos separam os tokens", () => {
-    expect(isSafeCssValue("\\75  rl(blob:x)")).toBe(true); // `u` + espaco + `rl(` nao e url(
-    expect(isSafeCssValue("\\75\r\n\nrl(blob:x)")).toBe(true);
+  test("escape fora de string e sempre rejeitado, mesmo com alvo inofensivo", () => {
+    expect(isSafeCssValue("\\75  rl(blob:x)")).toBe(false);
+    expect(isSafeCssValue("\\75\r\n\nrl(blob:x)")).toBe(false);
+    expect(isSafeCssValue("\\75 rl(x)")).toBe(false);
   });
   test("NUL vira U+FFFD (nao some e nao junta tokens)", () => {
     expect(isSafeCssValue("ur\u0000l(blob:x)")).toBe(true); // `ur\uFFFDl(` nao e a funcao url
     expect(isSafeCssValue("url(blob:x)\u0000")).toBe(false);
-    expect(isSafeCssValue("\\75\u0000rl(blob:x)")).toBe(true); // NUL nao e branco: nao e consumido
+    expect(isSafeCssValue("\\75\u0000rl(blob:x)")).toBe(false); // escape fora de string
   });
 });
 
@@ -208,13 +209,95 @@ describe("fuzz deterministico das formas ofuscadas", () => {
     return [...out];
   };
 
+  // Familia `\/*`: barra invertida antes de `/*` (nao e comentario) e escapes fora de string
+  const escapedComment = (tok: string, rest: string): string[] => {
+    const out: string[] = [];
+    for (const open of ["\\/*", "\\/* ", "\\/**", " \\/*", "red \\/* x */ ", "\\/*/"]) {
+      for (const close of ["*/", " */", ""]) out.push(`${open}${tok}${rest}${close}`, `${open}*/${tok}${rest}`);
+    }
+    out.push(`\\/${tok}${rest}`, `\\${tok}${rest}`, `${tok.slice(0, 1)}\\${tok.slice(1)}${rest}`);
+    return out;
+  };
+
   test("todas as variantes sao bloqueadas (e o conjunto e pequeno)", () => {
     const cases: string[] = [];
-    for (const [tok, rest] of TARGETS) cases.push(...variants(tok, rest));
+    for (const [tok, rest] of TARGETS) cases.push(...variants(tok, rest), ...escapedComment(tok, rest));
     expect(cases.length).toBeGreaterThan(100);
-    expect(cases.length).toBeLessThan(600);
+    expect(cases.length).toBeLessThan(700);
     const leaked = cases.filter((c) => isSafeCssValue(c));
     expect(leaked).toEqual([]);
     for (const c of cases) expect(sanitizeStyleString(`color:red;background:${c}`).value).toBe("color:red");
+  });
+});
+
+describe("escapes: qualquer barra invertida FORA de string invalida a declaracao", () => {
+  test.each([
+    "\\/* url(data:image/svg+xml,<svg/>) */",
+    "\\/*image-set('x' 1x)*/",
+    "\\/* src(x) */",
+    "\\/* expression(1) */",
+    "\\/**/url(blob:x)",
+    "\\/ url(blob:x)",
+    "red \\/* x */ url(blob:x)",
+    "\\75 rl(x)",
+    "\\75rl(/ok.png)",
+    "\\;",
+    "red\\",
+    "a\\\nb",
+    'url(a\\)b)',
+  ])("bloqueia %s", (v) => expect(isSafeCssValue(v)).toBe(false));
+
+  test("barra dentro de comentario fechado e ignorada (o comentario some)", () => {
+    expect(isSafeCssValue("red /* \\ */")).toBe(true);
+  });
+
+  test.each([
+    '"\\2022"',
+    '"\\201C"',
+    '"\\5FAE\\8F6F"',
+    '"a\\"b"',
+    "'a\\'b'",
+    "'\\'/*'",
+    '"\\\n"',
+    "'x' \"\\2022\" 'y'",
+  ])("permite string com escape %s", (v) => expect(isSafeCssValue(v)).toBe(true));
+
+  test("string com escape que decodifica algo perigoso continua bloqueada", () => {
+    expect(isSafeCssValue('"\\6a avascript:x"')).toBe(false);
+    expect(isSafeCssValue('"java\\73 cript:x"')).toBe(false);
+  });
+
+  test("string sem fechar falha fechado", () => {
+    expect(isSafeCssValue('"abc')).toBe(false);
+    expect(isSafeCssValue("'abc\\'")).toBe(false);
+    expect(isSafeCssValue('red "url(javascript:x)')).toBe(false);
+    expect(isSafeCssValue('"a" "')).toBe(false);
+  });
+});
+
+describe("sanitizeStyleString e escapes", () => {
+  test("declaracao com barra fora de string e removida e avisa (rejected)", () => {
+    expect(sanitizeStyleString("color:red;background:\\75 rl(/ok.png)")).toEqual({ value: "color:red", rejected: true });
+    expect(sanitizeStyleString("color:red;b\\65havior:none")).toEqual({ value: "color:red", rejected: true });
+    expect(sanitizeStyleString("color:red;background:\\/* url(blob:x) */")).toEqual({ value: "color:red", rejected: true });
+  });
+  test("strings com escape continuam funcionando", () => {
+    for (const d of ['content:"\\2022"', 'content:"\\201C"', 'font-family:"\\5FAE\\8F6F"', 'content:"a\\"b"', "content:'\\'/*'"]) {
+      expect(sanitizeStyleString(`color:red;${d}`)).toEqual({ value: `color:red; ${d}`, rejected: false });
+    }
+  });
+  test("string sem fechar derruba a declaracao (e as seguintes, como no navegador)", () => {
+    expect(sanitizeStyleString('color:red;content:"abc;background:url(/a.png)')).toEqual({ value: "color:red", rejected: true });
+  });
+});
+
+describe("splitDeclarations e escapes", () => {
+  test("\\; nao separa, \\/* nao abre comentario, \\\" nao abre string", () => {
+    expect(splitDeclarations("a:b\\;c;d:e")).toEqual(["a:b\\;c", "d:e"]);
+    expect(splitDeclarations("a:\\/*;d:e*/")).toEqual(["a:\\/*", "d:e*/"]);
+    expect(splitDeclarations('a:\\";b:c;d:e')).toEqual(['a:\\"', "b:c", "d:e"]);
+  });
+  test("aspas com escape dentro de string nao fecham a string", () => {
+    expect(splitDeclarations("content:'\\'/*;';x:y")).toEqual(["content:'\\'/*;'", "x:y"]);
   });
 });

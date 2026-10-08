@@ -2,9 +2,10 @@
  * css-policy.ts - Política de valores CSS de `style` (compartilhada por cliente e SSR)
  *
  * Funções puras. Uma declaração é aceita quando o nome é um identificador CSS válido e o valor
- * passa na checagem abaixo. O valor é avaliado DEPOIS de remover comentários e decodificar os
- * escapes CSS (`\75rl(` = `url(`); se for aceito, emite-se o original (`content:"\2022"` fica).
- * Rejeita: `; { } <` fora de strings e de url(); `expression(`, `javascript:`, `vbscript:`,
+ * passa na checagem abaixo. Qualquer barra invertida FORA de string invalida a declaração (não se
+ * emula o tokenizador de escapes: `\75rl(`, `\/*` etc. são descartados); dentro de strings os escapes
+ * são decodificados antes de checar e o original é emitido (`content:"\2022"` fica). String sem
+ * fechar falha fechado. Rejeita: `; { } <` fora de strings e de url(); `expression(`, `javascript:`, `vbscript:`,
  * `behavior:`, `-moz-binding`, `@import`; funções que carregam URL fora de url()
  * (`image-set`, `image`, `cross-fade`, `element`, `paint`, `src`). Cada `url()` segue a mesma
  * lista dos atributos de URL (relativa, http(s), data:image raster; svg+xml é bloqueado).
@@ -40,40 +41,45 @@ const CSS_FORBIDDEN_VALUE = /expression\s*\(|javascript:|vbscript:|behaviou?r\s*
 // rejeitadas por inteiro, inclusive as strings dentro delas
 const CSS_URL_FUNCTIONS = /(?:image-set|image|cross-fade|element|paint)\s*\(|(?:^|[^a-z0-9_-])src\s*\(/i;
 
-const CSS_STRING = /"(?:[^"\\]|\\[\s\S])*"|'(?:[^'\\]|\\[\s\S])*'/g;
 const CSS_UNQUOTED_URL = /url\(\s*[^)"']*\)/gi;
-// Depois do pre-processamento (abaixo) o branco que um escape hex consome é espaço, tab ou \n
+// Escapes só são decodificados DENTRO de strings (fora delas qualquer barra invertida invalida
+// a declaração). Um escape hex consome um branco (espaço, tab ou \n após o pré-processamento).
 const CSS_ESCAPE = /\\(?:([0-9a-f]{1,6})[ \t\n]?|([\s\S]))/gi;
 
 // Pre-processamento de entrada do CSS Syntax: \r\n, \r e \f viram \n e NUL vira U+FFFD.
-// Sem isto `\75\r\nrl(` seria lido aqui como `u` + \n + `rl(` e pelo navegador como `url(`.
 function preprocess(css: string): string {
   return css.replace(/\r\n?|\f/g, "\n").replace(/\0/g, "\ufffd");
 }
 
-// Remove /* comentários */ (inclusive sem fechar) sem mexer dentro de strings
-function stripComments(css: string): string {
-  let out = "";
-  let quote = "";
+// Uma passada: remove /* comentários */ (só fora de strings; sem fechar vai até o fim, como no
+// navegador) e separa o que é string. Devolve null (falha fechado) se houver barra invertida fora
+// de string ou string sem fechar. `flat` mantém as strings; `masked` as troca por "".
+function scanValue(css: string): { flat: string; masked: string } | null {
+  let flat = "";
+  let masked = "";
   for (let i = 0; i < css.length; i++) {
     const c = css[i] as string;
-    if (quote) {
-      out += c;
-      if (c === "\\" && i + 1 < css.length) out += css[++i];
-      else if (c === quote) quote = "";
-    } else if (c === "/" && css[i + 1] === "*") {
+    if (c === "\\") return null;
+    if (c === "/" && css[i + 1] === "*") {
       const end = css.indexOf("*/", i + 2);
       if (end < 0) break;
       i = end + 1;
+    } else if (c === '"' || c === "'") {
+      let j = i + 1;
+      while (j < css.length && css[j] !== c) j += css[j] === "\\" ? 2 : 1;
+      if (j >= css.length) return null;
+      flat += css.slice(i, j + 1);
+      masked += '""';
+      i = j;
     } else {
-      if (c === '"' || c === "'") quote = c;
-      out += c;
+      flat += c;
+      masked += c;
     }
   }
-  return out;
+  return { flat, masked };
 }
 
-// Decodifica escapes CSS (\75 -> u; \<newline> some; \x -> x)
+// Decodifica escapes CSS de strings (\75 -> u; \<newline> some; \x -> x)
 function decodeEscapes(css: string): string {
   return css.replace(CSS_ESCAPE, (_m, hex?: string, ch?: string) => {
     if (hex) {
@@ -85,10 +91,11 @@ function decodeEscapes(css: string): string {
 }
 
 export function isSafeCssValue(value: string): boolean {
-  const stripped = stripComments(preprocess(value));
+  const scanned = scanValue(preprocess(value));
+  if (!scanned) return false;
   // `;` `{` `}` `<` só são aceitos dentro de strings e de url()
-  if (/[;{}<]/.test(stripped.replace(CSS_STRING, '""').replace(CSS_UNQUOTED_URL, "url()"))) return false;
-  const decoded = decodeEscapes(stripped);
+  if (/[;{}<]/.test(scanned.masked.replace(CSS_UNQUOTED_URL, "url()"))) return false;
+  const decoded = decodeEscapes(scanned.flat);
   if (CSS_FORBIDDEN_VALUE.test(decoded) || CSS_URL_FUNCTIONS.test(decoded)) return false;
   const opened = decoded.match(/url\(/gi)?.length ?? 0;
   if (opened === 0) return true;
@@ -106,7 +113,12 @@ export function isSafeCssDeclaration(name: string, value: string): boolean {
   return CSS_PROP_NAME.test(name) && !isForbiddenCssName(name) && value !== "" && isSafeCssValue(value);
 }
 
-/** Divide `a:b; c:d` em declarações; `;` dentro de aspas, parênteses ou comentários não separa */
+/**
+ * Divide `a:b; c:d` em declarações. Consciente de aspas e de escapes: `;` dentro de string, de
+ * parênteses ou de comentário não separa, e uma barra invertida fora de string escapa o próximo
+ * caractere (`\;` não separa, `\/*` não abre comentário, `\"` não abre string). Declarações com
+ * barra fora de string são rejeitadas depois por isSafeCssValue/isSafeCssDeclaration.
+ */
 export function splitDeclarations(style: string): string[] {
   const out: string[] = [];
   let start = 0;
@@ -114,9 +126,10 @@ export function splitDeclarations(style: string): string[] {
   let depth = 0;
   for (let i = 0; i < style.length; i++) {
     const c = style[i] as string;
-    if (quote) {
-      if (c === "\\") i++;
-      else if (c === quote) quote = "";
+    if (c === "\\") {
+      i++;
+    } else if (quote) {
+      if (c === quote) quote = "";
     } else if (c === "/" && style[i + 1] === "*") {
       const end = style.indexOf("*/", i + 2);
       if (end < 0) break;

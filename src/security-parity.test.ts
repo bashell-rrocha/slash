@@ -291,6 +291,32 @@ describe("paridade: style", () => {
       }
     });
   }
+  test("barra invertida fora de string: declaracao descartada nos dois lados (string e objeto)", () => {
+    for (const v of ["\\/* url(data:image/svg+xml,<svg/>) */", "\\/*image-set('x' 1x)*/", "\\/* src(x) */", "\\/ expression(1)", "\\75 rl(/ok.png)"]) {
+      both("div", { style: `color:red;background:${v}` }, "style", "color:red");
+      for (const out of [
+        clientAttr("div", { style: { color: "red", background: v } }, "style"),
+        ssrAttr("div", { style: { color: "red", background: v } }, "style"),
+      ]) {
+        expect(out ?? "").toContain("red");
+        expect(out ?? "").not.toMatch(/url|image-set|src|expression|svg|\\/i);
+      }
+    }
+    // nome de propriedade com escape
+    both("div", { style: "color:red;b\\65havior:none" }, "style", "color:red");
+    for (const out of [
+      clientAttr("div", { style: { color: "red", "b\\65havior": "none" } }, "style"),
+      ssrAttr("div", { style: { color: "red", "b\\65havior": "none" } }, "style"),
+    ]) expect(out ?? "").not.toMatch(/havior|\\/);
+  });
+  test("escapes DENTRO de string continuam funcionando nos dois lados", () => {
+    for (const d of ['content:"\\2022"', 'content:"\\201C"', 'font-family:"\\5FAE\\8F6F"', 'content:"a\\"b"', "content:'\\'/*'"]) {
+      both("div", { style: `color:red;${d}` }, "style", `color:red; ${d}`);
+    }
+  });
+  test("string sem fechar falha fechado nos dois lados", () => {
+    both("div", { style: 'color:red;content:"abc' }, "style", "color:red");
+  });
   test("-moz-binding e behavior como NOME de propriedade (string e objeto, cliente e SSR)", () => {
     for (const name of ["-moz-binding", "behavior", "behaviour", "-MOZ-BINDING", "Behavior"]) {
       both("div", { style: `color:red;${name}:url(/x.xml)` }, "style", "color:red");
