@@ -228,6 +228,7 @@ const Profile = () => html`
 - Um componente que leu só `name` não re-renderiza quando `age` muda
 - As dependências são recalculadas a cada renderização: um state lido só em certos ramos (`if`) passa a ser acompanhado quando é lido e deixa de ser quando não é mais
 - Um componente que não lê nenhum state na primeira renderização é estático e não se inscreve depois
+- Se uma re-renderização não lê nenhum state, o componente também fica estático: ele perde todas as dependências e só volta a reagir se for remontado
 
 **Implementação:** [src/rendering/element-core.ts](../../src/rendering/element-core.ts:1)
 
