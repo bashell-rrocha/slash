@@ -4,6 +4,7 @@ import { createState } from "./state";
 import { Router } from "./router/components";
 import { createRouter } from "./router/router";
 import { render } from "./rendering/render";
+import { unsafeHtml } from "./safe-html";
 
 describe("renderToString", () => {
   test("renderiza componente simples para HTML string", () => {
@@ -68,9 +69,9 @@ describe("renderToString", () => {
     const { html } = renderToString(Component);
 
     // Assert
-    // Note: htmlString não escapa automaticamente, é responsabilidade do desenvolvedor
-    // Este teste documenta o comportamento atual
-    expect(html).toContain(malicious);
+    // Strings são sempre texto: markup só via htmlString/unsafeHtml (SafeHtml)
+    expect(html).toBe("<div>&lt;script&gt;alert(&#039;xss&#039;)&lt;/script&gt;</div>");
+    expect(html).not.toContain("<script>");
   });
 
   test("renderiza void elements sem tag de fechamento", () => {
@@ -560,10 +561,14 @@ describe("SSR usa a regra de reativo do cliente", () => {
     expect(state).toEqual({});
   });
 
-  test("reativo com subscribe continua marcado no SSR", () => {
+  test("reativo com subscribe continua marcado no SSR (string e texto; SafeHtml e markup)", () => {
     const rx = { get: () => "<b>x</b>", subscribe: () => () => {} };
     const { html, state } = renderToString(() => htmlString`<p>${rx as never}</p>`);
-    expect(html).toBe("<p><!--reactive-start:s0--><b>x</b><!--reactive-end:s0--></p>");
+    expect(html).toBe("<p><!--reactive-start:s0-->&lt;b&gt;x&lt;/b&gt;<!--reactive-end:s0--></p>");
+    const rxHtml = { get: () => htmlString`<b>x</b>`, subscribe: () => () => {} };
+    expect(renderToString(() => htmlString`<p>${rxHtml as never}</p>`).html).toBe(
+      "<p><!--reactive-start:s0--><b>x</b><!--reactive-end:s0--></p>",
+    );
     expect(state).toEqual({});
   });
 });
@@ -630,9 +635,10 @@ describe("regra de confianca e State em atributo no SSR", () => {
     expect(html).toBe("<p>a &amp; b &lt;c</p>");
   });
 
-  test("state.get() que comeca com < e tratado como HTML pronto (regra de confianca)", () => {
+  test("state.get() que comeca com < e texto (sem regra de confianca); unsafeHtml e a saida", () => {
     const s = createState("<b>x</b>");
     const { html } = renderToString(() => htmlString`<p>${s.get()}</p>`);
-    expect(html).toBe("<p><b>x</b></p>");
+    expect(html).toBe("<p>&lt;b&gt;x&lt;/b&gt;</p>");
+    expect(renderToString(() => htmlString`<p>${unsafeHtml(s.get())}</p>`).html).toBe("<p><b>x</b></p>");
   });
 });
