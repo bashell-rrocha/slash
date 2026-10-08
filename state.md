@@ -590,6 +590,8 @@ bun run dev
 
 ### Etapa 6: Validar SSR em slash-ssr
 
+> **Planejamento desatualizado:** o snippet abaixo não usa a API real (`counter.count` não existe e `renderToString` devolve `{ html, state }`; use `htmlString` e `counter.get().count`). Veja o README para o fluxo atual de SSR.
+
 **Status:** ⬜ Não iniciado
 
 **Tarefas:**

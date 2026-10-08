@@ -39,10 +39,10 @@ Tudo abaixo vale no cliente e no SSR, sem configuração. Referência completa: 
 - **`State` não é reativo no SSR.** `${state}` não se atualiza; interpole `state.get()`.
 - **`router.ready` é obrigatório no tipo `RouterInstance`.** Mocks escritos à mão precisam de `ready: Promise.resolve()`.
 - **`router.push` para a URL atual não reconstrói a página**, e `Router` só atualiza quando o caminho, os params ou a query mudam.
-- **Internos removidos:** `__addBatchEndCallback`, `__removeBatchEndCallback` e `__recordBatchUpdate`.
+- **Internos removidos:** `__addBatchEndCallback`, `__removeBatchEndCallback` e `__recordBatchUpdate`. Migre: use `batch()` para agrupar e `state.watch()` para observar.
 - **Query e `formToObject()` sem protótipo** (`Object.create(null)`). Migre: `Object.hasOwn(obj, "campo")` no lugar de `obj.hasOwnProperty(...)`.
-- **Strings de `style` são sanitizadas no cliente** (antes eram aplicadas como vieram); declarações inseguras são removidas.
-- **`unsafeUrl()` só vale em atributos de URL**, e `SafeHtml`/`SafeUrl` guardados em estado reativo perdem a marca ao serializar para hidratação (falham fechado: viram texto ou a URL é sanitizada). Reembrulhe no cliente se precisar.
+- **Strings de `style` são sanitizadas no cliente** (antes eram aplicadas como vieram); declarações inseguras são removidas. Migre: mantenha só valores CSS seguros; para uma URL fora da política (em `url()` ou no `content` de um `meta refresh`), use `unsafeUrl()` no atributo ou no `content`, não dentro da string de `style`.
+- **`unsafeUrl()` só vale em atributos de URL e no `content` de `<meta http-equiv="refresh">`**, e `SafeHtml`/`SafeUrl` guardados em estado reativo perdem a marca ao serializar para hidratação (falham fechado: viram texto ou a URL é sanitizada). Reembrulhe no cliente se precisar.
 
 ### Fixed
 
@@ -70,7 +70,7 @@ Tudo abaixo vale no cliente e no SSR, sem configuração. Referência completa: 
 
 ### Tamanho do bundle
 
-Bundle de produção do core (app com `createState`, `html` e `render`, minificado): **7,16 KB gzip / 6,32 KB brotli**, contra 5,02 KB / 4,39 KB antes do ciclo de segurança. O aumento é a camada de segurança (`SafeHtml`/`SafeUrl`, política de URLs e de CSS, validação de atributos, tratamento de `srcdoc` e `meta refresh`); as mensagens de aviso de dev são removidas do build de produção. Limites do teste de tamanho: 7,5 KB gzip / 6,6 KB brotli.
+Bundle de produção do core (app com `createState`, `html` e `render`, minificado): **7,86 KB gzip / 6,98 KB brotli**, contra 5,02 KB / 4,39 KB antes do ciclo de segurança. O aumento é o custo da camada de segurança: política de URLs, política de CSS com decodificação de escapes, `SafeHtml`/`SafeUrl` e tratamento de `meta refresh` (além da validação de atributos e do `srcdoc`); as mensagens de aviso de dev são removidas do build de produção. Limites do teste de tamanho: 8,2 KB gzip / 7,25 KB brotli.
 
 ## [0.0.2] — 2026-10-08
 

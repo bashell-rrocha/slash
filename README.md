@@ -105,7 +105,7 @@ Slash is secure by default. You write templates the normal way and the library d
 - **Event handlers must be functions.** Any prop starting with `on` (any case) is an event, and only a function, a handler object or a `[fn, options]` tuple is attached. Anything else (`onclick="alert(1)"`, booleans, objects) is dropped with a dev warning, on the client and on the server. A plain attribute that starts with "on" must use a `data-` prefix.
 - **`Link` only navigates to app paths** (`/x`, `?q`, `#h`). Anything else is blocked unless you opt in with `external`.
 - **State and loader data go into `<script>` safely** (`serializeStateForScript`, `serializeLoaderData`), so a value like `</script>` cannot break out.
-- `innerHTML`, `outerHTML` and `srcdoc` props are blocked, `style` is checked against a CSS policy, and the URL in `<meta http-equiv="refresh" content="N;url=...">` follows the same URL rules (other meta content is untouched).
+- `innerHTML`, `outerHTML`, `insertAdjacentHTML` and `srcdoc` props are blocked on the client (on the server they are emitted as inert, escaped attributes), `style` is checked against a CSS policy, and the URL in `<meta http-equiv="refresh" content="N;url=...">` follows the same URL rules (other meta content is untouched).
 
 ```typescript
 import { html } from "@_bashell/slash/core";
@@ -133,19 +133,18 @@ html`<a href=${unsafeUrl("myapp://open/42")}>Open in app</a>`;
 ```
 
 - `unsafeHtml(html)` returns a `SafeHtml`: the string is emitted as markup, as is. It works in `html` (client) and `htmlString` (server). `isSafeHtml(x)` tells them apart.
-- `unsafeUrl(url)` returns a `SafeUrl` that skips the URL policy for that one attribute.
+- `unsafeUrl(url)` returns a `SafeUrl` that skips the URL policy for that one value. It only has effect on URL attributes and on the `content` of `<meta http-equiv="refresh">`.
 - **Neither sanitizes anything.** The name is a warning: they tell Slash "I vouch for this value". Never pass user input through them, not even "cleaned" with a regex. If the content comes from users (comments, Markdown, CMS), run it through a real sanitizer first, then wrap the result.
 - `htmlString` templates produce `SafeHtml` already, so nested templates and components compose without any wrapper.
 
 Things to know:
 
 - **Strings that look like markup are text.** A component that returns `"<div>hi</div>"` renders the literal characters (dev mode logs a hint). Return an `html`/`htmlString` template, or `unsafeHtml(...)` if the string is trusted.
-- **Literal `<` inside a static `<script>` or `<style>` in `htmlString`** (for example `if (a < b)`) is parsed by htm as a tag. Put that code in `unsafeHtml(...)`. Dynamic strings inside `<script>`/`<style>` are always escaped; for JSON use `unsafeHtml(serializeStateForScript(data))`.
-- **`unsafeUrl()` only works on URL attributes**, and a `SafeHtml`/`SafeUrl` stored in reactive state loses its brand when serialized for hydration: it then fails closed (the markup becomes text, the URL is sanitized). Re-wrap it on the client if needed.
 - **Client-side guards (router guards, hidden buttons) are UX, not security.** The server must authorize every request.
+- Dynamic strings inside `<script>`/`<style>` are escaped; for JSON use `unsafeHtml(serializeStateForScript(data))`.
 - Dev-mode warnings explain each block and are stripped from production builds.
 
-Full reference, URL policy, `Link`, `style`, and the small differences between client and server rendering: [docs/06-security](./docs/19-security/README.md).
+Full reference, URL policy, `Link`, `style`, and the small differences between client and server rendering: [docs/19-security](./docs/19-security/README.md) (also: literal `<` in a static `<script>`, `SafeHtml` in reactive state).
 
 ## State
 
@@ -276,7 +275,7 @@ await router.push("/users/7");
 
 The router is itself a state (`router.get()`, `router.watch()`) holding `currentRoute`, `params`, `query`, `meta` and `isNavigating`. It also exposes `push`, `replace`, `back`, `forward` and `go`. Guards (global or per route) return `false` to block or a path string to redirect. For SSR, pass `initialPath`. `await router.ready` resolves when the initial navigation (including guards) is done. Client-side guards are UX only: the server must always authorize access.
 
-`Link` only navigates to app paths (`/x`, `?q`, `#h`). Relative forms such as `./x`, `../x` or `about` and dangerous schemes are blocked (`href="about:blank#blocked"`, no navigation, dev warning). For a real external link opt in explicitly: `<${Link} to="https://example.com" external>Docs<//>` renders a native link with `rel="noopener noreferrer"`. `state.query` has no prototype (use `Object.hasOwn`). See [ROUTER.md](./ROUTER.md).
+`Link` only navigates to app paths (`/x`, `?q`, `#h`). Relative forms such as `./x`, `../x` or `about` and dangerous schemes are blocked (`href="about:blank#blocked"`, no navigation, dev warning). For a real external link opt in explicitly: `<${Link} to="https://example.com" external router=${router}>Docs<//>` renders a native link with `rel="noopener noreferrer"`. `state.query` has no prototype (use `Object.hasOwn`). See [ROUTER.md](./ROUTER.md).
 
 ## Forms
 
@@ -317,7 +316,7 @@ Available helpers: `textFieldControl`, `checkboxControl`, `radioControl`, `Selec
 | `@_bashell/slash/core` | `html`, `h`, `render`, `destroyNode`, `createState`, `batch`, `ErrorBoundary`, `safeRender`, `catchAsync`, `setupGlobalErrorHandler`, `unsafeHtml`, `isSafeHtml`, `unsafeUrl`, `isSafeUrl` (types `SafeHtml`, `SafeUrl`), dev-mode helpers |
 | `@_bashell/slash/router` | `createRouter`, `Router`, `Link`, route utilities and types |
 | `@_bashell/slash/forms` | form controls, event helpers and form types |
-| `@_bashell/slash/ssr` | `htmlString`, `renderToString`, `renderToStream`, `serializeStateForScript`, `unsafeHtml`, `isSafeHtml`, `unsafeUrl`, loader helpers |
+| `@_bashell/slash/ssr` | `htmlString`, `renderToString`, `renderToStream`, `serializeStateForScript`, `unsafeHtml`, `isSafeHtml`, `unsafeUrl`, `isSafeUrl`, loader helpers |
 | `@_bashell/slash` | everything above in one bundle |
 
 Prefer the subpaths: they keep your bundle small.

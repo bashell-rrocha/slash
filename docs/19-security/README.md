@@ -54,7 +54,7 @@ html`<img src=${"data:image/png;base64,iVBOR..."} />`; // permitido
 
 `<meta http-equiv="refresh" content="N;url=...">` segue a mesma regra: a URL do `content` é verificada como um `href`. Só esse caso é tratado; o `content` de qualquer outro `<meta>` não é tocado.
 
-`unsafeUrl()` só vale em atributos de URL; em qualquer outro atributo o valor é tratado como uma string comum.
+`unsafeUrl()` só vale em atributos de URL e no `content` de `<meta http-equiv="refresh">`; em qualquer outro atributo o valor é tratado como uma string comum.
 
 ## Eventos
 
@@ -62,7 +62,7 @@ Uma regra única, no cliente e no SSR: toda prop cujo nome começa com `on` (qua
 
 ## `innerHTML`, `outerHTML`, `srcdoc`
 
-As props `innerHTML`, `outerHTML` e `insertAdjacentHTML` são bloqueadas (aviso em dev). Para inserir marcação confiável use `unsafeHtml` como **filho**:
+No cliente, as props `innerHTML`, `outerHTML` e `insertAdjacentHTML` são bloqueadas (aviso em dev); no SSR elas saem como atributos inertes com o valor escapado (veja "Diferenças aceitas"). Para inserir marcação confiável use `unsafeHtml` como **filho**:
 
 ```typescript
 html`<div>${unsafeHtml(htmlConfiavel)}</div>`;
@@ -82,7 +82,8 @@ Nomes de atributo inválidos (por exemplo com espaço ou `>`) são descartados, 
 `style` aceita string ou objeto, e cada declaração passa por uma política de CSS no cliente e no servidor. Comentários e escapes CSS são decodificados antes da verificação.
 
 - o nome precisa ser um identificador CSS válido (propriedades `--custom` são mantidas como estão);
-- o valor não pode conter `;`, `{`, `}`, `<`, `expression(`, `javascript:`, `vbscript:`, `behavior:`, `-moz-binding` nem `@import`;
+- o nome não pode ser `-moz-binding`, `behavior` nem `behaviour` (`scroll-behavior` é permitido);
+- o valor não pode conter `;` (fora de strings e de `url()`), `{`, `}`, `<`, `expression(`, `javascript:`, `vbscript:`, `behavior:`, `-moz-binding` nem `@import`;
 - `url()` segue a mesma lista de permissão de `href`/`src`: caminhos relativos e `http(s)` passam, assim como `data:image/png|jpeg|gif|webp|avif`; `data:image/svg+xml`, `javascript:` e semelhantes são bloqueados;
 - `image()`, `image-set()`, `cross-fade()`, `element()`, `paint()`, `src()` e `expression()` são fiscalizadas.
 
@@ -125,6 +126,10 @@ Strings dinâmicas dentro de `<script>`/`<style>` são sempre escapadas (com avi
 
 `formToObject()` e `state.query` do roteador devolvem objetos sem protótipo (`Object.create(null)`): nomes como `__proto__` ou `constructor` viram chaves comuns e não afetam nada. Em troca, `obj.hasOwnProperty(...)` não existe; use `Object.hasOwn(obj, "campo")` ou `"campo" in obj`. `parseQuery` não lança com percent-encoding malformado (mantém o texto cru), e o clone interno de estado não deixa `__proto__` alterar protótipos.
 
+## Limitação do htm em `<script>` estático
+
+Um `<` literal dentro de um `<script>` ou `<style>` estático de um `htmlString` (`if (a < b)`) é lido pelo htm como início de tag. Coloque esse código em `unsafeHtml(...)`.
+
 ## Guards do cliente são UX
 
 Guards do roteador, botões escondidos e rotas "protegidas" no navegador melhoram a experiência, mas quem usa o DevTools passa por cima. **O servidor autoriza cada requisição.** No SSR os guards não rodam.
@@ -133,7 +138,7 @@ Guards do roteador, botões escondidos e rotas "protegidas" no navegador melhora
 
 O Slash testa as mesmas entradas nos dois lados e o resultado é igual, com estas exceções conhecidas:
 
-1. `innerHTML=...`: o cliente bloqueia a prop; o SSR emite um atributo comum com o valor escapado (inerte, nunca vira marcação).
+1. `innerHTML=...`, `outerHTML=...` e `insertAdjacentHTML=...`: o cliente bloqueia a prop; o SSR emite um atributo comum com o valor escapado (inerte, nunca vira marcação).
 2. Props `__proto__` e `constructor`: o cliente descarta; o SSR emite um atributo inofensivo.
 3. `style` em objeto: o cliente serializa pelo CSSOM (formatação diferente), com a mesma política de valores.
 4. Atributos `data-reactive-*` são reservados e removidos só no SSR (marcadores de hidratação).
