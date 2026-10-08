@@ -10,6 +10,67 @@
 
 **Spec:** não há spec separado. As causas raiz e as evidências estão na seção "Causas raiz" abaixo, que é a autoridade deste plano.
 
+## ⚠️ Estado da execução (handoff de 2026-10-08) — leia primeiro
+
+Execução com subagent-driven-development, todos os agentes **Sonnet**: os agentes `developer`, `qa` e `tech-lead` ficam em `~/.claude/agents/`, e o coordenador integra. O ledger detalhado está em `.superpowers/sdd/2026-10-08-core-bugfixes/progress.md`, ignorado pelo git, junto com os briefs, os relatórios `task-N-report.md` e os pacotes de revisão. Os agentes **não** fazem push nem merge.
+
+**Concluído e aprovado pelo QA:**
+- Core, branch `feature/core-bugfixes`, partindo de `169cfba` (16 commits, último `5ae8631`):
+  - Task 1 (reativos dentro de componentes; `element.ts` passou a usar o marcador `component:end`);
+  - Tasks 2, 2b e 3 (Router no SSR, regra única de reativo, `serializeStateForScript`);
+  - Task 4 (`batch` reescrito).
+  - Suíte: 785 pass, tsc limpo.
+
+**Feito, mas ainda sem QA (Task 5):**
+- `slash-spa`, branch `feature/router-navigation-e2e`, commit `7cf2e6e`: E2E de navegação. Ele falha sem a Task 1 e passa com ela. O agente também:
+  - adicionou `testMatch: '**/*.e2e.ts'` (antes nenhum E2E rodava);
+  - trocou o `webServer` do Playwright para `bun run dev`, porque `bun run start` serve página em branco: `dist/index.html` pede `/client.js`, mas o build gera nomes com hash;
+  - pôs `conditions: ["bun"]` no build de dev;
+  - deixou `reuseExistingServer: false`.
+- `slash-ssr`, branch `feature/safe-state-serialization`, commit `17d4f9e`: `serializeStateForScript`, com o script de estado extraído para `src/state-script.ts` e `replace` com função. Também recebeu `conditions: ["bun"]` e `reuseExistingServer: false`. 14 pass. O template **não tem E2E**.
+
+**Pendências, em ordem:**
+1. **BLOQUEANTE: o `dist/` do core sai quebrado em runtime nesta branch.** O build "passa", mas `node -e "import('./dist/index.mjs')"` falha com `Export 'T' is not defined in module` (o nome varia: `T`, `B`). O chunk compartilhado exporta um identificador que não declara.
+   - **Bisect feito:**
+     - `develop` ok;
+     - `00cc495` ok;
+     - `e4a5929` ok;
+     - **`ece2689` quebra**: `fix(ssr): use the client reactive guard`. Ali o `src/server-render.ts` passou a importar `isReactive` de `src/utils/guards.ts`, compartilhado com o bundle do cliente.
+   - **Hipótese:** bug do Bun 1.3.6 com `splitting: true` combinado com `minify.identifiers` e/ou `drop: ['console','debugger']` (`scripts/build.ts:32-45`).
+   - **Próximo passo** (seguir o skill `systematic-debugging`): testar variantes do build isoladas, uma de cada vez:
+     - `identifiers: false`;
+     - `drop: []`;
+     - `syntax: false`.
+
+     Depois de achar o gatilho, escolher a correção (ajustar o build, ou evitar o import compartilhado) e **adicionar um teste ou script que importe todos os entrypoints do `dist/`**: o `bundle-size.test.ts` e o CI só checam tamanho e build. Coloque essa verificação também no workflow `publish.yml`, antes de publicar.
+   - Revalidar com o `slash-spa` e o `slash-ssr` **sem** o `conditions: ["bun"]`, se ele tiver sido só contorno.
+2. **QA da Task 5**, avaliando os riscos:
+   - a troca para `bun run dev` esconde o bug do `bun run start` (que **deve ser corrigido**, não contornado);
+   - os **4 E2E antigos que falham** em `slash-spa/tests/e2e/task-manager.e2e.ts` (nunca rodavam) devem ser corrigidos, porque o usuário exige tudo resolvido;
+   - o `conditions: ["bun"]` deve ser revisto depois do item 1.
+3. **Task 6:** site de docs (`packages/doc`). Incluir também `src/content/docs/fundamentos/batch.md`, que cita internos removidos (`__addBatchEndCallback`, `__removeBatchEndCallback`, `__recordBatchUpdate`).
+4. **Pendência menor:** no `README.md` e no `ROUTER.md`, a frase da regra de confiança deve citar explicitamente o caso `${state.get()}`.
+5. **Revisão final:** tech-lead (Sonnet) sobre a branch inteira, de `169cfba` até `HEAD`, com os pendentes do ledger.
+6. **Task 7:** integração, simulação do CI num clone limpo **incluindo o import do `dist/`**, `release/0.0.3` e push. A publicação sai pelo GitHub Actions e precisa da aprovação do usuário em npm → Staged Packages.
+
+**Decisões já tomadas (rulings), detalhes no ledger:**
+- **R1:** no SSR, reatividade = guard do cliente (`get` + `subscribe`); `State` nunca é reativo; o valor do reativo passa por `childToString` e não é serializado.
+- **R2:** o teste do Review Focus 2 foi reformulado.
+- **R3:** guard de marcadores separados, aceito como está.
+- **R4:** o `server.ts` do `slash-ssr` fica com a Task 5.
+- **R5:** a regra de confiança do SSR (string que começa com `<` é HTML cru, inclusive `state.get()` fora do `renderToString`) é uma **armadilha de XSS de projeto, anterior a este plano**. Precisa de decisão do usuário: por exemplo, `htmlString` devolver um tipo marcado como HTML seguro. Não corrigir sem aprovação.
+
+**Pendências do usuário, fora deste plano:**
+- aprovar a **0.0.2** do core em Staged Packages (publicada pelo CI em 2026-10-08);
+- apontar o DNS de `slash.bashell.com.br`;
+- hidratação real (o `render` limpa e re-renderiza; `hHydrate` não está ligado).
+
+**Ambiente:**
+- antes de qualquer push, `export SSH_AUTH_SOCK=/run/user/1000/ssh-agent.socket` (depois de reboot, o usuário precisa rodar `ssh-add ~/.ssh/id_ed25519`);
+- portas 3000/4000 livres no momento;
+- autor dos commits configurado em cada repositório; mensagens terminam com `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`;
+- o script de git flow usado nas releases está no scratchpad desta sessão e se perde. Faça o git flow manualmente: `release/x.y.z` a partir da `develop`, bump no `package.json`/`jsr.json`, entrada no CHANGELOG, merge `--no-ff` na `main`, tag `vx.y.z` anotada, merge `--no-ff` de volta na `develop`.
+
 ## Causas raiz (confirmadas por reprodução)
 
 1. **Reativo devolvido por componente quebra na atualização.** `appendReactiveChild` (`src/rendering/children.ts:6-38`) guarda o `parent` recebido no momento da montagem (um `DocumentFragment` temporário criado em `src/rendering/element.ts:69-73`) e usa esse valor em `removeChild`/`insertBefore`. Depois, `element.ts:77-83` e `:98-111` movem os nós para o pai real. Na primeira atualização, `parent` já está obsoleto e o DOM lança `removeChild ... not a child`. Afeta `<${Router} router=${r}/>` (padrão usado em `slash-spa/src/client.ts`) e qualquer `{get, subscribe}` devolvido por componente. A exceção é lançada dentro de `state.set` do router e aborta `navigate()` antes do `history.pushState`, então a URL não muda.
