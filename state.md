@@ -1,5 +1,15 @@
 # Plano de Migração: Signals → State (IARES-inspired)
 
+> **Documento histórico.** Este é o plano original da migração de signals para `createState`. A migração foi concluída (não existe mais `createSignal`/`signals.ts`), mas a API final é menor do que a descrita abaixo. Para a API atual, veja [docs/04-state](./docs/04-state/README.md) e [docs/05-batch](./docs/05-batch/README.md).
+>
+> A API real de `createState` (`@_bashell/slash/core`) é:
+>
+> - `get()`, `set(value)` e `watch(callback)`, mais `getHistory()`/`clearHistory()` quando criado com `{ enableHistory: true }`;
+> - `set` recebe sempre o valor completo (não existe `set(prev => ...)`);
+> - não existe acesso direto por propriedade (`counter.count`) nem `createDerived`; nos templates leia o valor com `counter.get().count` dentro de um componente (`<${Component} />`), que re-renderiza quando o state muda;
+> - `batch()` existe e agrupa notificações; watchers só disparam quando o novo valor é diferente (deep equal);
+> - itens como "Sempre notifica todos" e as etapas em aberto no checklist refletem o plano, não o código atual.
+
 ## Referências
 
 Este plano é baseado no padrão IARES (Immutable Automatic Reactive State):
@@ -536,7 +546,7 @@ bun run build
   <div id="app"></div>
 
   <script type="module">
-    import { html, render, createState } from 'slash'
+    import { html, render, createState } from '@_bashell/slash/core'
 
     // Criar estado
     const counter = createState({ count: 0 })
@@ -592,7 +602,8 @@ bun run dev
 **Arquivo:** `packages/slash-ssr/examples/state-ssr.ts`
 
 ```typescript
-import { html, renderToString, createState } from 'slash'
+import { html, createState } from '@_bashell/slash/core'
+import { renderToString } from '@_bashell/slash/ssr'
 
 // Criar estado inicial
 const counter = createState({ count: 42 })
