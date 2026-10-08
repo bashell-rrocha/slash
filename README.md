@@ -101,13 +101,13 @@ render(html`<${App} />`, "#app");
 Slash is secure by default. You write templates the normal way and the library does the safe thing:
 
 - **All text and attribute values are escaped**, on the client and on the server. A string is always data, never markup, whatever it contains.
-- **Dangerous URLs are blocked.** Links and sources accept `http:`, `https:`, `mailto:`, `tel:`, `sms:` and relative URLs. `javascript:`, `data:text/html`, `file:` and any other scheme become `about:blank#blocked`. Images also accept `data:image/*` and `blob:`. `sanitizeUrl` is exported if you want to validate input yourself.
-- **Event handlers must be functions.** `onclick="alert(1)"` and other non-function `on*` values are dropped, on the client and on the server. A plain attribute that starts with "on" must use a `data-` prefix.
-- **`Link` and the router only navigate inside your app** (`/x`, `?q`, `#h`). Anything else is blocked unless you opt in with `external`.
-- **`<script>` and `<style>` never take dynamic values.** Interpolated strings, numbers and templates are dropped; only the static text you write and `unsafeHtml(...)` are kept.
-- **State goes into `<script>` safely** (`serializeStateForScript`, `serializeLoaderData`), so a value like `</script>` cannot break out.
-- `innerHTML`, `outerHTML` and `srcdoc` props are blocked, and `style` is checked against a strict CSS policy.
-- **Dev and production builds.** Vite and webpack pick the dev build in development, which prints a warning for each block. Production builds drop those warnings (errors still reach `console.error`). Details: [docs/19-security](./docs/19-security/README.md).
+- **Dangerous URLs are blocked.** Links accept `http:`, `https:`, `mailto:`, `tel:`, `sms:` and relative URLs; `javascript:`, `data:text/html`, `file:` and any other scheme become `about:blank#blocked`. Images also accept `data:image/*` and media (img, audio, video) accepts `blob:`. `sanitizeUrl` checks the URL scheme only, not where it points.
+- **Event handlers must be functions.** `onclick="alert(1)"` and other non-function `on*` values are dropped, on the client and on the server.
+- **`Link` and the router only navigate inside your app** (`/x`, `?q`, `#h`) unless you opt in with `external`.
+- **`<script>` and `<style>` never take dynamic values.** Only the static template text and `unsafeHtml(...)` are kept.
+- **`innerHTML`, `outerHTML` and `srcdoc` props are blocked**, and `style` follows a strict CSS policy.
+
+State in `<script>` (`serializeStateForScript`), dev and production builds and every rule above in detail: [docs/19-security](./docs/19-security/README.md).
 
 ```typescript
 import { html } from "@_bashell/slash/core";

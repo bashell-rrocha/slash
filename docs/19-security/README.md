@@ -63,15 +63,25 @@ A política decide quais **esquemas** passam. Ela não sabe se o host é confiá
 
 ### Validar entrada você mesmo: `sanitizeUrl` e `BLOCKED_URL`
 
-As duas peças da política são exportadas de `@_bashell/slash/core` e `@_bashell/slash/ssr`. Use quando a URL não passa por um atributo do Slash (um redirect no servidor, uma URL guardada no banco):
+As duas peças da política são exportadas de `@_bashell/slash/core` e `@_bashell/slash/ssr`. Use quando a URL não passa por um atributo do Slash (um redirect no servidor, uma URL guardada no banco). **`sanitizeUrl` valida o esquema, não o destino:** `//evil.com` e `https://evil.com` passam. Para um redirect, confira também a origem:
 
 ```typescript
 import { sanitizeUrl, BLOCKED_URL } from "@_bashell/slash/core";
 
-// sanitizeUrl(atributo, valor, tag?) devolve o valor ou BLOCKED_URL
-const destino = sanitizeUrl("href", req.query.next ?? "/");
-if (destino === BLOCKED_URL) return res.redirect("/");
-res.redirect(destino);
+const base = new URL("https://app.example.com");
+
+function destinoSeguro(next: string): string {
+  if (sanitizeUrl("href", next) === BLOCKED_URL) return "/";
+  try {
+    const url = new URL(next, base);
+    return url.origin === base.origin ? url.pathname + url.search + url.hash : "/";
+  } catch {
+    return "/";
+  }
+}
+
+res.redirect(destinoSeguro(req.query.next ?? "/"));
+// "/conta?a=1" -> "/conta?a=1"; "//evil.com", "https://evil.com" e "/\\evil.com" -> "/"
 ```
 
 O primeiro argumento é o nome do atributo (`"href"`, `"src"`...) e o terceiro, opcional, a tag (`"img"`), porque `blob:` e `data:image/svg+xml` dependem do contexto. Em dev, um valor bloqueado emite o mesmo aviso dos templates.
@@ -117,7 +127,7 @@ Regras por nome e valor:
 - o nome precisa ser um identificador CSS válido (propriedades `--custom` são mantidas como estão);
 - a propriedade não pode ser `-moz-binding`, `behavior` nem `behaviour` (`scroll-behavior` é permitido);
 - o valor não pode conter `;` (fora de strings e de `url()`), `{`, `}`, `<`, `expression(`, `javascript:`, `vbscript:`, `behavior:`, `-moz-binding` nem `@import`;
-- `url()` (com ou sem aspas) segue a mesma lista de permissão de `href`/`src`: caminhos relativos e `http(s)` passam, assim como `data:image/png|jpeg|gif|webp|avif`; `data:image/svg+xml`, `javascript:` e semelhantes são bloqueados;
+- `url()` (com ou sem aspas) segue a política de `<img src>`: caminhos relativos, `http(s)`, `data:image/png|jpeg|gif|webp|avif`, `data:image/svg+xml` e `blob:` passam; `javascript:`, `data:text/html`, `vbscript:` e semelhantes são bloqueados;
 - `image()`, `image-set()`, `cross-fade()`, `element()`, `paint()`, `src()` e `expression()` são fiscalizadas.
 
 Uma declaração insegura é descartada e as demais são mantidas: `color:red;background:url(javascript:alert(1))` vira `color:red`. No SSR, chaves de objeto em camelCase viram propriedades CSS e prefixos de fornecedor saem como `-ms-`, `-webkit-` e `-moz-`. Em objetos, chaves como `cssText`, `setProperty` ou `__proto__` são ignoradas.
@@ -164,7 +174,7 @@ htmlString`<script type="application/ld+json">${unsafeHtml(serializeStateForScri
 
 Valores dinâmicos dentro de `<script>`/`<style>` (strings, números, arrays, componentes, templates aninhados e reativos) são **descartados**, no cliente e no SSR, com aviso em dev. Só passam o texto **estático** do template, então CSS e JS inline escritos por você funcionam, e `unsafeHtml(...)`. No cliente a regra é mais estrita: `unsafeHtml` precisa ser filho **direto** do `<script>`/`<style>`; vindo de um componente, de um array ou de uma função ele também é descartado. As props `text`, `textContent` e `innerText` de `<script>`/`<style>` também exigem `unsafeHtml`. Isso vale para templates (`html`/`htmlString`); chamadas diretas a `h()`/`hString()` (uso avançado) tratam uma string como texto estático confiável, então nunca passe entrada de usuário a elas.
 
-Limitação do htm: um `<` literal dentro de um `<script>` estático (`if (a < b)`) é lido como início de tag; coloque esse código em `unsafeHtml(...)`.
+Limitação do htm: um `<` literal dentro de um `<script>` ou `<style>` estático de um `htmlString` (`if (a < b)`) é lido como início de tag; coloque esse código em `unsafeHtml(...)`.
 
 ## Props e nomes de atributo
 
@@ -173,10 +183,6 @@ Uma prop com nome de método do DOM (`click`, `focus`, `remove`...) vira **atrib
 ## Dados sem protótipo
 
 `formToObject()` e `state.query` do roteador devolvem objetos sem protótipo (`Object.create(null)`): nomes como `__proto__` ou `constructor` viram chaves comuns e não afetam nada. Em troca, `obj.hasOwnProperty(...)` não existe; use `Object.hasOwn(obj, "campo")` ou `"campo" in obj`. `parseQuery` não lança com percent-encoding malformado (mantém o texto cru), e o clone interno de estado não deixa `__proto__` alterar protótipos. Um estado circular, ou aninhado em mais de 1000 níveis, lança `State is circular or nested deeper than 1000 levels and cannot be cloned` em vez de estourar a pilha.
-
-## Limitação do htm em `<script>` estático
-
-Um `<` literal dentro de um `<script>` ou `<style>` estático de um `htmlString` (`if (a < b)`) é lido pelo htm como início de tag. Coloque esse código em `unsafeHtml(...)`.
 
 ## Guards do cliente são UX
 

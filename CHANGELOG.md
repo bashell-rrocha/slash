@@ -16,7 +16,7 @@ Tudo abaixo vale no cliente e no SSR, sem configuração. Referência completa: 
 - **SEC-04, URLs perigosas:** `javascript:`, `vbscript:`, `data:text/html`, `file:` e qualquer esquema fora da lista de permissão (`http`, `https`, `mailto`, `tel`, `sms`) em `href`, `src`, `action`, `formaction`, `srcset`, `poster`, `xlink:href`, `<object data>`, etc. viram `about:blank#blocked`. `data:image/*` seguro só em imagens; `blob:` só em `src` de mídia (`img`, `audio`, `video`, `source`, `track`) e `data:image/svg+xml` só em `img src`/`srcset` e em `url()` de CSS. `srcset` e `meta refresh` com mais de 16 KB são bloqueados (análise linear). A política é de esquema: a origem de `<base>`, `<script src>`, `<iframe src>` e `<link>` vinda de entrada de usuário é responsabilidade do app. Vale também para a URL de `<meta http-equiv="refresh" content="N;url=...">` (o `content` de outros `<meta>` não é alterado) e para `to`/`from`/`values` de animações SVG.
 - **SEC-05, `innerHTML`/`srcdoc`:** as props `innerHTML`, `outerHTML`, `insertAdjacentHTML` e `srcdoc` (string) são bloqueadas; `srcdoc` só aceita `unsafeHtml(...)`.
 - **SEC-06, vazamento entre requisições:** o estado do SSR deixou de ser global; `renderToStream` simultâneos não misturam dados entre usuários.
-- **SEC-07, `Link` e roteador:** o `Link` só navega para caminhos do app (`/x`, `?q`, `#h`); `to="javascript:..."` ou `//outro.com` não navegam mais. Link externo exige `external` (`http(s)`, `mailto:`, `tel:`, `sms:`). O interceptador de cliques só assume links `http(s)` da mesma origem (respeitando `<base>`) e deixa o navegador agir com ctrl/meta/shift/alt, botão não esquerdo, `target` diferente de `_self` e `download`. Barras invertidas viram o caminho da mesma origem (`/\evil` vai para `/evil`). Um `push` recusado pelo navegador rejeita com `Navigation failed: ...` sem dessincronizar o estado, e um `pushState` que lança no clique cai na navegação nativa.
+- **SEC-07, `Link` e roteador:** o `Link` só navega para caminhos do app (`/x`, `?q`, `#h`); `to="javascript:..."` ou `//outro.com` não navegam mais. Link externo exige `external` (`http(s)`, `mailto:`, `tel:`, `sms:`). O interceptador de cliques só assume links `http(s)` da mesma origem (respeitando `<base>`) e deixa o navegador agir com ctrl/meta/shift/alt, botão não esquerdo, `target` diferente de `_self` e `download`. Barras invertidas viram o caminho da mesma origem (`push("/\evil")` vai para `/evil`, e `Link to="/\evil"` é bloqueado). Um `push` recusado pelo navegador rejeita com `Navigation failed: ...` sem dessincronizar o estado, e um `pushState` que lança no clique cai na navegação nativa.
 - **SEC-08, nomes de tag:** nome de tag dinâmico inválido lança erro em vez de gerar HTML quebrado.
 - **SEC-09, `style`:** política de CSS estrita e fail-closed, em strings e objetos. Uma declaração é descartada (com aviso em dev) quando contém `/*` em qualquer lugar, tem uma string com quebra de linha crua, CR, FF ou NUL, barra invertida seguida de quebra de linha ou sem fechamento, tem barra invertida fora de aspas (escapes dentro de aspas continuam válidos), tem `url(` sem aspas com caracteres fora de `[A-Za-z0-9-._~:/?#@!$&+,;=%]`, ou usa `-moz-binding`, `behavior` ou `behaviour` como propriedade. `url()`, com ou sem aspas, segue a política de `<img src>` (relativos, `data:image/png|jpeg|gif|webp|avif`, `data:image/svg+xml` e `blob:` passam; `javascript:`, `data:text/html` e `vbscript:` não); `image()`, `image-set()`, `cross-fade()`, `element()`, `paint()`, `src()` e `expression()` são fiscalizadas. Um `style` com mais de 8 KB é descartado por inteiro e um `style` vazio é omitido. Quebras de linha entre declarações são válidas.
 - **SEC-10, `formToObject`:** nomes de campo como `__proto__` ou `constructor` não colidem mais com `Object.prototype`.
@@ -41,12 +41,12 @@ Tudo abaixo vale no cliente e no SSR, sem configuração. Referência completa: 
 - **O script de estado precisa de `type="application/json"`.** `render()` só lê `<script id="__SLASH_STATE__" type="application/json">` (aviso em dev se faltar o `type`). Migre: adicione o atributo.
 - **Builds de dev e de produção.** O pacote tem `dist/dev` (com avisos), escolhido pela condição de exportação `development` (Vite em dev e webpack em modo development); o padrão é o build de produção, sem avisos de dev. Os erros continuam em `console.error` nos dois. Para forçar os avisos: `--conditions=development`. Migre: nada, a menos que você dependa de um aviso em CI.
 - **Mensagens de runtime em inglês.** Avisos e erros que estavam em português (`URL bloqueada`, `deve ser um caminho do app`...) agora são em inglês; ajuste testes que comparam o texto.
-- **`State` não é reativo no SSR.** `${state}` não se atualiza; interpole `state.get()`.
+- **`State` não é reativo no SSR.** `${state}` não se atualiza. Migre: interpole `state.get()`.
 - **`router.ready` é obrigatório no tipo `RouterInstance`.** Mocks escritos à mão precisam de `ready: Promise.resolve()`.
-- **`router.push` para a URL atual não reconstrói a página**, e `Router` só atualiza quando o caminho, os params ou a query mudam.
+- **`router.push` para a URL atual não reconstrói a página**, e `Router` só atualiza quando o caminho, os params ou a query mudam. Migre: para forçar um novo render, mude o estado que a view lê, não a rota.
 - **Internos removidos:** `__addBatchEndCallback`, `__removeBatchEndCallback` e `__recordBatchUpdate`. Migre: use `batch()` para agrupar e `state.watch()` para observar.
 - **Query e `formToObject()` sem protótipo** (`Object.create(null)`). Migre: `Object.hasOwn(obj, "campo")` no lugar de `obj.hasOwnProperty(...)`.
-- **Pacote npm menor:** não inclui mais `.gz`/`.br`, e os sourcemaps não carregam `sourcesContent` (`src` continua no pacote). `build:compress` deixou de fazer parte de `bun run build`.
+- **Estado circular ou aninhado em mais de 1000 níveis lança** `State is circular or nested deeper than 1000 levels and cannot be cloned`. Migre: achate o estado ou guarde ids em vez de referências.
 - **Escapes CSS fora de aspas não são aceitos** (`\6c`, `\2022` soltos no valor ou no nome da propriedade). Migre: coloque o valor entre aspas (`content:"\2022"`).
 - **Comentários `/* */` não são permitidos em `style`** (a declaração com `/*` é descartada, até dentro de aspas). Migre: remova o comentário do `style` (comente no código ou no CSS).
 - **`url()` sem aspas só aceita `[A-Za-z0-9-._~:/?#@!$&+,;=%]`.** Migre: use aspas, `url("a b.png")`.
@@ -69,6 +69,10 @@ Tudo abaixo vale no cliente e no SSR, sem configuração. Referência completa: 
 - **Build:** `dist/*.cjs` estava quebrado em 0.0.1 e 0.0.2 (o Bun não faz splitting em CJS) e o ESM falhava com `Export 'T' not defined` ao importar o servidor. Corrigido com imports ESM em `hydration/walker.ts` e splitting só no ESM. O novo `bun run verify:dist` (rodado no `publish.yml`) importa e dá `require` em todos os entrypoints de `package.json`.
 - Documentação: exemplos de `batch` e SSR alinhados com o comportamento real; `ErrorBoundary` documentado com a limitação (filhos já foram construídos pelo `html`; use `safeRender(() => view, fallback)`).
 
+### Changed
+
+- Pacote npm menor (251 kB): não inclui mais `.gz`/`.br`, e os sourcemaps não carregam `sourcesContent` (`src` continua no pacote). `build:compress` deixou de fazer parte de `bun run build`.
+
 ### Added
 
 - `sanitizeUrl(attr, value, tag?)` e `BLOCKED_URL`, em `@_bashell/slash/core` e `@_bashell/slash/ssr`, para validar uma URL com a mesma política dos templates.
@@ -83,7 +87,7 @@ Tudo abaixo vale no cliente e no SSR, sem configuração. Referência completa: 
 
 ### Tamanho do bundle
 
-Bundle de produção do core (app com `createState`, `html` e `render`, minificado): **8,39 KB gzip / 7,45 KB brotli**, contra 5,02 KB / 4,39 KB antes do ciclo de segurança. O aumento é o custo da camada de segurança: políticas de URL e de CSS, `SafeHtml`/`SafeUrl`, regras do roteador e tratamento de `meta refresh`; as mensagens de aviso de dev ficam fora do build de produção. Limites do teste de tamanho: 8,64 KB gzip / 7,67 KB brotli. O pacote npm tem 251 kB (sem `.gz`/`.br`; sourcemaps sem `sourcesContent`; `src` incluso).
+Bundle de produção do core (app com `createState`, `html` e `render`, minificado): **8,32 KB gzip / 7,36 KB brotli** (8523 / 7533 bytes), contra 5,02 KB / 4,39 KB antes do ciclo de segurança. O aumento é o custo da camada de segurança: políticas de URL e de CSS, `SafeHtml`/`SafeUrl`, regras do roteador e tratamento de `meta refresh`; as mensagens de aviso de dev ficam fora do build de produção. Limites do teste de tamanho: 8,64 KB gzip / 7,67 KB brotli. O pacote npm tem 251 kB (sem `.gz`/`.br`; sourcemaps sem `sourcesContent`; `src` incluso).
 
 ## [0.0.2] — 2026-10-08
 
