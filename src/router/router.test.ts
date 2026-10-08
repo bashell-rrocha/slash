@@ -609,4 +609,56 @@ describe("navegação inicial e guards", () => {
     expect(router.get().currentRoute?.path).toBe("/login")
     expect(window.location.hash).toBe("#/login")
   })
+
+  test("popstate durante a navegação inicial pendente vence e descarta a inicial", async () => {
+    setUrl("/p2")
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const r2: RouteConfig[] = [
+      { path: "/p2", component: () => "p2", guards: [async () => { await gate }] },
+      { path: "/a", component: () => "a" },
+    ]
+    const router = createRouter({ routes: r2 })
+
+    setUrl("/a")
+    window.dispatchEvent(new PopStateEvent("popstate"))
+    await Promise.resolve()
+    release()
+    await router.ready
+
+    expect(router.get().currentRoute?.path).toBe("/a")
+    expect(router.get().isNavigating).toBe(false)
+    expect(window.location.pathname).toBe("/a")
+  })
+
+  test("erro da navegação inicial superada não derruba isNavigating da mais nova", async () => {
+    setUrl("/p2")
+    let accesses = 0
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const bad: RouteConfig = {
+      path: "/p2",
+      component: () => "p2",
+      get guards() {
+        // 1º acesso (hasApplicableGuards) ok; 2º (computeNavigation) lança
+        if (++accesses > 1) throw new Error("boom")
+        return [() => {}]
+      },
+    }
+    const orig = console.error
+    console.error = () => {}
+    try {
+      const router = createRouter({
+        routes: [bad, { path: "/a", component: () => "a", guards: [async () => { await gate }] }],
+      })
+      const p = router.push("/a")
+      await router.ready
+      expect(router.get().isNavigating).toBe(true)
+      release()
+      await p
+      expect(router.get().currentRoute?.path).toBe("/a")
+    } finally {
+      console.error = orig
+    }
+  })
 })
