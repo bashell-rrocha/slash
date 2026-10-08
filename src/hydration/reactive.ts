@@ -1,5 +1,6 @@
 import { addCleanup } from "../lifecycle/cleanup";
-import type { Reactive } from "../types";
+import type { Elementish, Reactive } from "../types";
+import { applyPropUpdate, computePropUpdate, getElementType } from "../rendering/props-core";
 import { processClassValue } from "../utils/helpers";
 
 /**
@@ -28,7 +29,10 @@ export function hydrateReactiveAttributes(
       } else if (prop === "class") {
         element.className = processClassValue(value);
       } else {
-        element.setAttribute(prop, String(value ?? ""));
+        // SEC-13: o nome vem do DOM (data-reactive-*); passa pela mesma política das
+        // props (nome válido, sem on*/innerHTML/srcdoc, URLs sanitizadas)
+        const el = element as Elementish;
+        applyPropUpdate(el, computePropUpdate(getElementType(el), prop, String(value ?? ""), false));
       }
     });
 
