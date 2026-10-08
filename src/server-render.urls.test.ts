@@ -170,6 +170,13 @@ describe("meta http-equiv=refresh", () => {
     expect(render(() => htmlString`<meta content=${"0;javascript:x"} http-equiv="refresh" />`)).toContain(`content="0;${BLOCKED}"`);
     expect(render(() => htmlString`<meta http-equiv="refresh" content="5;url=/next" />`)).toContain('content="5;url=/next"');
   });
+  test("meta sem http-equiv=refresh nao e tocado", () => {
+    expect(render(() => htmlString`<meta name="description" content=${"10 things: a guide"} />`)).toContain('content="10 things: a guide"');
+    expect(render(() => htmlString`<meta content=${"0;url=javascript:x"} />`)).toContain('content="0;url=javascript:x"');
+  });
+  test("http-equiv case-insensitive", () => {
+    expect(render(() => htmlString`<meta http-equiv="REFRESH" content=${"0;url=javascript:x"} />`)).toContain(`content="0;url=${BLOCKED}"`);
+  });
   test("meta comum nao e alterado", () => {
     expect(render(() => htmlString`<meta name="description" content="Warning: x" />`)).toContain('content="Warning: x"');
   });

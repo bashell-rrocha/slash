@@ -8,7 +8,8 @@ import {
   applyPropUpdate,
   getElementType,
   hasNativeProperty,
-  isEventProperty,
+  isMetaRefreshElement,
+  resanitizeMetaContent,
 } from "./props-core";
 
 export function applyClass(element: Element, val: unknown): void {
@@ -28,10 +29,11 @@ export function setPropReactive(element: Element, key: string, sig: Reactive<unk
     // Functional Core: decide o que fazer (sem side effects)
     const elementType = getElementType(element as Elementish);
     const hasProp = hasNativeProperty(element as Elementish, key);
-    const update = computePropUpdate(elementType, key, val, hasProp, isEventProperty(element as Elementish, key));
+    const update = computePropUpdate(elementType, key, val, hasProp, isMetaRefreshElement(element as Elementish));
 
     // Imperative Shell: executa o comando (com side effects)
     applyPropUpdate(element as Elementish, update);
+    resanitizeMetaContent(element as Elementish, key);
   };
 
   apply(sig.get());
@@ -66,8 +68,9 @@ export function setProp(element: Elementish, key: string, val: unknown): void {
   // Functional Core: decide o que fazer (sem side effects)
   const elementType = getElementType(element);
   const hasProp = hasNativeProperty(element, key);
-  const update = computePropUpdate(elementType, key, val, hasProp, isEventProperty(element, key));
+  const update = computePropUpdate(elementType, key, val, hasProp, isMetaRefreshElement(element));
 
   // Imperative Shell: executa o comando (com side effects)
   applyPropUpdate(element, update);
+  resanitizeMetaContent(element, key);
 }

@@ -13,7 +13,7 @@ import { isForbiddenStyleKey, isSafeCssValue, sanitizeStyleString } from "../uti
 import { isEventHandler, isEventTuple } from "../utils/guards";
 import { processClassValue } from "../utils/helpers";
 import { securityWarn } from "../utils/security-warn";
-import { blockedUrlMessage, evaluateMetaRefresh, evaluateUrl, isUrlAttribute } from "../utils/url-policy";
+import { blockedUrlMessage, evaluateMetaRefresh, evaluateUrl, isRefreshHttpEquiv, isUrlAttribute } from "../utils/url-policy";
 
 /**
  * Nomes de atributo válidos (subconjunto seguro do HTML/SVG/XML): impede que uma
@@ -86,8 +86,8 @@ export interface PropUpdate {
  * @param key - Nome da prop
  * @param value - Valor da prop
  * @param hasProperty - Se o elemento tem a propriedade nativa
- * @param isEventProp - Se `key.toLowerCase()` é propriedade de evento do elemento
- *   (padrão true: sem informação, um on* é tratado como evento, falhando fechado)
+ * @param isMetaRefresh - O elemento é <meta http-equiv="refresh">: só então `content` é
+ *   tratado como "atraso; url=..." e a URL passa pela política
  * @returns Comando de atualização (imutável)
  */
 export function computePropUpdate(
@@ -95,7 +95,7 @@ export function computePropUpdate(
   key: string,
   value: unknown,
   hasProperty: boolean,
-  isEventProp = true
+  isMetaRefresh = false
 ): PropUpdate {
   // 1) NO_OP: ignora 'children'
   if (key === "children") {
@@ -107,12 +107,12 @@ export function computePropUpdate(
     return blocked(key, value, process.env.NODE_ENV !== "production" ? `atributo inválido: ${JSON.stringify(key)}` : "");
   }
 
-  // 1.2) Event handlers (S3/SEC-14): setProp registra funções via addEventListener
-  // antes de chegar aqui. Um on* é evento se o valor parece handler OU se o nome é
-  // propriedade de evento do elemento; os demais (one, online, once) são atributos.
+  // 1.2) Eventos (S3/SEC-14, regra única com o SSR): TODO /^on/i é evento. Só função, objeto
+  // handleEvent e tupla [fn, opções] viram listener (setProp registra antes de chegar aqui).
+  // Qualquer outro valor (string, true, objeto) é descartado com aviso; atributo simples que
+  // começa com "on" precisa do prefixo data-.
   if (key.length > 2 && /^on/i.test(key)) {
-    const handlerLike = isEventHandler(value) || isEventTuple(value);
-    if (handlerLike) {
+    if (isEventHandler(value) || isEventTuple(value)) {
       // Só chega aqui por prop reativa / hidratação: handlers não são reativos
       return blocked(
         key,
@@ -120,14 +120,14 @@ export function computePropUpdate(
         process.env.NODE_ENV !== "production" ? `${key}: handlers reativos não são suportados; passe uma função` : "",
       );
     }
-    if (isEventProp) {
-      if (value == null || value === false) return { type: "NO_OP", key, value };
-      return blocked(
-        key,
-        value,
-        process.env.NODE_ENV !== "production" ? `${key} só aceita função, objeto handleEvent ou tupla [fn, opções]` : "",
-      );
-    }
+    if (value == null || value === false) return { type: "NO_OP", key, value };
+    return blocked(
+      key,
+      value,
+      process.env.NODE_ENV !== "production"
+        ? `${key} só aceita função, objeto handleEvent ou tupla [fn, opções]; atributo simples que começa com "on" precisa do prefixo data- (ex.: data-${key})`
+        : "",
+    );
   }
 
   // 1.3) Props que viram HTML ou alteram o protótipo (S4/SEC-05)
@@ -232,7 +232,7 @@ export function computePropUpdate(
   let warning: string | undefined;
   if (isSafeUrl(value)) {
     finalValue = value.value;
-  } else if (key.toLowerCase() === "content" && elementType === "meta") {
+  } else if (isMetaRefresh && key.toLowerCase() === "content") {
     const result = evaluateMetaRefresh(String(value));
     finalValue = result.value;
     if (result.blocked) {
@@ -288,12 +288,25 @@ export function hasNativeProperty(element: Elementish, key: string): boolean {
   return key in element;
 }
 
+/** Shell: o elemento é <meta http-equiv="refresh"> (lê o atributo já gravado)? */
+export function isMetaRefreshElement(element: Elementish): boolean {
+  return getElementType(element) === "meta" && isRefreshHttpEquiv((element as Element).getAttribute("http-equiv"));
+}
+
 /**
- * Função pura auxiliar: o nome (em minúsculas) é uma propriedade de evento do elemento?
- * (onclick, onerror... existem em HTMLElement/SVGElement; one, online, once não)
+ * Shell: http-equiv pode ser definido DEPOIS de content (ordem das props). Quando o elemento
+ * vira meta refresh, o content já gravado passa pela política.
  */
-export function isEventProperty(element: Elementish, key: string): boolean {
-  return key.toLowerCase() in element;
+export function resanitizeMetaContent(element: Elementish, key: string): void {
+  const lower = key.toLowerCase();
+  if ((lower !== "http-equiv" && lower !== "httpequiv") || !isMetaRefreshElement(element)) return;
+  const content = (element as Element).getAttribute("content");
+  if (content === null) return;
+  const result = evaluateMetaRefresh(content);
+  if (result.blocked) {
+    (element as Element).setAttribute("content", result.value);
+    if (process.env.NODE_ENV !== "production") securityWarn(blockedUrlMessage("content", content), "url:meta-refresh");
+  }
 }
 
 /**

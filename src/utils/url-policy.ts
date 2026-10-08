@@ -137,11 +137,16 @@ export function evaluateUrl(
   return { value: BLOCKED_URL, blocked: true };
 }
 
-// <meta http-equiv="refresh" content="5; url=...">: segue o parser do HTML (atraso numérico,
-// separador `;`/`,` ou espaço, `url=` opcional, aspas opcionais). Sem atraso numérico no
-// início o navegador ignora o refresh, então o valor não é tratado como URL. É aplicado a todo
-// `content` de <meta> (a ordem dos atributos http-equiv/content não é conhecida no cliente).
-const META_REFRESH = /^(\s*[\d.]+\s*[;,]?\s*(?:url\s*=\s*)?['"]?)([\s\S]*?)(['"]?\s*)$/i;
+// <meta http-equiv="refresh" content="5; url=...">: segue a sintaxe do HTML (atraso numérico, depois
+// `;`, `,` ou espaço, `url=` opcional, aspas opcionais). Sem separador depois do número, ou sem
+// atraso, o navegador ignora o refresh e o valor não é URL. Só deve ser aplicada quando o
+// elemento tem http-equiv=refresh (o chamador decide; um <meta description> nunca passa por aqui).
+const META_REFRESH = /^(\s*[\d.]+(?=[;,\s]|$)\s*[;,]?\s*(?:url\s*=\s*)?['"]?)([\s\S]*?)(['"]?\s*)$/i;
+
+/** O valor de http-equiv é "refresh" (sem case, sem espaços nas pontas)? */
+export function isRefreshHttpEquiv(value: unknown): boolean {
+  return typeof value === "string" && value.trim().toLowerCase() === "refresh";
+}
 
 /** PURO: URL do `content` de um meta refresh passa pela política (como href) */
 export function evaluateMetaRefresh(content: string): { value: string; blocked: boolean } {

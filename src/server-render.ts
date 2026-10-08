@@ -4,11 +4,11 @@ import { isDevMode, isWarningsEnabled } from "./dev-warnings";
 import { isSafeHtml, SafeHtml } from "./safe-html";
 import type { Child, Props, Reactive } from "./types";
 import { isForbiddenStyleKey, isSafeCssDeclaration, sanitizeStyleString } from "./utils/css-policy";
-import { isReactive } from "./utils/guards";
+import { isEventHandler, isEventTuple, isReactive } from "./utils/guards";
 import { escapeJsonForScript } from "./utils/script-json";
 import { isSafeUrl } from "./safe-url";
 import { isSsrElement } from "./ssr-element";
-import { evaluateMetaRefresh, isUrlAttribute, sanitizeUrl } from "./utils/url-policy";
+import { evaluateMetaRefresh, isRefreshHttpEquiv, isUrlAttribute, sanitizeUrl } from "./utils/url-policy";
 
 // Flag global para indicar modo SSR
 declare global {
@@ -108,7 +108,6 @@ const TAG_NAME = /^[A-Za-z][A-Za-z0-9:-]*$/;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: faixa de controles é o ponto
 const ATTR_NAME = /^[^\s"'<>/=\u0000-\u001f\u007f-\u009f]+$/;
 const EVENT_ATTR = /^on/i;
-const CAMEL_EVENT_ATTR = /^on[A-Z]/;
 const RAW_TEXT_ELEMENTS = new Set(["script", "style"]);
 const RESERVED_ATTR_PREFIX = "data-reactive-";
 const BOOLEAN_ATTRS = new Set(["checked", "selected", "disabled", "readonly"]);
@@ -186,7 +185,7 @@ function styleStringToString(style: string): string {
 // ---- atributos ----
 
 // Atributo genérico `key="valor"`: política de URL e srcdoc antes de escapar
-function genericAttr(tag: string, key: string, value: unknown): string {
+function genericAttr(tag: string, key: string, value: unknown, metaRefresh = false): string {
   const lower = key.toLowerCase();
 
   if (lower === "srcdoc") {
@@ -202,7 +201,7 @@ function genericAttr(tag: string, key: string, value: unknown): string {
     str = value.value;
   } else if (isUrlAttribute(lower, tag)) {
     str = sanitizeUrl(lower, str, tag);
-  } else if (lower === "content" && tag.toLowerCase() === "meta") {
+  } else if (lower === "content" && metaRefresh) {
     const result = evaluateMetaRefresh(str);
     str = result.value;
     if (result.blocked && process.env.NODE_ENV !== "production") warnOnce("meta refresh: URL bloqueada em content");
@@ -212,10 +211,20 @@ function genericAttr(tag: string, key: string, value: unknown): string {
   return ` ${key}="${escapeHtml(str)}"`;
 }
 
+// <meta http-equiv="refresh">: lido do objeto de props inteiro (a ordem das chaves não importa)
+function hasRefreshHttpEquiv(props: NonNullable<Props>): boolean {
+  for (const [k, v] of Object.entries(props)) {
+    const lower = k.toLowerCase();
+    if ((lower === "http-equiv" || lower === "httpequiv") && isRefreshHttpEquiv(unmark(v))) return true;
+  }
+  return false;
+}
+
 // Atributos de um elemento nativo
 function propsToAttrs(ctx: RenderContext, tag: string, props: Props | null): string {
   if (!props) return "";
   let attrs = "";
+  const metaRefresh = tag.toLowerCase() === "meta" && hasRefreshHttpEquiv(props);
 
   for (const [key, rawVal] of Object.entries(props)) {
     if (key === "children") continue;
@@ -232,10 +241,13 @@ function propsToAttrs(ctx: RenderContext, tag: string, props: Props | null): str
       continue;
     }
 
-    // Handlers nunca vão para o HTML (SSR não serializa funções, e string seria JS)
+    // Handlers nunca vão para o HTML (SSR não serializa funções, e string seria JS).
+    // Mesma regra do cliente: todo /^on/i é evento; sem função/handleEvent/tupla, avisa
     if (EVENT_ATTR.test(key)) {
-      if (!CAMEL_EVENT_ATTR.test(key)) {
-        if (process.env.NODE_ENV !== "production") warnOnce("atributo on* descartado; use onClick=${fn} (handlers só existem no cliente)");
+      if (!isEventHandler(val) && !isEventTuple(val) && val != null && val !== false) {
+        if (process.env.NODE_ENV !== "production") {
+          warnOnce('atributo on* descartado; use onClick=${fn} (handlers só existem no cliente); atributo simples precisa do prefixo data-');
+        }
       }
       continue;
     }
@@ -256,7 +268,7 @@ function propsToAttrs(ctx: RenderContext, tag: string, props: Props | null): str
         if (value) attrs += " checked";
         attrs += ` data-reactive-checked="${marker}"`;
       } else {
-        const attr = genericAttr(tag, key, value);
+        const attr = genericAttr(tag, key, value, metaRefresh);
         // Só reativos diretos ganham marcador em atributos comuns
         attrs += attr && reactive ? `${attr} data-reactive-${key}="${marker}"` : attr;
       }
@@ -280,7 +292,7 @@ function propsToAttrs(ctx: RenderContext, tag: string, props: Props | null): str
       continue;
     }
 
-    if (value != null && value !== false) attrs += genericAttr(tag, key, value);
+    if (value != null && value !== false) attrs += genericAttr(tag, key, value, metaRefresh);
   }
 
   return attrs;

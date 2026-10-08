@@ -285,6 +285,10 @@ describe("meta http-equiv=refresh content", () => {
   ])("bloqueia %j", (input, expected) => {
     expect(evaluateMetaRefresh(input)).toEqual({ value: expected, blocked: true });
   });
+  test("atraso sem separador depois do numero nao e refresh", () => {
+    expect(evaluateMetaRefresh("5javascript:x")).toEqual({ value: "5javascript:x", blocked: false });
+    expect(evaluateMetaRefresh("5 javascript:x").blocked).toBe(true);
+  });
   test.each([
     "5",
     "0;url=/ok",

@@ -171,11 +171,32 @@ describe("paridade: meta http-equiv=refresh", () => {
   test("URL perigosa e substituida, em qualquer ordem de atributos", () => {
     both("meta", { "http-equiv": "refresh", content: "0;url=javascript:alert(1)" }, "content", `0;url=${B}`);
     both("meta", { content: "0;javascript:alert(1)", "http-equiv": "refresh" }, "content", `0;${B}`);
-    both("meta", { content: "5, data:text/html,x" }, "content", `5, ${B}`);
+    both("meta", { "http-equiv": "refresh", content: "5, data:text/html,x" }, "content", `5, ${B}`);
   });
   test("refresh seguro e meta comum passam", () => {
     both("meta", { "http-equiv": "refresh", content: "5;url=/next" }, "content", "5;url=/next");
     both("meta", { name: "description", content: "Warning: x" }, "content", "Warning: x");
+  });
+  test("meta comum so e tocado com http-equiv=refresh: descricoes que parecem refresh passam", () => {
+    for (const content of ["10 things: a guide", "5: tips", "3, javascript:rocks", "1.5 data:image tips", "2 vbscript: myths"]) {
+      both("meta", { name: "description", content }, "content", content);
+      both("meta", { property: "og:title", content }, "content", content);
+    }
+  });
+  test("http-equiv e case-insensitive e espacos sao aceitos", () => {
+    for (const v of ["Refresh", "REFRESH", " refresh "]) {
+      both("meta", { "http-equiv": v, content: "0;url=javascript:alert(1)" }, "content", `0;url=${B}`);
+      both("meta", { content: "0;url=javascript:alert(1)", "http-equiv": v }, "content", `0;url=${B}`);
+    }
+  });
+  test("http-equiv diferente de refresh nao e tocado", () => {
+    both("meta", { "http-equiv": "content-type", content: "0;url=javascript:x" }, "content", "0;url=javascript:x");
+  });
+  test("sintaxe de atraso do HTML: digitos, depois ';', ',' ou espaco", () => {
+    both("meta", { "http-equiv": "refresh", content: "5 javascript:x" }, "content", `5 ${B}`);
+    both("meta", { "http-equiv": "refresh", content: "5,javascript:x" }, "content", `5,${B}`);
+    // sem separador depois do numero o navegador ignora o refresh: nao e URL
+    both("meta", { "http-equiv": "refresh", content: "5javascript:x" }, "content", "5javascript:x");
   });
 });
 
@@ -241,10 +262,15 @@ describe("paridade: style", () => {
 });
 
 describe("paridade: handlers, nomes de atributo e de tag", () => {
-  test("on* com string nunca vira atributo (nomes que o elemento conhece como evento)", () => {
-    // happy-dom nao define onload/ontoggle em <img>; la o nome cairia no caso "on* customizado"
-    // (divergencia aceita abaixo). Nos navegadores essas propriedades existem.
-    for (const name of ["onclick", "onClick", "onerror", "onmouseover", "onfocus", "onpointerdown"]) {
+  test("qualquer /^on/i com valor que nao e handler nunca vira atributo (string, true, objeto)", () => {
+    for (const name of ["onclick", "onClick", "onerror", "onmouseover", "onfocus", "onpointerdown", "onload", "ontoggle", "onbegin", "onend", "onrepeat", "online", "once", "one", "onfoo"]) {
+      for (const v of ["alert(1)", true, { a: 1 }]) {
+        both("img", { [name]: v }, name.toLowerCase(), null);
+      }
+    }
+  });
+  test("on* com string nunca vira atributo (lista curta)", () => {
+    for (const name of ["onclick", "onClick"]) {
       both("img", { [name]: "alert(1)" }, name.toLowerCase(), null);
     }
   });
@@ -266,10 +292,6 @@ describe("paridade: handlers, nomes de atributo e de tag", () => {
 // Divergencias ACEITAS (documentadas; travadas para que mudem so de proposito)
 // ---------------------------------------------------------------------------
 describe("divergencias aceitas entre cliente e SSR", () => {
-  test("on* customizado que nao e evento (one, online): cliente = atributo, SSR descarta qualquer /^on/i", () => {
-    expect(clientAttr("div", { online: "yes" }, "online")).toBe("yes");
-    expect(ssrAttr("div", { online: "yes" }, "online")).toBeNull();
-  });
   test("innerHTML: cliente bloqueia a prop; SSR so emite um atributo inerte (escapado)", () => {
     const X = "<img src=x onerror=alert(1)>";
     const c = h("div", { innerHTML: X }) as Element;

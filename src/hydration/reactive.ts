@@ -1,6 +1,6 @@
 import { addCleanup } from "../lifecycle/cleanup";
 import { safeHtmlToFragment } from "../rendering/children";
-import { applyPropUpdate, computePropUpdate, getElementType, isEventProperty } from "../rendering/props-core";
+import { applyPropUpdate, computePropUpdate, getElementType, isMetaRefreshElement, resanitizeMetaContent } from "../rendering/props-core";
 import { isSafeHtml } from "../safe-html";
 import type { Elementish, Reactive } from "../types";
 import { processClassValue } from "../utils/helpers";
@@ -34,7 +34,8 @@ export function hydrateReactiveAttributes(
         // SEC-13: o nome vem do DOM (data-reactive-*); passa pela mesma política das
         // props (nome válido, sem on*/innerHTML/srcdoc, URLs sanitizadas)
         const el = element as Elementish;
-        applyPropUpdate(el, computePropUpdate(getElementType(el), prop, String(value ?? ""), false, isEventProperty(el, prop)));
+        applyPropUpdate(el, computePropUpdate(getElementType(el), prop, String(value ?? ""), false, isMetaRefreshElement(el)));
+        resanitizeMetaContent(el, prop);
       }
     });
 

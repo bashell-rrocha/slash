@@ -169,10 +169,11 @@ describe("S3 / SEC-14 cliente: on* só com função", () => {
     expect(i.getAttribute("onerror")).toBeNull();
     expect(i.getAttribute("src")).toBe("x");
   });
-  test("onfoo (não é propriedade de evento) com string é atributo inerte, não handler", () => {
+  test("onfoo (qualquer /^on/i) com string é descartado com aviso que cita data-", () => {
     const d = h("div", { onfoo: "alert(1)" }) as Element;
-    expect(d.getAttribute("onfoo")).toBe("alert(1)");
+    expect(d.getAttribute("onfoo")).toBeNull();
     expect((d as any).onfoo).toBeUndefined();
+    expect(String(warn.mock.calls[0]?.[0])).toContain("data-");
   });
   test("onClick com string é ignorado", () => {
     const b = h("button", { onClick: "alert(1)" }) as Element;
@@ -198,18 +199,21 @@ describe("S3 / SEC-14 cliente: on* só com função", () => {
     expect(b.getAttribute("onClick")).toBeNull();
     expect(b.getAttribute("onclick")).toBeNull();
   });
-  test("computePropUpdate: on* de evento bloqueia; sem informação falha fechado", () => {
-    expect(computePropUpdate("div", "onclick", "x", true, true).type).toBe("BLOCKED");
-    expect(computePropUpdate("div", "ONCLICK", "x", true, true).type).toBe("BLOCKED");
+  test("computePropUpdate: todo on* sem handler bloqueia (string, true, objeto)", () => {
     expect(computePropUpdate("div", "onclick", "x", true).type).toBe("BLOCKED");
+    expect(computePropUpdate("div", "ONCLICK", "x", true).type).toBe("BLOCKED");
     expect(computePropUpdate("div", "onfoo", "x", false).type).toBe("BLOCKED");
+    expect(computePropUpdate("div", "online", "x", false).type).toBe("BLOCKED");
+    expect(computePropUpdate("div", "onbegin", true, false).type).toBe("BLOCKED");
+    expect(computePropUpdate("div", "ontoggle", { a: 1 }, false).type).toBe("BLOCKED");
+    expect(computePropUpdate("div", "onclick", null, true).type).toBe("NO_OP");
+    expect(computePropUpdate("div", "onclick", false, true).type).toBe("NO_OP");
   });
-  test("on* que não é propriedade de evento do elemento é atributo normal", () => {
-    const d = h("div", { one: "1", online: "x", once: "y" }) as Element;
-    expect(d.getAttribute("one")).toBe("1");
-    expect(d.getAttribute("online")).toBe("x");
-    expect(d.getAttribute("once")).toBe("y");
-    expect(computePropUpdate("div", "online", "x", false, false).type).toBe("SET_ATTRIBUTE");
+  test("nomes sem propriedade IDL (SMIL onbegin/onend/onrepeat, ontoggle, body onload) não viram atributo", () => {
+    for (const [tag, name] of [["animate", "onbegin"], ["animate", "onend"], ["animate", "onrepeat"], ["details", "ontoggle"], ["body", "onload"], ["div", "online"], ["div", "once"], ["div", "one"]] as const) {
+      const el = h(tag, { [name]: "alert(1)" }) as Element;
+      expect(el.getAttribute(name)).toBeNull();
+    }
   });
   test("handler com nome fora da lista nativa vira listener de evento custom", () => {
     let n = 0;
@@ -269,7 +273,17 @@ describe("meta http-equiv=refresh no cliente", () => {
   test("refresh seguro e meta comum passam; reativo tambem e checado", () => {
     expect((h("meta", { content: "5;url=/next" }) as HTMLMetaElement).getAttribute("content")).toBe("5;url=/next");
     expect((h("meta", { name: "description", content: "Warning: x" }) as HTMLMetaElement).getAttribute("content")).toBe("Warning: x");
-    expect((h("meta", { content: reactive("0;url=javascript:x") }) as HTMLMetaElement).getAttribute("content")).toBe(`0;url=${BLOCKED_URL}`);
+    expect((h("meta", { "http-equiv": "refresh", content: reactive("0;url=javascript:x") }) as HTMLMetaElement).getAttribute("content")).toBe(`0;url=${BLOCKED_URL}`);
+  });
+  test("meta sem http-equiv=refresh nao e tocado (descricao que parece refresh)", () => {
+    const m = h("meta", { name: "description", content: "10 things: a guide" }) as HTMLMetaElement;
+    expect(m.getAttribute("content")).toBe("10 things: a guide");
+    expect(warn).not.toHaveBeenCalled();
+    expect((h("meta", { content: "0;url=javascript:x" }) as HTMLMetaElement).getAttribute("content")).toBe("0;url=javascript:x");
+  });
+  test("http-equiv=refresh definido DEPOIS do content tambem sanitiza o content ja gravado", () => {
+    const m = h("meta", { content: "0;url=javascript:x", "http-equiv": "Refresh" }) as HTMLMetaElement;
+    expect(m.getAttribute("content")).toBe(`0;url=${BLOCKED_URL}`);
   });
   test("content de outras tags nao e tocado", () => {
     expect((h("div", { content: "0;url=javascript:x" }) as HTMLElement).getAttribute("content")).toBe("0;url=javascript:x");
