@@ -1,6 +1,6 @@
 // src/ssr.ts - Server-Side Rendering exports
 
-export { htmlString, renderToStream, renderToString } from "./server-render";
+export { htmlString, renderToStream, renderToString, serializeStateForScript } from "./server-render";
 export {
   createLoader,
   deserializeLoaderData,

@@ -354,6 +354,17 @@ export const htmlString = (htm as any).bind(hString) as (
   ...values: unknown[]
 ) => string;
 
+// Serializa o estado para uso dentro de <script>: troca os caracteres que
+// permitiriam fechar a tag ou abrir comentário por escapes JSON equivalentes
+export function serializeStateForScript(state: unknown): string {
+  return JSON.stringify(state)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
 // API principal
 export function renderToString(view: Child | (() => Child)): {
   html: string;
@@ -434,7 +445,7 @@ export async function* renderToStream(
 
     // Yield estado serializado no final
     const state = Object.fromEntries(signalRegistry);
-    yield `<script id="__SLASH_STATE__" type="application/json">${JSON.stringify(state)}</script>`;
+    yield `<script id="__SLASH_STATE__" type="application/json">${serializeStateForScript(state)}</script>`;
   } finally {
     // Desativar modo SSR
     globalThis.__SLASH_SSR__ = false;

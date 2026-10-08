@@ -1,5 +1,5 @@
 import { test, expect, describe } from "bun:test";
-import { renderToString, renderToStream, htmlString } from "./server-render";
+import { renderToString, renderToStream, htmlString, serializeStateForScript } from "./server-render";
 import { createState } from "./state";
 import { Router } from "./router/components";
 import { createRouter } from "./router/router";
@@ -566,5 +566,38 @@ describe("SSR usa a regra de reativo do cliente", () => {
     const { html, state } = renderToString(() => htmlString`<p>${rx as never}</p>`);
     expect(html).toBe("<p><!--reactive-start:s0--><b>x</b><!--reactive-end:s0--></p>");
     expect(state).toEqual({});
+  });
+});
+
+describe("serializeStateForScript", () => {
+  test("neutraliza </script> e <!--", () => {
+    const out = serializeStateForScript({ a: "</script><!-- x -->" });
+    expect(out).not.toContain("</script");
+    expect(out).not.toContain("<!--");
+    expect(out).not.toContain("<");
+    expect(out).not.toContain(">");
+  });
+
+  test("faz ida e volta exata", () => {
+    const original = {
+      a: "</script>",
+      b: "a & b",
+      c: "x\u2028y\u2029z",
+      d: "ação não é <b>",
+      n: [1, null, true],
+    };
+    const out = serializeStateForScript(original);
+    expect(out).not.toContain("\u2028");
+    expect(out).not.toContain("\u2029");
+    expect(JSON.parse(out)).toEqual(original);
+  });
+
+  test("renderToStream usa a serializacao segura", async () => {
+    const rx = { get: () => "</script><img onerror=x>", subscribe: () => () => {} };
+    let out = "";
+    for await (const c of renderToStream(() => htmlString`<p class=${rx as never}></p>`)) out += c;
+    const script = out.slice(out.indexOf('<script id="__SLASH_STATE__"'));
+    expect(script.indexOf("</script>")).toBe(script.length - "</script>".length);
+    expect(script).not.toContain("<img");
   });
 });
