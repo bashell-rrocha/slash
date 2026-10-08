@@ -245,6 +245,8 @@ function SignUp() {
 
 Available helpers: `textFieldControl`, `checkboxControl`, `radioControl`, `SelectControl`, `getText`, `getChecked`, `getSelectValue`, `delegate`, `formToObject`, `onSubmit`, `onReset`, `onButtonClick`, plus the form event types.
 
+`formToObject()` returns an object without a prototype (`Object.create(null)`): field names such as `__proto__` or `constructor` are plain own keys, but `data.hasOwnProperty(...)` does not exist; use `Object.hasOwn(data, "field")`.
+
 ## SSR and hydration
 
 - `htmlString` is the server twin of `html`: same syntax, returns a string.

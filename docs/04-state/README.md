@@ -327,6 +327,10 @@ function deepClone<T>(value: T): T {
 }
 ```
 
+> **Chaves especiais:** o clone preserva todas as chaves próprias (inclusive `constructor`, `prototype` e um `__proto__` vindo de `JSON.parse`) como dados, sem alterar o protótipo. Ao copiar o resultado de `state.get()`, prefira o spread `{ ...x }`: `Object.assign({}, x)` com uma chave própria `__proto__` troca o protótipo do alvo.
+>
+> Os helpers de formulário seguem a mesma linha: `formToObject()` devolve um objeto sem protótipo (`Object.create(null)`), então `data.hasOwnProperty(...)` não existe; use `Object.hasOwn(data, "campo")`.
+
 **Otimizações:**
 - Tratamento especial para `Error` (preservado) e `Date` (nova instância)
 - `Map`, `Set`, `RegExp`, funções e Symbols não são suportados como valores de state (não são clonados corretamente)
