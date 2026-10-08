@@ -10,20 +10,13 @@
 
 **Spec:** não há spec separado. As causas raiz e as evidências estão na seção "Causas raiz" abaixo, que é a autoridade deste plano.
 
-## ⚠️ Estado da execução (atualizado 2026-10-08, 3ª sessão) — leia primeiro
+## Estado da execução — concluído (2026-10-08)
 
-Implementação e revisões **concluídas**; a revisão final (tech-lead) e a rodada de correções dela estão limpas.
-Ledger completo (todas as rulings, menores adiados e itens estacionados): `.superpowers/sdd/2026-10-08-core-bugfixes/progress.md`.
+Plano executado e ampliado por uma revisão de segurança completa. **`@_bashell/slash` 0.0.3 publicada** (npm `latest`, com proveniência); templates `slash-spa`/`slash-ssr`/`slash-ssg` 0.0.2 e `slash-doc` 0.0.3 lançados.
 
-- Core `feature/core-bugfixes` (de `169cfba`): Tasks 1, 1b, 1c, 2, 2b, 3, 3b, 4, 4b, bloqueante do `dist/` (`verify:dist` no `publish.yml`), regra de confiança, correções da revisão final. 805 pass, tsc limpo, `verify:dist` OK.
-- `slash-spa` `feature/router-navigation-e2e` (E2E 16/16), `slash-ssr` `feature/safe-state-serialization` (E2E 1/1), `slash-ssg` `feature/core-bugfix-alignment` (174 unit + 14 E2E), `doc` `feature/api-accuracy-fixes` (36 páginas).
-
-**Parado antes da Task 7** (merge, `release/0.0.3`, push, publicação) aguardando decisões do usuário:
-- R5 (regra de confiança do SSR — XSS de projeto): liberar a 0.0.3 com o aviso documentado ou condicionar ao redesenho;
-- 0.0.2 em Staged Packages tem o CJS quebrado: rejeitar e publicar só a 0.0.3?
-- R6 (input recriado em re-render), R7 (ErrorBoundary não captura erros dos filhos), hidratação real, guards no SSR: decisões de design para depois.
-
-**Task 7, quando liberada:** CHANGELOG 0.0.3 (itens listados pela revisão final no ledger, incluindo CJS quebrado em 0.0.1/0.0.2, `router.ready` obrigatório no tipo, `push` para a URL atual não reconstrói a página, `State` não reativo no SSR, internos `__` do batch removidos); `ssg.md` `^0.0.2` → `^0.0.3` no site de docs; integração das 5 branches; simulação do CI em clone limpo com `verify:dist`; git flow manual; push com `SSH_AUTH_SOCK`. **Rodar todo teste/build/E2E com `systemd-run --user --scope -p MemoryMax=3G -p MemorySwapMax=0 timeout …` e um agente por vez (máquina de 16 GB sem swap).**
+- Decisões tomadas (com o custo de cada uma): `docs/superpowers/decisions/2026-10-08-security-0.0.3.md`.
+- O que mudou para o usuário: `CHANGELOG.md` (0.0.3), `MIGRATION.md`, `docs/19-security/README.md`.
+- Pendências: issues #1 (foco de input, R6), #2 (ErrorBoundary, R7), #3 (hidratação real), #4 (guards no SSR), #5 (Trusted Publishing/OIDC).
 
 ## Causas raiz (confirmadas por reprodução)
 
