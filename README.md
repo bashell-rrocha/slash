@@ -53,7 +53,7 @@ Server:
 
 ```typescript
 import { createState } from "@_bashell/slash/core";
-import { htmlString, renderToString } from "@_bashell/slash/ssr";
+import { htmlString, renderToString, serializeStateForScript } from "@_bashell/slash/ssr";
 
 const counter = createState({ count: 0 });
 
@@ -69,7 +69,7 @@ const page = `<!DOCTYPE html>
 <html>
   <body>
     <div id="app">${html}</div>
-    <script id="__SLASH_STATE__" type="application/json">${JSON.stringify(state)}</script>
+    <script id="__SLASH_STATE__" type="application/json">${serializeStateForScript(state)}</script>
     <script type="module" src="/client.js"></script>
   </body>
 </html>`;
@@ -241,7 +241,7 @@ Available helpers: `textFieldControl`, `checkboxControl`, `radioControl`, `Selec
 ## SSR and hydration
 
 - `htmlString` is the server twin of `html`: same syntax, returns a string.
-- `renderToString(view)` returns `{ html, state }`. Embed `state` as JSON in a `<script id="__SLASH_STATE__" type="application/json">` tag. SSR follows the client rule for reactives (an object with `get` and `subscribe`, such as `Router`): they are wrapped in `<!--reactive-start:id-->` markers and rendered like plain children, and their value is not written to `state`. A `State` is not reactive: interpolate `state.get()` to render its value.
+- `renderToString(view)` returns `{ html, state }`. Embed `state` with `serializeStateForScript(state)` (JSON with `<`, `>`, `&`, U+2028 and U+2029 escaped, so values cannot close the tag) in a `<script id="__SLASH_STATE__" type="application/json">` tag. SSR follows the client rule for reactives (an object with `get` and `subscribe`, such as `Router`): they are wrapped in `<!--reactive-start:id-->` markers and rendered like plain children, and their value is not written to `state`. A `State` is not reactive: interpolate `state.get()` to render its value.
 - `renderToStream(view)` is an async generator that yields HTML chunks and ends with the `__SLASH_STATE__` script.
 - `render(view, container)` hydrates automatically when the container already has content and a `__SLASH_STATE__` script exists. Otherwise it renders from scratch. There is no separate `hydrate()` function.
 - Data loading helpers: `createLoader`, `invalidateLoader`, `serializeLoaderData`, `deserializeLoaderData`, `hydrateLoaderCache`, `isServer`.
@@ -253,7 +253,7 @@ Available helpers: `textFieldControl`, `checkboxControl`, `radioControl`, `Selec
 | `@_bashell/slash/core` | `html`, `h`, `render`, `destroyNode`, `createState`, `batch`, `ErrorBoundary`, `safeRender`, `catchAsync`, `setupGlobalErrorHandler`, dev-mode helpers |
 | `@_bashell/slash/router` | `createRouter`, `Router`, `Link`, route utilities and types |
 | `@_bashell/slash/forms` | form controls, event helpers and form types |
-| `@_bashell/slash/ssr` | `htmlString`, `renderToString`, `renderToStream`, loader helpers |
+| `@_bashell/slash/ssr` | `htmlString`, `renderToString`, `renderToStream`, `serializeStateForScript`, loader helpers |
 | `@_bashell/slash` | everything above in one bundle |
 
 Prefer the subpaths: they keep your bundle small.
