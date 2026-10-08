@@ -1,4 +1,6 @@
 import { addCleanup } from "../lifecycle/cleanup";
+import { safeHtmlToFragment } from "../rendering/children";
+import { isSafeHtml } from "../safe-html";
 import type { Reactive } from "../types";
 import { processClassValue } from "../utils/helpers";
 
@@ -89,13 +91,17 @@ export function hydrateReactiveNodes(container: Node, reactives: Map<string, Rea
       } else if (Array.isArray(value)) {
         const frag = document.createDocumentFragment();
         for (const item of value) {
-          if (item instanceof Node) {
+          if (isSafeHtml(item)) {
+            frag.appendChild(safeHtmlToFragment(item));
+          } else if (item instanceof Node) {
             frag.appendChild(item.cloneNode(true));
           } else {
             frag.appendChild(document.createTextNode(String(item ?? "")));
           }
         }
         parent.insertBefore(frag, end);
+      } else if (isSafeHtml(value)) {
+        parent.insertBefore(safeHtmlToFragment(value), end);
       } else if (value instanceof Node) {
         parent.insertBefore(value.cloneNode(true), end);
       } else {
