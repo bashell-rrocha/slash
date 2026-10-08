@@ -63,8 +63,11 @@ export const createState = <S = unknown>(
     // Se um watcher fizer set reentrante, a notificação aninhada (mais nova)
     // já entregou o valor atual a todos: este laço para, sem entregar o velho
     const gen = ++_notifyGen;
-    for (const stateWatcher of _watchers) {
+    // Retrato: watcher adicionado durante a notificação começa na próxima
+    for (const stateWatcher of Array.from(_watchers)) {
       if (gen !== _notifyGen) break;
+      // Removido por um watcher anterior: não recebe nada
+      if (!_watchers.has(stateWatcher)) continue;
       try {
         stateWatcher(payload);
       } catch (error) {

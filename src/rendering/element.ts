@@ -4,24 +4,11 @@ import type { Child, Elementish, Props } from "../types";
 import { SVG_NS, SVG_TAGS } from "../utils/constants";
 import { appendChildSmart } from "./children";
 import { setProp } from "./props";
-import {
-  createStateTracker,
-  startTracking,
-  stopTracking,
-  trackState,
-  clearTrackedStates,
-  hasTrackedStates,
-  getTrackedStates,
-  diffTrackedStates,
-  type StateTracker,
-} from "./element-core";
+import { diffTrackedStates } from "./element-core";
 
 export function h(tag: unknown, props: Props, ...children: Child[]): Node {
   // Componente (função) — pode retornar qualquer Child; empacotar se não for Node
   if (typeof tag === "function") {
-    // Rastrear states acessados durante renderização usando Functional Core
-    let tracker = createStateTracker();
-
     // Criar anchor para marcar posição do componente
     const anchor = document.createComment("component");
 
@@ -54,11 +41,8 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
     let reactive = false;
 
     // Reconcilia watchers: remove os de states não lidos mais, adiciona os novos
-    const reconcileWatchers = () => {
-      const { add, remove } = diffTrackedStates(
-        new Set(unwatchers.keys()),
-        new Set(getTrackedStates(tracker))
-      );
+    const reconcileWatchers = (reads: ReadonlySet<State<any>>) => {
+      const { add, remove } = diffTrackedStates(unwatchers, reads);
       for (const state of remove) {
         unwatchers.get(state)?.();
         unwatchers.delete(state);
@@ -74,59 +58,64 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
       }
     };
 
+    // Geração da renderização mais recente (o último valor vence)
+    let renderGen = 0;
+    // States lidos na renderização que definiu os watchers atuais
+    let lastReads: ReadonlySet<State<any>> = new Set();
+
     // Função de renderização
     const render = () => {
+      const gen = ++renderGen;
       // Limpar nodes anteriores
       clearRange();
-      // Resetar tracking para nova renderização
-      tracker = clearTrackedStates(tracker);
-      tracker = startTracking(tracker);
+      // Conjunto local: render aninhado do mesmo componente não o compartilha
+      const reads = new Set<State<any>>();
 
       // Rastreador instalado só durante a execução deste componente
       // (restaura o anterior, ex.: o do pai, mesmo em caso de erro)
       const originalTracker = (globalThis as any).__SLASH_TRACK_STATE__;
       (globalThis as any).__SLASH_TRACK_STATE__ = (state: State<any>) => {
-        tracker = trackState(tracker, state);
+        reads.add(state);
       };
 
+      let out: Node | Child;
       try {
         // Executar componente
-        const out = (tag as (p: Record<string, unknown>) => Node | Child)({
+        out = (tag as (p: Record<string, unknown>) => Node | Child)({
           ...(props || {}),
           children,
         });
-
-        // Parar tracking e restaurar o rastreador antes de renderizar o resultado
-        tracker = stopTracking(tracker);
-        (globalThis as any).__SLASH_TRACK_STATE__ = originalTracker;
-
-        // Renderizar resultado
-        const frag = document.createDocumentFragment();
-        if (out instanceof Node) {
-          frag.appendChild(out);
-        } else {
-          appendChildSmart(frag, out as Child);
-        }
-
-        // Inserir antes do marcador final
-        const parent = end.parentNode;
-        if (parent) {
-          parent.insertBefore(frag, end);
-        }
       } finally {
-        // Parar tracking e restaurar o rastreador em caso de erro
-        tracker = stopTracking(tracker);
         (globalThis as any).__SLASH_TRACK_STATE__ = originalTracker;
-        // Re-renderizações mantêm os watchers alinhados aos states lidos
-        if (reactive) reconcileWatchers();
       }
+
+      // Uma renderização mais nova começou durante esta: ela já entregou o resultado
+      if (gen !== renderGen) return;
+      lastReads = reads;
+
+      // Renderizar resultado
+      const frag = document.createDocumentFragment();
+      if (out instanceof Node) {
+        frag.appendChild(out);
+      } else {
+        appendChildSmart(frag, out as Child);
+      }
+
+      // Inserir antes do marcador final
+      const parent = end.parentNode;
+      if (parent) {
+        parent.insertBefore(frag, end);
+      }
+
+      // Só reconcilia em sucesso: em erro, os watchers anteriores permanecem
+      if (reactive) reconcileWatchers(reads);
     };
 
     // Primeira renderização
     render();
 
     // Se não há states acessados, retornar node diretamente (retrocompatibilidade)
-    if (!hasTrackedStates(tracker)) {
+    if (lastReads.size === 0) {
       // Nodes do intervalo anchor..end (primeira e única renderização)
       const renderedNodes: Node[] = [];
       for (let n = anchor.nextSibling; n && n !== end; n = n.nextSibling) {
@@ -152,12 +141,10 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
 
     // Registrar watchers nos states lidos na primeira renderização
     reactive = true;
-    reconcileWatchers();
+    reconcileWatchers(lastReads);
 
     // Cleanup ao remover do DOM
     addCleanup(anchor, () => {
-      tracker = stopTracking(tracker);
-      tracker = clearTrackedStates(tracker);
       // Chamar unwatchers
       for (const unwatch of unwatchers.values()) {
         unwatch();
