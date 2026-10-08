@@ -79,7 +79,7 @@ Nomes de atributo inválidos (por exemplo com espaço ou `>`) são descartados, 
 
 ## `style`
 
-`style` aceita string ou objeto, e cada declaração passa por uma política de CSS no cliente e no servidor. Comentários e escapes CSS são decodificados antes da verificação.
+`style` aceita string ou objeto, e cada declaração passa por uma política de CSS no cliente e no servidor. Qualquer barra invertida (`\`) **fora de uma string entre aspas** invalida a declaração (ela é descartada, com aviso em dev), tanto no nome quanto no valor: `background:ur\6c(javascript:...)` e `c\6flor:red` não passam. Escapes **dentro de aspas** continuam funcionando (`content:"\2022"`, `font-family:"Fira \43ode"`). Uma string sem fechamento falha fechado (declaração descartada) e comentários `/* */` só são reconhecidos fora de strings.
 
 - o nome precisa ser um identificador CSS válido (propriedades `--custom` são mantidas como estão);
 - o nome não pode ser `-moz-binding`, `behavior` nem `behaviour` (`scroll-behavior` é permitido);
