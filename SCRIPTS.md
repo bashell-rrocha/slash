@@ -22,7 +22,7 @@ bun run dev
 
 Isso inicia dois processos em paralelo:
 - **types**: Gera arquivos `.d.ts` automaticamente quando você edita `.ts`
-- **bundle**: Gera bundle ESM em `dist/index.js` automaticamente
+- **bundle**: Gera os bundles ESM (um por entry point: `index`, `core`, `ssr`, `router` e `forms`) em `dist/` automaticamente
 
 ### Modo Watch Individual
 
@@ -48,9 +48,10 @@ bun run build
 
 Isso executa:
 1. `clean` - Remove `dist/`
-2. `build:types` - Gera arquivos `.d.ts`
-3. `build:esm` - Gera `dist/index.mjs` (minificado)
-4. `build:cjs` - Gera `dist/index.cjs` (minificado)
+2. `build:esm` - Gera os bundles `dist/*.mjs` (minificados)
+3. `build:cjs` - Gera os bundles `dist/*.cjs` (minificados)
+4. `build:types` - Gera arquivos `.d.ts` em `dist/types/`
+5. `build:compress` - Gera as versões `.gz` e `.br` dos bundles
 
 ### Build Individual
 
@@ -85,14 +86,17 @@ bun run test:watch
 
 ```
 dist/
-├── index.mjs          # Bundle ESM (produção, minificado)
-├── index.mjs.map      # Source map ESM
-├── index.cjs          # Bundle CJS (produção, minificado)
-├── index.cjs.map      # Source map CJS
-├── index.js           # Bundle ESM (dev, não minificado)
-└── types/             # Arquivos de definição TypeScript
+├── index.mjs / index.cjs      # Bundle completo (core + router + forms + ssr)
+├── core.mjs / core.cjs        # @_bashell/slash/core
+├── router.mjs / router.cjs    # @_bashell/slash/router
+├── forms.mjs / forms.cjs      # @_bashell/slash/forms
+├── ssr.mjs / ssr.cjs          # @_bashell/slash/ssr
+├── chunk-*.mjs / chunk-*.cjs  # Código compartilhado entre os entry points
+├── *.map, *.gz, *.br          # Source maps e versões comprimidas
+└── types/                     # Arquivos de definição TypeScript
     ├── index.d.ts
-    ├── signals.d.ts
+    ├── core.d.ts
+    ├── state.d.ts
     ├── hyper.d.ts
     └── ...
 ```
