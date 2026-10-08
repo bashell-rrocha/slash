@@ -37,12 +37,14 @@ export function deepClone<T>(obj: T): T {
     return obj.map(item => deepClone(item)) as T;
   }
 
-  // Objects
-  const cloned: any = {};
-  for (const key in obj) {
-    if (obj.hasOwnProperty(key)) {
-      cloned[key] = deepClone(obj[key]);
-    }
+  // Objects (sem prototipo preservam o prototipo nulo)
+  const cloned: any = Object.getPrototypeOf(obj) === null ? Object.create(null) : {};
+  const keys = Object.keys(obj as object);
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    // Chaves que poderiam alterar o prototipo (SEC-12) sao ignoradas
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+    cloned[key] = deepClone((obj as any)[key]);
   }
   return cloned;
 }

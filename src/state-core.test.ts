@@ -357,4 +357,37 @@ describe('State Core - FCIS Pattern', () => {
       expect(cloned).not.toBe(original)
     })
   })
+
+  describe('deepClone - chaves hostis (SEC-12)', () => {
+    test('__proto__ vindo de JSON nao altera o prototipo do clone', () => {
+      const evil = JSON.parse('{"__proto__":{"isAdmin":true},"a":{"__proto__":{"x":1}}}')
+      const cloned: any = deepClone(evil)
+      expect(cloned.isAdmin).toBeUndefined()
+      expect(cloned.a.x).toBeUndefined()
+      expect(Object.getPrototypeOf(cloned)).toBe(Object.prototype)
+      expect(Object.keys(cloned)).toEqual(['a'])
+      expect(({} as any).isAdmin).toBeUndefined()
+    })
+
+    test('constructor e prototype proprios sao ignorados', () => {
+      const cloned: any = deepClone(JSON.parse('{"constructor":{"prototype":{"p":1}},"prototype":1,"ok":2}'))
+      expect(Object.keys(cloned)).toEqual(['ok'])
+    })
+
+    test('hasOwnProperty como chave de dados nao lanca', () => {
+      expect(() => deepClone({ hasOwnProperty: 1, b: 2 })).not.toThrow()
+      expect(deepClone({ hasOwnProperty: 1, b: 2 })).toEqual({ hasOwnProperty: 1, b: 2 })
+    })
+
+    test('objetos sem prototipo sao clonados e mantem o prototipo nulo', () => {
+      const src = Object.create(null)
+      src.a = 1
+      src.n = Object.create(null, { b: { value: 2, enumerable: true } })
+      const cloned: any = deepClone(src)
+      expect(cloned).not.toBe(src)
+      expect(cloned.a).toBe(1)
+      expect(cloned.n.b).toBe(2)
+      expect(Object.getPrototypeOf(cloned)).toBe(null)
+    })
+  })
 })
