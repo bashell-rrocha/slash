@@ -99,16 +99,16 @@ async function buildEntry(entry: string): Promise<string> {
 
 // Textos de avisos de dev de TODAS as frentes (core/props, router/Link, SSR)
 const DEV_WARNING_TEXTS = {
-  core: ['URL bloqueada', 'unsafeHtml()', 'handlers reativos', 'atributo inválido', 'só aceita função', 'style ignora', 'bloqueada (injeta HTML)', 'não pode ser prop', 'style: declaração rejeitada', 'meta refresh'],
+  core: ['URL bloqueada', 'unsafeHtml()', 'reactive handlers', 'invalid attribute name', 'only accepts a function', 'style ignores', 'blocked (injects HTML)', 'cannot be a prop', 'style: declaration rejected', 'meta refresh', 'was dropped (strings are data'],
   router: ['deve ser um caminho do app'],
   ssr: [
-    'declaração de style rejeitada',
-    'srcdoc só aceita SafeHtml',
-    'nome de atributo inválido descartado',
-    'são reservados à hidratação',
-    'atributo on* descartado',
-    'string dentro de <script>',
-    'string renderizada como texto',
+    'style declaration rejected',
+    'srcdoc only accepts SafeHtml',
+    'invalid attribute name dropped',
+    'are reserved for hydration',
+    'on* attribute dropped',
+    'inside <script>/<style> was dropped',
+    'string rendered as text',
     'Unexpected object in child position',
   ],
 };
@@ -152,7 +152,7 @@ describe('Bundle Size Optimization', () => {
     }
   }, 30000);
 
-  test('core import deve produzir bundle de produção <= 8.2KB gzipado', async () => {
+  test('core import deve produzir bundle de produção <= 8.4KB gzipado', async () => {
     const size = await buildTestApp(`import { createState, html, render } from "${ROOT}/src/core.ts";`);
 
     const gzipKB = (size.gzip / 1024).toFixed(2);
@@ -160,15 +160,15 @@ describe('Bundle Size Optimization', () => {
 
     console.log(`\n📦 Core bundle: ${gzipKB} KB gzip, ${brotliKB} KB brotli\n`);
 
-    expect(size.gzip).toBeLessThanOrEqual(8.2 * 1024);
+    expect(size.gzip).toBeLessThanOrEqual(8.4 * 1024);
   }, 30000);
 
-  test('core import deve produzir bundle de produção <= 7.25KB brotli', async () => {
+  test('core import deve produzir bundle de produção <= 7.4KB brotli', async () => {
     const size = await buildTestApp(`import { createState, html, render } from "${ROOT}/src/core.ts";`);
 
     const brotliKB = (size.brotli / 1024).toFixed(2);
 
-    expect(size.brotli).toBeLessThanOrEqual(7.25 * 1024);
+    expect(size.brotli).toBeLessThanOrEqual(7.4 * 1024);
   }, 30000);
 
   test('full import deve ser <= 12KB gzipado', async () => {

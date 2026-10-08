@@ -2,6 +2,7 @@
 import htm from "htm";
 import { isDevMode, isWarningsEnabled } from "./dev-warnings";
 import { isSafeHtml, SafeHtml } from "./safe-html";
+import { markDynamic, unmark } from "./utils/dynamic-text";
 import type { Child, Props, Reactive } from "./types";
 import { isForbiddenStyleKey, isSafeCssDeclaration, sanitizeStyleString, styleKeyToCssName, styleObjectTooLong } from "./utils/css-policy";
 import { isEventHandler, isEventTuple, isReactive } from "./utils/guards";
@@ -64,27 +65,6 @@ function escapeHtml(unsafe: string): string {
     .replace(/'/g, "&#039;");
 }
 
-// Marcador interno: htmlString embrulha todo valor string DINÂMICO (${...}) antes de
-// chamar o htm. Assim, uma string "solta" filha direta de um elemento em hString é
-// texto estático escrito pelo desenvolvedor (cru em <script>/<style>); o resto é dado.
-// toString devolve o texto cru e existe SÓ para a concatenação do htm em atributos
-// mistos (class="a ${b}"); a classe é privada ao módulo e todo ponto de saída
-// (hString, htmlString) a remove antes de qualquer valor chegar ao usuário.
-class DynamicText {
-  constructor(readonly value: string) {}
-  toString(): string {
-    return this.value;
-  }
-}
-
-function markDynamic(value: unknown): unknown {
-  return typeof value === "string" ? new DynamicText(value) : value;
-}
-
-function unmark<T>(value: T): T | string {
-  return value instanceof DynamicText ? value.value : value;
-}
-
 // Avisos de dev: uma vez por mensagem (mensagens fixas, sem dados do usuário).
 // Todo ponto de chamada é escrito com `if (process.env.NODE_ENV !== "production")` inline:
 // o bundler só elimina os textos quando a expressão aparece por extenso (uma constante
@@ -104,9 +84,8 @@ export function resetSsrWarningsForTests(): void {
 
 const LOOKS_LIKE_MARKUP = /^\s*<[a-zA-Z!/]/;
 const TAG_NAME = /^[A-Za-z][A-Za-z0-9:-]*$/;
-// Gramática de nome de atributo HTML: sem espaço, aspas, <, >, /, = nem controles
-// biome-ignore lint/suspicious/noControlCharactersInRegex: faixa de controles é o ponto
-const ATTR_NAME = /^[^\s"'<>/=\u0000-\u001f\u007f-\u009f]+$/;
+// Attribute-name grammar, identical to the client's (props-core.ts ATTRIBUTE_NAME): ASCII, fail closed
+const ATTR_NAME = /^[A-Za-z_:][A-Za-z0-9_:.-]*$/;
 const EVENT_ATTR = /^on/i;
 const RAW_TEXT_ELEMENTS = new Set(["script", "style"]);
 const RESERVED_ATTR_PREFIX = "data-reactive-";
@@ -159,20 +138,20 @@ function processClass(val: unknown): string {
 
 function styleObjectToString(style: Record<string, unknown>): string {
   if (styleObjectTooLong(style)) {
-    if (process.env.NODE_ENV !== "production") warnOnce("declaração de style rejeitada (nome ou valor CSS inseguro)");
+    if (process.env.NODE_ENV !== "production") warnOnce("style declaration rejected (unsafe CSS name or value)");
     return "";
   }
   const decls: string[] = [];
   for (const [k, v] of Object.entries(style)) {
     if (v == null || v === false) continue;
     if (isForbiddenStyleKey(k)) {
-      if (process.env.NODE_ENV !== "production") warnOnce("declaração de style rejeitada (nome ou valor CSS inseguro)");
+      if (process.env.NODE_ENV !== "production") warnOnce("style declaration rejected (unsafe CSS name or value)");
       continue;
     }
     const name = styleKeyToCssName(k);
     const value = String(v).trim();
     if (!isSafeCssDeclaration(name, value)) {
-      if (process.env.NODE_ENV !== "production") warnOnce("declaração de style rejeitada (nome ou valor CSS inseguro)");
+      if (process.env.NODE_ENV !== "production") warnOnce("style declaration rejected (unsafe CSS name or value)");
       continue;
     }
     decls.push(`${name}: ${value}`);
@@ -183,7 +162,7 @@ function styleObjectToString(style: Record<string, unknown>): string {
 function styleStringToString(style: string): string {
   const { value, rejected } = sanitizeStyleString(style);
   if (rejected && process.env.NODE_ENV !== "production") {
-    warnOnce("declaração de style rejeitada (nome ou valor CSS inseguro)");
+    warnOnce("style declaration rejected (unsafe CSS name or value)");
   }
   return value;
 }
@@ -196,7 +175,7 @@ function genericAttr(tag: string, key: string, value: unknown, metaRefresh = fal
 
   if (lower === "srcdoc") {
     if (isSafeHtml(value)) return ` ${key}="${escapeHtml(value.value)}"`;
-    if (process.env.NODE_ENV !== "production") warnOnce("srcdoc só aceita SafeHtml; use srcdoc=${unsafeHtml(html)} (nunca com entrada do usuário)");
+    if (process.env.NODE_ENV !== "production") warnOnce("srcdoc only accepts SafeHtml; use srcdoc=${unsafeHtml(html)} (never with user input)");
     return "";
   }
 
@@ -210,7 +189,7 @@ function genericAttr(tag: string, key: string, value: unknown, metaRefresh = fal
   } else if (lower === "content" && metaRefresh) {
     const result = evaluateMetaRefresh(str);
     str = result.value;
-    if (result.blocked && process.env.NODE_ENV !== "production") warnOnce("meta refresh: URL bloqueada em content");
+    if (result.blocked && process.env.NODE_ENV !== "production") warnOnce("meta refresh: blocked URL in content");
   } else if (lower === "style") {
     str = styleStringToString(str);
     // Sem nenhuma declaração segura: o atributo style some (mesma regra do cliente)
@@ -234,7 +213,7 @@ function demoteSafeUrl(tag: string, key: string, value: unknown, metaRefresh: bo
   if (!isSafeUrl(value)) return value;
   const lower = key.toLowerCase();
   if (isUrlAttribute(lower, tag) || (metaRefresh && lower === "content")) return value;
-  if (process.env.NODE_ENV !== "production") warnOnce("unsafeUrl() só vale em atributos de URL; tratado como a string");
+  if (process.env.NODE_ENV !== "production") warnOnce("unsafeUrl() only applies to URL attributes; treated as the plain string");
   return value.value;
 }
 
@@ -250,13 +229,13 @@ function propsToAttrs(ctx: RenderContext, tag: string, props: Props | null): str
     const val = unmark(rawVal);
 
     if (!ATTR_NAME.test(key)) {
-      if (process.env.NODE_ENV !== "production") warnOnce("nome de atributo inválido descartado");
+      if (process.env.NODE_ENV !== "production") warnOnce("invalid attribute name dropped");
       continue;
     }
 
     // Prefixo reservado aos marcadores de hidratação emitidos pelo próprio SSR
     if (key.toLowerCase().startsWith(RESERVED_ATTR_PREFIX)) {
-      if (process.env.NODE_ENV !== "production") warnOnce("atributos data-reactive-* são reservados à hidratação e foram descartados");
+      if (process.env.NODE_ENV !== "production") warnOnce("data-reactive-* attributes are reserved for hydration and were dropped");
       continue;
     }
 
@@ -265,7 +244,7 @@ function propsToAttrs(ctx: RenderContext, tag: string, props: Props | null): str
     if (EVENT_ATTR.test(key)) {
       if (!isEventHandler(val) && !isEventTuple(val) && val != null && val !== false) {
         if (process.env.NODE_ENV !== "production") {
-          warnOnce('atributo on* descartado; use onClick=${fn} (handlers só existem no cliente); atributo simples precisa do prefixo data-');
+          warnOnce('on* attribute dropped; use onClick=${fn} (handlers only exist on the client); a plain attribute needs the data- prefix');
         }
       }
       continue;
@@ -359,11 +338,13 @@ function childToString(child: Child, ctx: RenderContext, rawText = false): strin
   // String e primitivos: sempre texto escapado; valor lido de state ganha marcador
   if (typeof child === "string") {
     if (rawText) {
+      // Escaping does not make code safe (alert(1) survives): a dynamic string is dropped, as on the client
       if (process.env.NODE_ENV !== "production") warnOnce(
-        "string dentro de <script>/<style> é escapada; para JSON use unsafeHtml(serializeStateForScript(x))",
+        "A dynamic string inside <script>/<style> was dropped (strings are data, not code). For JSON use unsafeHtml(serializeStateForScript(x))",
       );
+      return "";
     } else if (LOOKS_LIKE_MARKUP.test(child)) {
-      if (process.env.NODE_ENV !== "production") warnOnce("string renderizada como texto. Para HTML confiável use unsafeHtml() (nunca com entrada do usuário)");
+      if (process.env.NODE_ENV !== "production") warnOnce("string rendered as text. For trusted HTML use unsafeHtml() (never with user input)");
     }
   }
   const text = escapeHtml(String(child));
@@ -390,7 +371,7 @@ export function hString(tag: unknown, props: Props | null, ...rawChildren: Child
   // Elemento nativo
   const tagName = String(tag || "div");
   if (!TAG_NAME.test(tagName)) {
-    throw new Error(`[slash] SSR: nome de tag inválido: ${JSON.stringify(tagName)}`);
+    throw new Error(`[slash] SSR: invalid tag name: ${JSON.stringify(tagName)}`);
   }
 
   const attrs = propsToAttrs(ctx, tagName, props);

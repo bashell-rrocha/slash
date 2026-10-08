@@ -99,7 +99,7 @@ export function hHydrate(tag: unknown, props: Props, ...children: Child[]): Node
 
   if (props) {
     for (const [k, v] of Object.entries(props)) {
-      if (k.startsWith("on") && k[2] === k[2]?.toUpperCase()) {
+      if (/^on/i.test(k)) {
         setProp(el as Elementish, k, v);
       }
     }

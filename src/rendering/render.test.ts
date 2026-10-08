@@ -259,6 +259,7 @@ describe('rendering/render.ts', () => {
 
       const script = document.createElement('script')
       script.id = '__SLASH_STATE__'
+      script.type = 'application/json'
       script.textContent = '{}'
       document.body.appendChild(script)
 
@@ -280,6 +281,7 @@ describe('rendering/render.ts', () => {
 
       const script = document.createElement('script')
       script.id = '__SLASH_STATE__'
+      script.type = 'application/json'
       script.textContent = '{"key":"value"}'
       document.body.appendChild(script)
 
@@ -316,6 +318,7 @@ describe('rendering/render.ts', () => {
 
       const script = document.createElement('script')
       script.id = '__SLASH_STATE__'
+      script.type = 'application/json'
       script.textContent = '{}'
       document.body.appendChild(script)
 
@@ -342,6 +345,7 @@ describe('rendering/render.ts', () => {
 
       const script = document.createElement('script')
       script.id = '__SLASH_STATE__'
+      script.type = 'application/json'
       script.textContent = '{}'
       document.body.appendChild(script)
 
@@ -368,6 +372,7 @@ describe('rendering/render.ts', () => {
 
       const script = document.createElement('script')
       script.id = '__SLASH_STATE__'
+      script.type = 'application/json'
       script.textContent = '{"count":5}'
       document.body.appendChild(script)
 

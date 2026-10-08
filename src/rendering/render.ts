@@ -63,7 +63,7 @@ export function render(view: RootView, container: RenderContainer): Node | Node[
   const resolved = resolveContainer(container);
 
   const stateScript =
-    typeof document !== "undefined" ? document.getElementById("__SLASH_STATE__") : null;
+    typeof document !== "undefined" ? document.querySelector('script#__SLASH_STATE__[type="application/json"]') : null;
 
   if (resolved.childNodes.length > 0 && stateScript) {
     const state = JSON.parse(stateScript.textContent || "{}");

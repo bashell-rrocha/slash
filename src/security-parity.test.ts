@@ -519,3 +519,23 @@ describe("divergencias aceitas entre cliente e SSR", () => {
     expect(ssrAttr("div", { "data-reactive-class": "s0" }, "data-reactive-class")).toBeNull();
   });
 });
+
+// Attribute-name grammar: ASCII, fail closed, identical on both sides
+describe("parity: attribute names", () => {
+  for (const [name, expected] of [
+    ["data-ok", "v"],
+    ["aria-label", "v"],
+    ["xlink:href", "v"],
+    ["@click", null],
+    ["[x]", null],
+    ["xé", null],
+    ["1a", null],
+  ] as Array<[string, string | null]>) {
+    test(JSON.stringify(name), () => {
+      const client = h("div", { [name]: "v" }) as Element;
+      const ssr = renderToString(() => htmlString`<div ...${{ [name]: "v" }}></div>`).html;
+      expect(client.getAttribute(name) ?? null).toBe(expected);
+      expect(ssr.includes(`${name}="v"`)).toBe(expected !== null);
+    });
+  }
+});

@@ -137,7 +137,7 @@ export function batch(fn: () => void): void {
     } catch (flushError) {
       // O erro de fn tem prioridade; o do watcher é reportado, não engolido
       if (!fnFailed) throw flushError
-      console.error('[slash] erro em watcher durante o flush do batch', flushError)
+      console.error('[slash] error in watcher during batch flush', flushError)
     }
   }
 

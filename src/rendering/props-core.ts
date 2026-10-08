@@ -34,6 +34,7 @@ export function isValidTagName(name: string): boolean {
 // Props que viram HTML/markup: bloqueadas (use unsafeHtml() como filho)
 const HTML_SINK_PROPS = new Set(["innerhtml", "outerhtml", "insertadjacenthtml", "srcdoc"]);
 // Nomes que alterariam o protótipo/identidade do elemento
+const RAW_TEXT_PROPS = new Set(["text", "textcontent", "innertext"]);
 const PROTOTYPE_PROPS = new Set(["__proto__", "constructor", "prototype"]);
 // Avisos só existem em dev: toda mensagem é montada atrás de
 // `process.env.NODE_ENV !== "production"` escrito por extenso (o bundler só elimina
@@ -111,13 +112,28 @@ export function computePropUpdate(
   if (isSafeUrl(value) && !(isUrlAttribute(key, elementType) || (isMetaRefresh && lowerKey === "content"))) {
     const update = computePropUpdate(elementType, key, value.value, hasProperty, isMetaRefresh);
     if (process.env.NODE_ENV === "production") return update;
-    const warning = update.metadata?.warning ?? `${key}: unsafeUrl() só vale em atributos de URL; tratado como a string`;
+    const warning = update.metadata?.warning ?? `${key}: unsafeUrl() only applies to URL attributes; treated as the plain string`;
     return { ...update, metadata: { ...update.metadata, warning } };
   }
 
   // 1.1) Nome de atributo inválido (S5): descarta, nunca chega ao DOM
   if (!isValidAttributeName(key)) {
-    return blocked(key, value, process.env.NODE_ENV !== "production" ? `atributo inválido: ${JSON.stringify(key)}` : "");
+    return blocked(key, value, process.env.NODE_ENV !== "production" ? `invalid attribute name: ${JSON.stringify(key)}` : "");
+  }
+
+  // 1.15) <script>/<style>: text, textContent and innerText are code sinks. Only SafeHtml
+  // (unsafeHtml) is accepted, mirroring the SSR rule for dynamic children.
+  if ((elementType === "script" || elementType === "style") && RAW_TEXT_PROPS.has(lowerKey)) {
+    if (isSafeHtml(value)) {
+      value = value.value;
+    } else {
+      if (value == null || value === false) return { type: "NO_OP", key, value };
+      return blocked(
+        key,
+        value,
+        process.env.NODE_ENV !== "production" ? `${key} on <${elementType}> only accepts unsafeHtml() (a string would run as code)` : "",
+      );
+    }
   }
 
   // 1.2) Eventos (S3/SEC-14, regra única com o SSR): TODO /^on/i é evento. Só função, objeto
@@ -130,7 +146,7 @@ export function computePropUpdate(
       return blocked(
         key,
         value,
-        process.env.NODE_ENV !== "production" ? `${key}: handlers reativos não são suportados; passe uma função` : "",
+        process.env.NODE_ENV !== "production" ? `${key}: reactive handlers are not supported; pass a function` : "",
       );
     }
     if (value == null || value === false) return { type: "NO_OP", key, value };
@@ -138,7 +154,7 @@ export function computePropUpdate(
       key,
       value,
       process.env.NODE_ENV !== "production"
-        ? `${key} só aceita função, objeto handleEvent ou tupla [fn, opções]; atributo simples que começa com "on" precisa do prefixo data- (ex.: data-${key})`
+        ? `${key} only accepts a function, a handleEvent object or a [fn, options] tuple; a plain attribute starting with "on" needs the data- prefix (e.g. data-${key})`
         : "",
     );
   }
@@ -152,11 +168,11 @@ export function computePropUpdate(
     return blocked(
       key,
       value,
-      process.env.NODE_ENV !== "production" ? `${key} bloqueada (injeta HTML). Para HTML confiável use um filho unsafeHtml()` : "",
+      process.env.NODE_ENV !== "production" ? `${key} blocked (injects HTML). For trusted HTML use an unsafeHtml() child` : "",
     );
   }
   if (PROTOTYPE_PROPS.has(lowerKey)) {
-    return blocked(key, value, process.env.NODE_ENV !== "production" ? `${key} não pode ser prop` : "");
+    return blocked(key, value, process.env.NODE_ENV !== "production" ? `${key} cannot be a prop` : "");
   }
 
   // 2) SET_CLASS: class ou className
@@ -186,7 +202,7 @@ export function computePropUpdate(
         type: "SET_STYLE",
         key,
         value: {},
-        ...(process.env.NODE_ENV !== "production" ? { metadata: { warning: "style ignorado: mais de 8 KB" } } : {}),
+        ...(process.env.NODE_ENV !== "production" ? { metadata: { warning: "style ignored: more than 8 KB" } } : {}),
       };
     }
     const safe: Record<string, unknown> = {};
@@ -205,7 +221,7 @@ export function computePropUpdate(
       type: "SET_STYLE",
       key,
       value: safe,
-      ...(process.env.NODE_ENV !== "production" && dropped.length ? { metadata: { warning: `style ignora ${dropped.join(", ")}` } } : {}),
+      ...(process.env.NODE_ENV !== "production" && dropped.length ? { metadata: { warning: `style ignores ${dropped.join(", ")}` } } : {}),
     };
   }
 
@@ -219,7 +235,7 @@ export function computePropUpdate(
         key,
         value: "",
         ...(process.env.NODE_ENV !== "production" && rejected
-          ? { metadata: { warning: "style: declaração rejeitada (nome ou valor CSS inseguro)" } }
+          ? { metadata: { warning: "style: declaration rejected (unsafe CSS name or value)" } }
           : {}),
       };
     }
@@ -228,7 +244,7 @@ export function computePropUpdate(
       key,
       value: safeStyle,
       ...(process.env.NODE_ENV !== "production" && rejected
-        ? { metadata: { warning: "style: declaração rejeitada (nome ou valor CSS inseguro)" } }
+        ? { metadata: { warning: "style: declaration rejected (unsafe CSS name or value)" } }
         : {}),
     };
   }
@@ -317,7 +333,9 @@ function emitPropWarning(update: PropUpdate): void {
  * @returns true se a propriedade existe no elemento
  */
 export function hasNativeProperty(element: Elementish, key: string): boolean {
-  return key in element;
+  // A key that names a DOM method (appendChild, setAttribute...) is never a property:
+  // assigning it would shadow the method on this element. It falls back to an attribute.
+  return key in element && typeof (element as unknown as Record<string, unknown>)[key] !== "function";
 }
 
 /** Shell: o elemento é <meta http-equiv="refresh"> (lê o atributo já gravado)? */
@@ -455,7 +473,7 @@ export function applyPropUpdate(element: Elementish, update: PropUpdate): void {
     default: {
       // Tipo desconhecido - TypeScript garantirá que isso nunca acontece
       const exhaustive: never = update.type;
-      throw new Error(`Tipo de PropUpdate desconhecido: ${exhaustive}`);
+      throw new Error(`Unknown PropUpdate type: ${exhaustive}`);
     }
   }
 }
