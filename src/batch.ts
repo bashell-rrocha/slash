@@ -1,48 +1,23 @@
 /**
  * IMPERATIVE SHELL: Batch Updates API
  *
- * Fornece API pública para agrupar múltiplas atualizações de estado,
- * executando notificações apenas uma vez ao final do batch.
+ * Fornece API pública para agrupar múltiplas atualizações de estado.
+ * Estados alterados dentro do lote enfileiram seu notificador; no fim do
+ * lote mais externo cada notificador roda uma única vez, com o valor final.
  */
 
-import {
-  createBatchContext,
-  computeBatchCommand,
-  applyBatchCommand,
-  isBatching,
-  shouldNotifyAfterBatch,
-  type BatchContext
-} from './batch-core'
+import { enterBatch, exitBatch } from './batch-core'
 
 /**
- * Contexto global de batching (singleton)
+ * Profundidade atual de lotes (0 = fora de lote)
  */
-let globalBatchContext: BatchContext = createBatchContext()
+let batchDepth = 0
 
 /**
- * Callbacks que serão executados quando batch finalizar
+ * Notificadores de estados alterados durante o lote.
+ * Set preserva a ordem do primeiro enfileiramento e deduplica por identidade.
  */
-const batchEndCallbacks = new Set<() => void>()
-
-/**
- * Adiciona callback para ser executado ao finalizar batch
- * Usado internamente pelo state manager
- *
- * @internal
- */
-export function __addBatchEndCallback(callback: () => void): void {
-  batchEndCallbacks.add(callback)
-}
-
-/**
- * Remove callback de batch end
- * Usado internamente pelo state manager (cleanup)
- *
- * @internal
- */
-export function __removeBatchEndCallback(callback: () => void): void {
-  batchEndCallbacks.delete(callback)
-}
+let pendingNotifiers = new Set<() => void>()
 
 /**
  * Verifica se está atualmente em modo batch
@@ -50,14 +25,60 @@ export function __removeBatchEndCallback(callback: () => void): void {
  * @returns true se está batching
  */
 export function isInBatch(): boolean {
-  return isBatching(globalBatchContext)
+  return batchDepth > 0
+}
+
+/**
+ * Registra o notificador de um estado alterado durante o lote
+ * Usado internamente pelo state manager
+ *
+ * @internal
+ */
+export function __enqueueBatchNotify(notify: () => void): void {
+  pendingNotifiers.add(notify)
+}
+
+/**
+ * Quantidade de notificadores pendentes (apenas para testes)
+ *
+ * @internal
+ */
+export function __pendingBatchNotifyCount(): number {
+  return pendingNotifiers.size
+}
+
+/**
+ * Executa os notificadores pendentes, isolando erros:
+ * todos rodam e o primeiro erro é relançado no fim.
+ */
+function flushPending(): void {
+  // Esvazia antes de rodar: sets feitos por observadores (já fora do lote)
+  // notificam normalmente, sem se misturar a esta fila.
+  const toRun = pendingNotifiers
+  pendingNotifiers = new Set()
+
+  let firstError: unknown
+  let hasError = false
+  for (const notify of toRun) {
+    try {
+      notify()
+    } catch (error) {
+      if (!hasError) {
+        hasError = true
+        firstError = error
+      }
+    }
+  }
+  if (hasError) throw firstError
 }
 
 /**
  * Agrupa múltiplas atualizações de estado em um batch
  *
- * Durante a execução da função, todas as atualizações de estado
- * são acumuladas e notificam watchers apenas uma vez ao final.
+ * Durante a execução da função, estados alterados não notificam; ao final
+ * do batch mais externo cada estado alterado notifica uma vez com o valor
+ * final. Estados não alterados não são notificados. Batches aninhados são
+ * suportados. Se `fn` lançar, as notificações ainda ocorrem e o erro sobe.
  *
  * @example
  * ```ts
@@ -73,46 +94,30 @@ export function isInBatch(): boolean {
  * @param fn - Função contendo as atualizações a serem agrupadas
  */
 export function batch(fn: () => void): void {
-  // 1. FUNCTIONAL CORE: Computar comando de início
-  const startCommand = computeBatchCommand(globalBatchContext, 'start')
+  batchDepth = enterBatch(batchDepth)
 
-  // 2. FUNCTIONAL CORE: Aplicar comando
-  globalBatchContext = applyBatchCommand(globalBatchContext, startCommand)
-
+  let fnError: unknown
+  let fnFailed = false
   try {
-    // 3. IMPERATIVE SHELL: Executar função do usuário (side effects)
     fn()
-  } finally {
-    // 4. FUNCTIONAL CORE: Verificar se deve notificar
-    const shouldNotify = shouldNotifyAfterBatch(globalBatchContext)
+  } catch (error) {
+    fnFailed = true
+    fnError = error
+  }
 
-    // 5. FUNCTIONAL CORE: Computar comando de fim
-    const endCommand = computeBatchCommand(globalBatchContext, 'end')
+  const exit = exitBatch(batchDepth)
+  batchDepth = exit.depth
 
-    // 6. FUNCTIONAL CORE: Aplicar comando
-    globalBatchContext = applyBatchCommand(globalBatchContext, endCommand)
-
-    // 7. IMPERATIVE SHELL: Side effect de notificação (se necessário)
-    if (shouldNotify) {
-      for (const callback of batchEndCallbacks) {
-        callback()
-      }
+  if (exit.flush) {
+    try {
+      flushPending()
+    } catch (flushError) {
+      // O erro de fn tem prioridade sobre erros de observadores
+      if (!fnFailed) throw flushError
     }
   }
-}
 
-/**
- * Registra um update durante batch
- * Usado internamente pelo state manager
- *
- * @internal
- */
-export function __recordBatchUpdate(): void {
-  // 1. FUNCTIONAL CORE: Computar comando de update
-  const command = computeBatchCommand(globalBatchContext, 'update')
-
-  // 2. FUNCTIONAL CORE: Aplicar comando
-  globalBatchContext = applyBatchCommand(globalBatchContext, command)
+  if (fnFailed) throw fnError
 }
 
 /**
@@ -121,6 +126,6 @@ export function __recordBatchUpdate(): void {
  * @internal
  */
 export function __resetBatchContext(): void {
-  globalBatchContext = createBatchContext()
-  batchEndCallbacks.clear()
+  batchDepth = 0
+  pendingNotifiers = new Set()
 }
