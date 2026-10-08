@@ -6,6 +6,7 @@
  * Não contém side effects ou mutação de DOM.
  */
 
+import { isSafeHtml } from "../safe-html";
 import { isSafeUrl } from "../safe-url";
 import type { Elementish } from "../types";
 import { isEventHandler, isEventTuple } from "../utils/guards";
@@ -143,7 +144,10 @@ export function computePropUpdate(
 
   // 1.3) Props que viram HTML ou alteram o protótipo (S4/SEC-05)
   const lowerKey = key.toLowerCase();
-  if (HTML_SINK_PROPS.has(lowerKey)) {
+  if (lowerKey === "srcdoc" && isSafeHtml(value)) {
+    // srcdoc só é aceito como SafeHtml (unsafeHtml): grava o markup confiável como texto do atributo
+    value = value.value;
+  } else if (HTML_SINK_PROPS.has(lowerKey)) {
     if (value == null || value === false) return { type: "NO_OP", key, value };
     return blocked(
       key,

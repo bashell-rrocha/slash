@@ -4,6 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { h, html } from "../hyper";
+import { unsafeHtml } from "../safe-html";
 import { unsafeUrl } from "../safe-url";
 import { resetSecurityWarnings } from "../utils/security-warn";
 import { BLOCKED_URL } from "../utils/url-policy";
@@ -121,6 +122,22 @@ describe("SEC-05 / S4 cliente: props que viram HTML", () => {
     const f = h("iframe", { srcdoc: "<script>alert(1)</script>" }) as HTMLIFrameElement;
     expect(f.getAttribute("srcdoc")).toBeNull();
     expect(f.srcdoc ?? "").toBe("");
+  });
+  test("srcdoc aceita SafeHtml (unsafeHtml) e grava o valor como atributo", () => {
+    const f = h("iframe", { srcdoc: unsafeHtml("<p>a</p>") }) as HTMLIFrameElement;
+    expect(f.getAttribute("srcdoc")).toBe("<p>a</p>");
+    expect(warn).not.toHaveBeenCalled();
+  });
+  test("srcdoc SafeHtml reativo também passa; string reativa não", () => {
+    const f = h("iframe", { srcdoc: reactive(unsafeHtml("<b>r</b>")) }) as HTMLIFrameElement;
+    expect(f.getAttribute("srcdoc")).toBe("<b>r</b>");
+    const g = h("iframe", { srcdoc: reactive("<script>alert(1)</script>") }) as HTMLIFrameElement;
+    expect(g.getAttribute("srcdoc")).toBeNull();
+  });
+  test("srcdoc: objeto que imita SafeHtml ({value}) é bloqueado com aviso", () => {
+    const f = h("iframe", { srcdoc: { value: "<script>alert(1)</script>" } }) as HTMLIFrameElement;
+    expect(f.getAttribute("srcdoc")).toBeNull();
+    expect(warn).toHaveBeenCalled();
   });
   test("o aviso menciona unsafeHtml()", () => {
     h("div", { innerHTML: X });
