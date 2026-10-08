@@ -770,3 +770,34 @@ describe('form.helpers', () => {
     });
   });
 });
+
+describe('formToObject() - nomes de campo hostis (SEC-10)', () => {
+  test('mantem __proto__, constructor e toString como chaves proprias', () => {
+    const form = document.createElement('form');
+    form.innerHTML = `
+      <input name="__proto__" value="a" />
+      <input name="constructor" value="b" />
+      <input name="toString" value="c" />
+      <input name="hasOwnProperty" value="d" />
+    `;
+    const result = formToObject(form);
+
+    expect(Object.getPrototypeOf(result)).toBe(null);
+    expect(Object.keys(result).sort()).toEqual(['__proto__', 'constructor', 'hasOwnProperty', 'toString']);
+    expect(Object.getOwnPropertyDescriptor(result, '__proto__')?.value).toBe('a');
+    expect(result.constructor).toBe('b');
+    expect(result.toString).toBe('c');
+    expect(result.hasOwnProperty).toBe('d');
+    expect(JSON.parse(JSON.stringify(result)).constructor).toBe('b');
+    expect(({} as any).a).toBeUndefined();
+  });
+
+  test('campos duplicados com nome hostil viram array de valores', () => {
+    const form = document.createElement('form');
+    form.innerHTML = `
+      <input name="constructor" value="x" />
+      <input name="constructor" value="y" />
+    `;
+    expect(formToObject(form).constructor).toEqual(['x', 'y']);
+  });
+});
