@@ -47,6 +47,15 @@ export function createRouter(config: RouterConfig): RouterInstance {
   // se uma navegação mais nova começou durante algum await
   let navSeq = 0
 
+  // Último caminho (pathname + search) efetivamente resolvido; eventos de
+  // histórico para ele são no-op (ex.: hashchange assíncrono do próprio push)
+  let lastPath: string | null = null
+  const pathKey = (p: string): string => {
+    const input = parseNavigationPath(p)
+    const [, search] = splitPath(p)
+    return search ? `${input.pathname}${search}` : input.pathname
+  }
+
   /**
    * Navigate to a path using pure decision logic
    * `initial`: verificação de guards da rota inicial (bloqueio zera a rota)
@@ -104,6 +113,12 @@ export function createRouter(config: RouterConfig): RouterInstance {
     if (decision.redirect) {
       await run(decision.redirect, replace, fromHistory, initial, seq, depth + 1)
       return
+    }
+
+    // Eventos de histórico e a verificação inicial registram o caminho resolvido,
+    // mesmo quando bloqueado: reentrar para a mesma URL repetiria guards com efeitos
+    if (fromHistory || initial || decision.shouldNavigate) {
+      lastPath = pathKey(path)
     }
 
     // Handle navigation decision
@@ -208,6 +223,8 @@ export function createRouter(config: RouterConfig): RouterInstance {
         })
       }
 
+      if (!guarded) lastPath = pathKey(initialPath)
+
       if (guarded) {
         const promise = navigate(initialPath, true, false, true)
         const initialSeq = navSeq
@@ -226,6 +243,7 @@ export function createRouter(config: RouterConfig): RouterInstance {
   if (!adapter.isSSR()) {
     history.listen((location) => {
       if (replacingInitial) return
+      if (lastPath !== null && pathKey(location) === lastPath) return
       navigate(location, true, true).catch((err) => {
         console.error("Navigation error:", err)
       })
