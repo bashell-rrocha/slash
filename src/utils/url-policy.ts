@@ -70,6 +70,8 @@ function normalizeForSchemeCheck(value: string): string {
 }
 
 function isAllowedSingleUrl(attr: string, value: string, tag?: string): boolean {
+  // O valor inerte que a própria política emite (ex.: Link bloqueado) não é bloqueado de novo
+  if (value === BLOCKED_URL) return true;
   const normalized = normalizeForSchemeCheck(value);
   const match = SCHEME.exec(normalized);
   if (!match) return true; // sem esquema: relativa (inclui //host, /x, ?q, #h)

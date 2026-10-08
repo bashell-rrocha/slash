@@ -240,6 +240,19 @@ describe("atributos de URL adicionais (SEC-04 menores)", () => {
   });
 });
 
+describe("BLOCKED_URL", () => {
+  test("passa pela política sem aviso e sem alteração (só o valor exato)", () => {
+    for (const [attr, tag] of [["href", "a"], ["src", "img"], ["action", "form"], ["srcset", "img"]]) {
+      expect(sanitizeUrl(attr as string, BLOCKED_URL, tag)).toBe(BLOCKED_URL);
+      expect(evaluateUrl(attr as string, BLOCKED_URL, tag)).toEqual({ value: BLOCKED_URL, blocked: false });
+    }
+    expect(warn).not.toHaveBeenCalled();
+    // variações continuam bloqueadas
+    expect(evaluateUrl("href", "about:blank", "a").blocked).toBe(true);
+    expect(evaluateUrl("href", `${BLOCKED_URL}x`, "a").blocked).toBe(true);
+  });
+});
+
 describe("avisos deduplicados", () => {
   test("a mesma chave avisa uma vez só", () => {
     sanitizeUrl("href", "javascript:a", "a");

@@ -79,6 +79,10 @@ describe("Link com destino que não é caminho do app (nunca navega)", () => {
       expect(warn).toHaveBeenCalled();
     });
   }
+  test("destino bloqueado emite exatamente um aviso (BLOCKED_URL não é bloqueada de novo)", () => {
+    make("javascript:alert(1)");
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
   test("to undefined ou null: sem href perigoso, sem push, com aviso", () => {
     for (const to of [undefined, null]) {
       resetSecurityWarnings();
