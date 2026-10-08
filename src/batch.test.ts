@@ -94,9 +94,12 @@ describe('batch (Imperative Shell)', () => {
 
     test('batch vazio não chama nada', () => {
       let calls = 0
+      const notify = () => calls++
+      batch(() => {})
       batch(() => {})
       expect(calls).toBe(0)
       expect(__pendingBatchNotifyCount()).toBe(0)
+      expect(notify).toBeDefined()
     })
 
     test('notificador que lança não impede os demais; primeiro erro é relançado', () => {
@@ -116,10 +119,52 @@ describe('batch (Imperative Shell)', () => {
       }).toThrow('first')
       expect(order).toEqual(['a', 'b', 'c'])
       expect(isInBatch()).toBe(false)
+      expect(__pendingBatchNotifyCount()).toBe(0)
+    })
+  })
+
+  describe('erros: fn e watcher', () => {
+    test('erro de fn tem precedência e o erro do watcher é reportado', () => {
+      const original = console.error
+      const logged: unknown[][] = []
+      console.error = (...args: unknown[]) => {
+        logged.push(args)
+      }
+      try {
+        const watcherError = new Error('watcher')
+        expect(() => {
+          batch(() => {
+            __enqueueBatchNotify(() => {
+              throw watcherError
+            })
+            throw new Error('fn')
+          })
+        }).toThrow('fn')
+        expect(logged).toEqual([
+          ['[slash] erro em watcher durante o flush do batch', watcherError]
+        ])
+      } finally {
+        console.error = original
+      }
     })
   })
 
   describe('batch aninhados', () => {
+    test('batch interno que lança: externo ainda faz flush uma vez e o erro sobe', () => {
+      let calls = 0
+      const notify = () => calls++
+      expect(() => {
+        batch(() => {
+          __enqueueBatchNotify(notify)
+          batch(() => {
+            throw new Error('inner')
+          })
+        })
+      }).toThrow('inner')
+      expect(calls).toBe(1)
+      expect(isInBatch()).toBe(false)
+    })
+
     test('fim do batch interno não encerra o externo', () => {
       let afterInner = false
       batch(() => {

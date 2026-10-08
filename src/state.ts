@@ -15,7 +15,7 @@ import {
 } from './state-core'
 import type { StateHistory } from './state-history'
 import { createHistory, addToHistory, clearHistory as clearHistoryCore } from './state-history'
-import { isInBatch, __enqueueBatchNotify } from './batch'
+import { isInBatch, __enqueueBatchNotify, __dropInFlightNotify } from './batch'
 
 export type StateWatcher<T> = (params: T) => void;
 
@@ -99,6 +99,9 @@ export const createState = <S = unknown>(
 
     // 5. FUNCTIONAL CORE: Decidir se deve notificar (puro)
     if (shouldNotifyWatchers(command)) {
+      // Se este estado ainda esperava notificação num flush em andamento,
+      // a notificação abaixo (ou a re-enfileirada) já entrega o valor novo
+      __dropInFlightNotify(_notifyFinal);
       // 6. BATCH: Enfileirar notificador deste estado se em modo batch
       if (isInBatch()) {
         __enqueueBatchNotify(_notifyFinal);

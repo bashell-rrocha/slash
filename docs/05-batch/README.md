@@ -71,7 +71,8 @@ batch(() => {
 - Batches **aninhados** são suportados: o fim do batch interno não encerra o externo, e as notificações só ocorrem no fim do batch **mais externo**.
 - Se a função lançar um erro, as notificações ainda acontecem e o erro é propagado.
 - Um `set` feito por um watcher durante as notificações (já fora do batch) notifica normalmente.
-- Erros em watchers são isolados, dentro e fora de batch: todos os watchers rodam e o primeiro erro é relançado no final. Se `fn` e um watcher lançarem, o erro de `fn` é o propagado.
+- Erros em watchers são isolados, dentro e fora de batch: todos os watchers rodam e o primeiro erro é relançado no final. Se `fn` e um watcher lançarem, o erro de `fn` é o propagado e o do watcher é registrado com `console.error("[slash] erro em watcher durante o flush do batch", err)`.
+- Se um watcher altera um state cuja notificação ainda estava pendente no mesmo flush, esse state notifica uma única vez com o valor mais recente (sem duplicar).
 
 ### Estado Interno
 

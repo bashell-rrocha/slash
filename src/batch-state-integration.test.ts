@@ -451,5 +451,51 @@ describe('batch + state integration', () => {
       expect(__pendingBatchNotifyCount()).toBe(0)
       expect(calls).toBe(0)
     })
+
+    test('observador que altera estado ainda pendente no flush não duplica a notificação', () => {
+      const a = createState(0)
+      const b = createState(0)
+      const seenB: number[] = []
+      a.watch((v) => b.set(v + 100))
+      b.watch((v) => seenB.push(v))
+
+      batch(() => {
+        a.set(1)
+        b.set(5)
+      })
+
+      expect(seenB).toEqual([101])
+    })
+
+    test('batch dentro de watcher durante o flush notifica uma vez', () => {
+      const a = createState(0)
+      const b = createState(0)
+      const seenB: number[] = []
+      a.watch(() => {
+        batch(() => {
+          b.set(1)
+          b.set(2)
+        })
+      })
+      b.watch((v) => seenB.push(v))
+
+      batch(() => {
+        a.set(1)
+      })
+
+      expect(seenB).toEqual([2])
+      expect(isInBatch()).toBe(false)
+    })
+
+    test('isInBatch é false após batch normal e sem pendências após flush com erro', () => {
+      const a = createState(0)
+      a.watch(() => {
+        throw new Error('w')
+      })
+      expect(() => batch(() => a.set(1))).toThrow('w')
+      expect(__pendingBatchNotifyCount()).toBe(0)
+      batch(() => {})
+      expect(isInBatch()).toBe(false)
+    })
   })
 })

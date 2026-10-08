@@ -20,6 +20,12 @@ let batchDepth = 0
 let pendingNotifiers = new Set<() => void>()
 
 /**
+ * Filas em execução (flush em andamento; mais de uma se houver batch dentro
+ * de um watcher). Permite descartar notificadores que já notificaram.
+ */
+const inFlightQueues = new Set<Set<() => void>>()
+
+/**
  * Verifica se está atualmente em modo batch
  *
  * @returns true se está batching
@@ -36,6 +42,17 @@ export function isInBatch(): boolean {
  */
 export function __enqueueBatchNotify(notify: () => void): void {
   pendingNotifiers.add(notify)
+}
+
+/**
+ * Descarta o notificador de qualquer flush em andamento. Chamado quando o
+ * estado muda durante o flush: ele notificará (direta ou novamente
+ * enfileirado) com o valor mais recente, evitando notificação duplicada.
+ *
+ * @internal
+ */
+export function __dropInFlightNotify(notify: () => void): void {
+  for (const queue of inFlightQueues) queue.delete(notify)
 }
 
 /**
@@ -59,15 +76,21 @@ function flushPending(): void {
 
   let firstError: unknown
   let hasError = false
-  for (const notify of toRun) {
-    try {
-      notify()
-    } catch (error) {
-      if (!hasError) {
-        hasError = true
-        firstError = error
+  inFlightQueues.add(toRun)
+  try {
+    // Set iterado ao vivo: itens removidos antes de visitados são pulados
+    for (const notify of toRun) {
+      try {
+        notify()
+      } catch (error) {
+        if (!hasError) {
+          hasError = true
+          firstError = error
+        }
       }
     }
+  } finally {
+    inFlightQueues.delete(toRun)
   }
   if (hasError) throw firstError
 }
@@ -112,8 +135,9 @@ export function batch(fn: () => void): void {
     try {
       flushPending()
     } catch (flushError) {
-      // O erro de fn tem prioridade sobre erros de observadores
+      // O erro de fn tem prioridade; o do watcher é reportado, não engolido
       if (!fnFailed) throw flushError
+      console.error('[slash] erro em watcher durante o flush do batch', flushError)
     }
   }
 
@@ -128,4 +152,5 @@ export function batch(fn: () => void): void {
 export function __resetBatchContext(): void {
   batchDepth = 0
   pendingNotifiers = new Set()
+  inFlightQueues.clear()
 }
