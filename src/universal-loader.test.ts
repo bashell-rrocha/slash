@@ -447,3 +447,30 @@ describe("hydrateLoaderCache", () => {
     expect(callCount).toBe(0);
   });
 });
+
+describe("serializeLoaderData em <script>", () => {
+  const nocivo = {
+    k: "</script><img src=x onerror=alert(1)>",
+    c: "<!-- a -->",
+    s: "a\u2028b\u2029c & d > e",
+  };
+
+  test("não deixa fechar a tag", () => {
+    const out = serializeLoaderData({ k: nocivo.k });
+    expect(out).not.toContain("</script");
+    expect(out).not.toContain("<");
+  });
+
+  test("escapa <!--, U+2028 e U+2029", () => {
+    const out = serializeLoaderData(nocivo);
+    expect(out).not.toContain("<!--");
+    expect(out).not.toContain("\u2028");
+    expect(out).not.toContain("\u2029");
+    expect(out).toContain("\\u2028");
+    expect(out).toContain("\\u2029");
+  });
+
+  test("round-trip preserva os valores", () => {
+    expect(deserializeLoaderData(serializeLoaderData(nocivo))).toEqual(nocivo);
+  });
+});
