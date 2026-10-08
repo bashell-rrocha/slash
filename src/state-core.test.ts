@@ -392,6 +392,15 @@ describe('State Core - FCIS Pattern', () => {
       expect(({} as any).x).toBeUndefined()
     })
 
+    test('__proto__ dentro de elemento de array vira propriedade propria', () => {
+      const cloned: any = deepClone(JSON.parse('{"list":[{"__proto__":{"x":1}},2]}'))
+      const item = cloned.list[0]
+      expect(Object.getPrototypeOf(item)).toBe(Object.prototype)
+      expect(item.x).toBeUndefined()
+      expect(Object.getOwnPropertyDescriptor(item, '__proto__')?.value).toEqual({ x: 1 })
+      expect(cloned.list[1]).toBe(2)
+    })
+
     test('hasOwnProperty como chave de dados nao lanca', () => {
       expect(() => deepClone({ hasOwnProperty: 1, b: 2 })).not.toThrow()
       expect(deepClone({ hasOwnProperty: 1, b: 2 })).toEqual({ hasOwnProperty: 1, b: 2 })
