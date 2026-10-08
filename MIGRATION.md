@@ -1,10 +1,10 @@
 # Migration Guide: hydrate() → render()
 
-This guide helps you migrate from the deprecated `hydrate()` API to the new unified `render()` API.
+This guide helps you migrate from the old `hydrate()` API (used before the first public release, `@_bashell/slash` 0.0.1) to the unified `render()` API. The "Before" snippets are historical: `hydrate()` and the `slash` / `slash/hydrate` import paths no longer exist.
 
 ## Summary
 
-The `hydrate()` function is **deprecated** in favor of `render()`, which now auto-detects whether to hydrate or render from scratch.
+The `hydrate()` function was **removed** in favor of `render()`, which auto-detects whether to hydrate or render from scratch. The package is now published as `@_bashell/slash`, with the subpaths `core`, `router`, `forms` and `ssr`.
 
 **Benefits of the new API:**
 - ✅ Single API for all rendering scenarios
@@ -15,7 +15,7 @@ The `hydrate()` function is **deprecated** in favor of `render()`, which now aut
 
 ## Quick Migration
 
-### Before (Old API)
+### Before (Old API, removed)
 
 ```typescript
 import { hydrate } from "slash";
@@ -31,16 +31,16 @@ hydrate(
 ### After (New API)
 
 ```typescript
-import { render } from "slash";
+import { render } from "@_bashell/slash/core";
 
 // Same code works for SSR and SPA!
 render(() => App(), "#app");
 ```
 
-That's it! The `render()` function automatically:
+That's it! If the view reads state with `createState`, mount it as a component (``render(html`<${App} />`, "#app")``) so it re-renders when that state changes. The `render()` function automatically:
 1. Detects if the container has pre-rendered HTML
 2. Looks for the `__SLASH_STATE__` script tag
-3. Hydrates if both conditions are met
+3. Hydrates if both conditions are met (it also removes the state script)
 4. Otherwise, renders normally
 
 ## Detailed Examples
@@ -51,7 +51,7 @@ That's it! The `render()` function automatically:
 
 ```typescript
 // server.ts
-import { htmlString, renderToString } from "slash/server";
+import { htmlString, renderToString } from "@_bashell/slash/ssr";
 
 const { html, state } = renderToString(() => App());
 
@@ -71,7 +71,7 @@ hydrate(() => App(), "#app", { state: window.__SLASH_STATE__ });
 
 ```typescript
 // server.ts (unchanged)
-import { htmlString, renderToString } from "slash/server";
+import { htmlString, renderToString } from "@_bashell/slash/ssr";
 
 const { html, state } = renderToString(() => App());
 
@@ -84,7 +84,7 @@ res.send(`
 `);
 
 // client.ts (simpler!)
-import { render } from "slash";
+import { render } from "@_bashell/slash/core";
 
 render(() => App(), "#app");
 ```
@@ -116,7 +116,7 @@ if (window.__SLASH_STATE__) {
 **After:**
 
 ```typescript
-import { render } from "slash";
+import { render } from "@_bashell/slash/core";
 
 // Works in both cases!
 render(() => App(), "#app");
@@ -143,7 +143,7 @@ if (hasState) {
 **After:**
 
 ```typescript
-import { render } from "slash";
+import { render } from "@_bashell/slash/core";
 
 // Auto-detects for each container
 render(() => Header(), "#header");
@@ -183,7 +183,7 @@ The state must now be in a `<script>` tag with `id="__SLASH_STATE__"`:
 ### Server-Side Template Example
 
 ```typescript
-import { renderToString } from "slash/server";
+import { renderToString } from "@_bashell/slash/ssr";
 
 export function renderPage(App: () => any) {
   const { html, state } = renderToString(App);
@@ -231,19 +231,12 @@ export function renderPage(App: () => any) {
 
 If you were importing from a specific path:
 
-- **Before:** `import { hydrate } from "slash/hydrate"`
-- **After:** `import { render } from "slash"`
+- **Before:** `import { hydrate } from "slash/hydrate"` (path no longer exists)
+- **After:** `import { render } from "@_bashell/slash/core"`
 
 ## Backward Compatibility
 
-The old `hydrate()` function still works but is **deprecated**. It now:
-1. Shows a console warning
-2. Injects the state into a `__SLASH_STATE__` script tag
-3. Calls `render()` internally
-
-**Timeline:**
-- Current version: `hydrate()` works with deprecation warning
-- Next major version: `hydrate()` may be removed
+There is none: `hydrate()` is not exported by any `@_bashell/slash` entry point (`core`, `router`, `forms`, `ssr` or the root bundle). Code that still imports it fails at import time and must be migrated to `render()`.
 
 ## Common Pitfalls
 
@@ -271,7 +264,7 @@ If you call `render()` multiple times on the same container:
 
 ```typescript
 render(() => App(), "#app"); // First call: hydrates
-render(() => App(), "#app"); // Second call: re-renders (state script already removed)
+render(() => App(), "#app"); // Second call: renders from scratch (state script already removed)
 ```
 
 The second call will re-render because the state script is removed after first hydration.
@@ -292,10 +285,10 @@ render(() => App(), "#app"); // Won't use customState
 
 ## Testing Your Migration
 
-1. **Check console** for deprecation warnings
+1. **Check console** for errors
 2. **Verify hydration** — DOM should not flash or re-render
 3. **Test events** — Click handlers and other events should work
-4. **Test signals** — Reactive updates should work correctly
+4. **Test state** — Updates made with `state.set()` should re-render the components that read that state
 5. **Check state script** — Should be removed from DOM after hydration
 
 ### Simple Test
@@ -328,7 +321,6 @@ For more examples, see the [README](./README.md).
 - [ ] Remove state passing from client code
 - [ ] Remove `window.__SLASH_STATE__` global variable
 - [ ] Test hydration in browser (no flash, events work)
-- [ ] Remove deprecation warnings from console
 
 ---
 
