@@ -241,7 +241,7 @@ Available helpers: `textFieldControl`, `checkboxControl`, `radioControl`, `Selec
 ## SSR and hydration
 
 - `htmlString` is the server twin of `html`: same syntax, returns a string.
-- `renderToString(view)` returns `{ html, state }`. Embed `state` as JSON in a `<script id="__SLASH_STATE__" type="application/json">` tag.
+- `renderToString(view)` returns `{ html, state }`. Embed `state` as JSON in a `<script id="__SLASH_STATE__" type="application/json">` tag. SSR follows the client rule for reactives (an object with `get` and `subscribe`, such as `Router`): they are wrapped in `<!--reactive-start:id-->` markers and rendered like plain children, and their value is not written to `state`. A `State` is not reactive: interpolate `state.get()` to render its value.
 - `renderToStream(view)` is an async generator that yields HTML chunks and ends with the `__SLASH_STATE__` script.
 - `render(view, container)` hydrates automatically when the container already has content and a `__SLASH_STATE__` script exists. Otherwise it renders from scratch. There is no separate `hydrate()` function.
 - Data loading helpers: `createLoader`, `invalidateLoader`, `serializeLoaderData`, `deserializeLoaderData`, `hydrateLoaderCache`, `isServer`.
