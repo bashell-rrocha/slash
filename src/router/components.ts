@@ -65,14 +65,14 @@ function normalizeTo(to: unknown): string | null {
 // (protocol-relative / outra origem).
 const APP_PATH = /^(?:\/(?![/\\])|[?#])/
 // Destinos externos aceitos com a prop `external`
-const EXTERNAL_URL = /^(?:https?:|mailto:|tel:)/i
+const EXTERNAL_URL = /^(?:https?:|mailto:|tel:|sms:)/i
 
 /**
  * Link component - navigation link that uses router.push
  *
  * `to` deve ser um caminho do app ("/x", "?q", "#h"). Qualquer outro valor NUNCA
  * navega: preventDefault, href = about:blank#blocked e aviso de dev.
- * Exceção explícita: a prop `external` com URL absoluta http(s), mailto ou tel
+ * Exceção explícita: a prop `external` com URL absoluta http(s), mailto, tel ou sms
  * renderiza um link nativo com rel="noopener noreferrer" (href passa por
  * sanitizeUrl). As formas "//", "\\" e "/\\" são sempre bloqueadas.
  * No SSR devolve um descritor (ssr-element) que o renderizador de string expande
@@ -106,7 +106,7 @@ export function Link({
     href = BLOCKED_URL
     if (process.env.NODE_ENV !== "production") {
       securityWarn(
-        `Link: "to" deve ser um caminho do app (/..., ?... ou #...) ou, com a prop external, uma URL http(s)/mailto/tel; recebido ${JSON.stringify(String(to).slice(0, 40))}`,
+        `Link: "to" must be an app path (/..., ?... or #...) or, with the external prop, an http(s)/mailto/tel/sms URL; received ${JSON.stringify(String(to).slice(0, 40))}`,
         "link:to",
       )
     }
@@ -114,6 +114,17 @@ export function Link({
 
   const handleClick = (e: Event) => {
     if (appPath) {
+      // Modifier keys, non-left buttons, target != _self and download stay native
+      const m = e as Partial<MouseEvent>
+      const t = (props as { target?: unknown }).target
+      if (
+        m.ctrlKey || m.metaKey || m.shiftKey || m.altKey ||
+        (typeof m.button === "number" && m.button !== 0) ||
+        (typeof t === "string" && t !== "" && t !== "_self") ||
+        (props as { download?: unknown }).download != null && (props as { download?: unknown }).download !== false
+      ) {
+        return
+      }
       e.preventDefault()
       router.push(target as string).catch((err) => {
         console.error("Navigation error:", err)

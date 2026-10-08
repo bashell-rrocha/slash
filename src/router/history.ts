@@ -31,6 +31,70 @@ function isBrowser(): boolean {
   return typeof window !== "undefined" && typeof window.history !== "undefined"
 }
 
+// Base usada quando a location não é http(s) (about:blank em testes): só há caminhos do app
+const FALLBACK_BASE = "http://slash.invalid/"
+
+// Base URL for resolving relative urls: document.baseURI (honours <base>) on http(s) pages
+function resolveBaseUri(): string {
+  const base = resolveBase()
+  return base === FALLBACK_BASE ? base : document.baseURI || base
+}
+
+function resolveBase(): string {
+  const protocol = window.location.protocol
+  return protocol === "http:" || protocol === "https:" ? window.location.href : FALLBACK_BASE
+}
+
+/**
+ * Resolve `raw` against the current location. Returns null if it is not a valid URL.
+ */
+function resolveUrl(raw: string): URL | null {
+  try {
+    return new URL(raw, resolveBaseUri())
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Resolve an anchor's target the way the browser does (honouring <base>). `anchor.href` is used when
+ * it is a string; SVG anchors expose an SVGAnimatedString, so `href.baseVal` is used there. The
+ * attribute resolved against `document.baseURI` must agree with it on the origin, otherwise the
+ * link is left to the browser (null).
+ */
+function resolveAnchorUrl(anchor: Element, attr: string): URL | null {
+  const href = (anchor as { href?: unknown }).href
+  const raw =
+    typeof href === "string"
+      ? href
+      : typeof (href as { baseVal?: unknown } | undefined)?.baseVal === "string"
+        ? (href as { baseVal: string }).baseVal
+        : attr
+  try {
+    const viaHref = new URL(raw, resolveBaseUri())
+    const viaBase = new URL(attr, resolveBaseUri())
+    return viaHref.origin === viaBase.origin ? viaBase : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Normalized listener path (pathname + search + hash) for a pushState/replaceState url,
+ * resolved BEFORE the native call so relative urls ("?q", "#h") use the previous location.
+ */
+function normalizedPath(url: string | URL | null | undefined): string | null {
+  if (url === undefined || url === null) {
+    return null
+  }
+  const resolved = resolveUrl(String(url))
+  return resolved ? resolved.pathname + resolved.search + resolved.hash : null
+}
+
+function currentPath(): string {
+  return window.location.pathname + window.location.search + window.location.hash
+}
+
 /**
  * Track if history has been patched globally
  */
@@ -102,18 +166,18 @@ function setupHistoryInterception(): void {
 
   // Monkey patch history.pushState and replaceState
   window.history.pushState = function (data, title, url) {
+    const normalized = normalizedPath(url)
     const result = originalPushState!(data, title, url)
-    // Notify all listeners with the new path
-    // url can be a full URL or just a path
-    const path = typeof url === "string" ? url : window.location.pathname + window.location.search
+    // Listeners always receive the normalized same-origin path, never the raw url
+    const path = normalized ?? currentPath()
     globalListeners.forEach((listener) => listener(path))
     return result
   }
 
   window.history.replaceState = function (data, title, url) {
+    const normalized = normalizedPath(url)
     const result = originalReplaceState!(data, title, url)
-    // Notify all listeners with the new path
-    const path = typeof url === "string" ? url : window.location.pathname + window.location.search
+    const path = normalized ?? currentPath()
     globalListeners.forEach((listener) => listener(path))
     return result
   }
@@ -157,8 +221,9 @@ function shouldInterceptLink(anchor: HTMLAnchorElement, event: MouseEvent): bool
     return false
   }
 
-  // Ignore if target is not _self
-  if (anchor.target && anchor.target !== "_self") {
+  // Ignore if target is not _self (attribute: SVG <a>.target is an SVGAnimatedString)
+  const targetAttr = anchor.getAttribute("target")
+  if (targetAttr && targetAttr !== "_self") {
     return false
   }
 
@@ -182,19 +247,14 @@ function shouldInterceptLink(anchor: HTMLAnchorElement, event: MouseEvent): bool
     return false
   }
 
-  // Ignore external links
-  // Check if href starts with http:// or https:// and is different origin
-  if (href.startsWith("http://") || href.startsWith("https://")) {
-    try {
-      const url = new URL(href)
-      const currentOrigin = window.location.origin
-      if (url.origin !== currentOrigin) {
-        return false
-      }
-    } catch {
-      // Invalid URL, ignore
-      return false
-    }
+  // Resolve like the browser would (the browser applies <base>); only same-origin http(s) is
+  // handled by the SPA. mailto:, tel:, sms:, //host, other schemes and cross-origin links stay native.
+  const url = resolveAnchorUrl(anchor, href)
+  if (!url || (url.protocol !== "http:" && url.protocol !== "https:")) {
+    return false
+  }
+  if (url.origin !== new URL(resolveBase()).origin) {
+    return false
   }
 
   // At this point, it's either a relative path or same-origin absolute URL
@@ -239,7 +299,7 @@ export function createHistoryMode(): History {
 
     // Listen to popstate (back/forward buttons)
     window.addEventListener("popstate", () => {
-      const location = window.location.pathname + window.location.search
+      const location = currentPath()
       listeners.forEach((listener) => listener(location))
     })
 

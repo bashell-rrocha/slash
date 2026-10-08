@@ -40,7 +40,9 @@ export interface NavigationInput {
  * Pure function - no side effects
  */
 export function parseNavigationPath(path: string): NavigationInput {
-  const [pathname, search] = splitPath(path)
+  // The fragment never takes part in route matching or in the query
+  const hashIndex = path.indexOf("#")
+  const [pathname, search] = splitPath(hashIndex === -1 ? path : path.slice(0, hashIndex))
   const sanitizedPath = sanitizePath(pathname)
   const query = parseQuery(search)
 

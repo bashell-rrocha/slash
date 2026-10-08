@@ -52,8 +52,21 @@ export function createRouter(config: RouterConfig): RouterInstance {
   let lastPath: string | null = null
   const pathKey = (p: string): string => {
     const input = parseNavigationPath(p)
-    const [, search] = splitPath(p)
+    const [, search] = splitPath(stripHash(p))
     return search ? `${input.pathname}${search}` : input.pathname
+  }
+
+  const stripHash = (p: string): string => {
+    const i = p.indexOf("#")
+    return i === -1 ? p : p.slice(0, i)
+  }
+
+  // "?q" and "#h" are relative to the current path (D7); anything else is passed as is
+  const resolveRelative = (path: string): string => {
+    if (typeof path !== "string" || (path[0] !== "?" && path[0] !== "#")) return path
+    const current = stripHash(history.location() || "/")
+    const [pathname, search] = splitPath(current)
+    return path[0] === "?" ? `${pathname || "/"}${path}` : `${pathname || "/"}${search}${path}`
   }
 
   /**
@@ -117,6 +130,7 @@ export function createRouter(config: RouterConfig): RouterInstance {
 
     // Eventos de histórico e a verificação inicial registram o caminho resolvido,
     // mesmo quando bloqueado: reentrar para a mesma URL repetiria guards com efeitos
+    const previousLastPath = lastPath
     if (fromHistory || initial || decision.shouldNavigate) {
       lastPath = pathKey(path)
     }
@@ -155,6 +169,34 @@ export function createRouter(config: RouterConfig): RouterInstance {
 
     // Handle successful navigation
     if (decision.newRoute) {
+      // Update browser history FIRST (skip in SSR and history-triggered navigations): if the
+      // browser refuses the URL, state stays untouched and the push rejects with a clear error.
+      if (!adapter.isSSR() && !fromHistory) {
+        const input = parseNavigationPath(path)
+        const [, search] = splitPath(stripHash(path))
+        const hashIndex = path.indexOf("#")
+        const hash = hashIndex === -1 ? "" : path.slice(hashIndex)
+        const fullPath = (search ? `${input.pathname}${search}` : input.pathname) + hash
+
+        try {
+          if (replace) {
+            replacingInitial = initial
+            try {
+              history.replace(fullPath)
+            } finally {
+              replacingInitial = false
+            }
+          } else {
+            history.push(fullPath)
+          }
+        } catch (err) {
+          lastPath = previousLastPath
+          state.set({ ...currentState, isNavigating: false })
+          const reason = err instanceof Error ? err.message : String(err)
+          throw new Error(`Navigation failed: the browser rejected ${JSON.stringify(fullPath)} (${reason})`)
+        }
+      }
+
       state.set({
         currentRoute: decision.newRoute,
         params: decision.newRoute.params,
@@ -162,24 +204,6 @@ export function createRouter(config: RouterConfig): RouterInstance {
         meta: decision.newRoute.meta,
         isNavigating: false,
       })
-
-      // Update browser history (skip in SSR and history-triggered navigations)
-      if (!adapter.isSSR() && !fromHistory) {
-        const input = parseNavigationPath(path)
-        const [, search] = splitPath(path)
-        const fullPath = search ? `${input.pathname}${search}` : input.pathname
-
-        if (replace) {
-          replacingInitial = initial
-          try {
-            history.replace(fullPath)
-          } finally {
-            replacingInitial = false
-          }
-        } else {
-          history.push(fullPath)
-        }
-      }
     }
   }
 
@@ -255,11 +279,11 @@ export function createRouter(config: RouterConfig): RouterInstance {
     ...state,
 
     async push(path: string): Promise<void> {
-      await navigate(path, false)
+      await navigate(resolveRelative(path), false)
     },
 
     async replace(path: string): Promise<void> {
-      await navigate(path, true)
+      await navigate(resolveRelative(path), true)
     },
 
     back(): void {

@@ -532,6 +532,7 @@ describe("navegação inicial e guards", () => {
   test("estado do servidor bloqueado por guard vira currentRoute null", async () => {
     const el = document.createElement("script")
     el.id = "__SLASH_STATE__"
+    el.setAttribute("type", "application/json")
     el.textContent = JSON.stringify({ currentRoute: { path: "/dashboard" } })
     document.body.appendChild(el)
     try {
@@ -547,6 +548,7 @@ describe("navegação inicial e guards", () => {
   test("estado do servidor com redirect de guard segue o redirect", async () => {
     const el = document.createElement("script")
     el.id = "__SLASH_STATE__"
+    el.setAttribute("type", "application/json")
     el.textContent = JSON.stringify({ currentRoute: { path: "/private" } })
     document.body.appendChild(el)
     try {
