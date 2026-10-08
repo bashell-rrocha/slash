@@ -61,6 +61,25 @@ function escapeHtml(unsafe: string): string {
     .replace(/'/g, "&#039;");
 }
 
+// Marcador interno: htmlString embrulha todo valor string DINÂMICO (${...}) antes de
+// chamar o htm. Assim, uma string "solta" filha direta de um elemento em hString é
+// texto estático escrito pelo desenvolvedor (cru em <script>/<style>); o resto é dado.
+// toString permite a concatenação do htm em atributos mistos (class="a ${b}").
+class DynamicText {
+  constructor(readonly value: string) {}
+  toString(): string {
+    return this.value;
+  }
+}
+
+function markDynamic(value: unknown): unknown {
+  return typeof value === "string" ? new DynamicText(value) : value;
+}
+
+function unmark<T>(value: T): T | string {
+  return value instanceof DynamicText ? value.value : value;
+}
+
 // Avisos de dev: uma vez por mensagem (mensagens fixas, sem dados do usuário)
 const warned = new Set<string>();
 
@@ -216,8 +235,9 @@ function propsToAttrs(ctx: RenderContext, tag: string, props: Props | null): str
   if (!props) return "";
   let attrs = "";
 
-  for (const [key, val] of Object.entries(props)) {
+  for (const [key, rawVal] of Object.entries(props)) {
     if (key === "children") continue;
+    const val = unmark(rawVal);
 
     if (!ATTR_NAME.test(key)) {
       warnOnce("nome de atributo inválido descartado");
@@ -279,7 +299,9 @@ function propsToAttrs(ctx: RenderContext, tag: string, props: Props | null): str
 }
 
 // Conversão de children para HTML string. Só SafeHtml é markup; string é sempre texto
+// Strings que chegam aqui são sempre dados (o texto estático é tratado em hString)
 function childToString(child: Child, ctx: RenderContext, rawText = false): string {
+  child = unmark(child) as Child;
   if (child == null || child === false) return "";
 
   if (isSafeHtml(child)) return child.value;
@@ -327,14 +349,17 @@ function childToString(child: Child, ctx: RenderContext, rawText = false): strin
 }
 
 // h() versão string (chamado pelo HTM). Sempre devolve SafeHtml
-export function hString(tag: unknown, props: Props | null, ...children: Child[]): SafeHtml {
+export function hString(tag: unknown, props: Props | null, ...rawChildren: Child[]): SafeHtml {
   const ctx = activeContext ?? createContext();
+  tag = unmark(tag);
 
   // Componente função: pode devolver SafeHtml, string (texto) ou qualquer Child
   if (typeof tag === "function") {
+    // O componente recebe valores simples, nunca o marcador interno
+    const plainProps = Object.fromEntries(Object.entries(props || {}).map(([k, v]) => [k, unmark(v)]));
     const result = (tag as (p: Record<string, unknown>) => Child)({
-      ...(props || {}),
-      children,
+      ...plainProps,
+      children: rawChildren.map(unmark),
     });
     return new SafeHtml(childToString(result, ctx));
   }
@@ -353,16 +378,18 @@ export function hString(tag: unknown, props: Props | null, ...children: Child[])
   }
 
   const rawText = RAW_TEXT_ELEMENTS.has(tagName.toLowerCase());
-  const childHtml = children.map((c) => childToString(c, ctx, rawText)).join("");
+  // String solta (não marcada) = texto estático do template: cru em raw text, escapado nos demais
+  const childHtml = rawChildren
+    .map((c) => (typeof c === "string" ? (rawText ? c : escapeHtml(c)) : childToString(c, ctx, rawText)))
+    .join("");
   return new SafeHtml(`<${tagName}${attrs}>${childHtml}</${tagName}>`);
 }
 
 // Template literal tag usando HTM (versão string)
 // O HTM não precisa saber que retorna SafeHtml - funciona normalmente
-export const htmlString = (htm as any).bind(hString) as (
-  strings: TemplateStringsArray,
-  ...values: unknown[]
-) => SafeHtml;
+const boundHtm = (htm as any).bind(hString) as (strings: TemplateStringsArray, ...values: unknown[]) => SafeHtml;
+export const htmlString = (strings: TemplateStringsArray, ...values: unknown[]): SafeHtml =>
+  boundHtm(strings, ...values.map(markDynamic));
 
 // Serializa o estado para uso dentro de <script>: troca os caracteres que
 // permitiriam fechar a tag ou abrir comentário por escapes JSON equivalentes

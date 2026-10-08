@@ -279,3 +279,74 @@ describe("SEC-06: contexto por render", () => {
     expect(html).toContain('data-reactive-class="s0"');
   });
 });
+
+describe("texto estatico vs dinamico (marcador interno)", () => {
+  test("CSS estatico em <style> fica cru (a > b)", () => {
+    expect(renderToString(() => htmlString`<style>a > b { color: red }</style>`).html).toBe(
+      "<style>a > b { color: red }</style>",
+    );
+    expect(warnings).toHaveLength(0);
+  });
+
+  test("JS estatico em <script> fica cru (a > b &&; o parser do htm nao aceita < literal)", () => {
+    expect(renderToString(() => htmlString`<script>if (a > b && c) x(1)</script>`).html).toBe(
+      "<script>if (a > b && c) x(1)</script>",
+    );
+  });
+
+  test("string dinamica em <style> e escapada com aviso", () => {
+    const userCss = "</style><img onerror=1>";
+    const { html } = renderToString(() => htmlString`<style>a > b {}${userCss}</style>`);
+    expect(html).toBe("<style>a > b {}&lt;/style&gt;&lt;img onerror=1&gt;</style>");
+    expect(warnings.some((m) => m.includes("unsafeHtml"))).toBe(true);
+  });
+
+  test("texto estatico em elemento normal continua escapado; dinamico tambem", () => {
+    expect(renderToString(() => htmlString`<p>a & b ${"<b>"}</p>`).html).toBe("<p>a &amp; b &lt;b&gt;</p>");
+  });
+
+  test("array de strings vindo de .map e dinamico (escapado), tambem em <style>", () => {
+    expect(renderToString(() => htmlString`<p>${["<a>", "<b>"].map((s) => s)}</p>`).html).toBe("<p>&lt;a&gt;&lt;b&gt;</p>");
+    expect(renderToString(() => htmlString`<style>${["</style>"]}</style>`).html).toBe("<style>&lt;/style&gt;</style>");
+  });
+
+  test("funcao e reativo devolvendo string em <script> sao dinamicos", () => {
+    const rx = { get: () => "</script>", subscribe: () => () => {} };
+    expect(renderToString(() => htmlString`<script>${() => "</script>"}</script>`).html).toBe("<script>&lt;/script&gt;</script>");
+    expect(renderToString(() => htmlString`<script>${rx as never}</script>`).html).toContain("&lt;/script&gt;");
+  });
+
+  test("templates aninhados e componentes compõem; SafeHtml em <script> segue cru", () => {
+    const Box = ({ children, label }: { children: unknown; label: string }) =>
+      htmlString`<div title=${label}>${children as never}</div>`;
+    const { html } = renderToString(
+      () => htmlString`<section><${Box} label="a<b">${htmlString`<i>x</i>`}t ${"<u>"}<//><script>${unsafeHtml("{}")}</script></section>`,
+    );
+    expect(html).toBe('<section><div title="a&lt;b"><i>x</i>t &lt;u&gt;</div><script>{}</script></section>');
+  });
+
+  test("tag dinamica e props de componente chegam como string simples", () => {
+    let seen: unknown;
+    const C = (p: { text: string }) => {
+      seen = p.text;
+      return htmlString`<b>${p.text}</b>`;
+    };
+    const { html } = renderToString(() => htmlString`<${"h1"}><${C} text=${"<x>"} /><//>`);
+    expect(typeof seen).toBe("string");
+    expect(html).toBe("<h1><b>&lt;x&gt;</b></h1>");
+  });
+
+  test("marcador nao vaza para o estado nem para atributos", () => {
+    const st = createState({ q: "a<b", n: 1 });
+    const { html, state } = renderToString(() => {
+      const { q, n } = st.get();
+      return htmlString`<p class=${q} title="x ${q}">${q}${n}</p>`;
+    });
+    expect(html).not.toContain("object");
+    expect(html).toContain("&lt;");
+    expect(JSON.stringify(state)).not.toContain("value");
+    expect(state).toEqual({ s0: "a<b", s1: "a<b", s2: 1 });
+    const rx = { get: () => "r", subscribe: () => () => {} };
+    expect(renderToString(() => htmlString`<p class=${rx as never}>${rx as never}</p>`).state).toEqual({ s0: "r" });
+  });
+});
