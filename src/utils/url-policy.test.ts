@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { resetSecurityWarnings } from "./security-warn";
-import { BLOCKED_URL, evaluateUrl, isUrlAttribute, sanitizeUrl } from "./url-policy";
+import { BLOCKED_URL, evaluateMetaRefresh, evaluateUrl, isUrlAttribute, sanitizeUrl } from "./url-policy";
 
 let warn: ReturnType<typeof spyOn>;
 beforeEach(() => {
@@ -266,5 +266,36 @@ describe("avisos deduplicados", () => {
     resetSecurityWarnings();
     sanitizeUrl("href", "javascript:a", "a");
     expect(warn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("meta http-equiv=refresh content", () => {
+  test.each([
+    ["0;url=javascript:alert(1)", `0;url=${BLOCKED_URL}`],
+    ["0; URL = javascript:alert(1)", `0; URL = ${BLOCKED_URL}`],
+    ["0;url='javascript:alert(1)'", `0;url='${BLOCKED_URL}'`],
+    ['0;url="javascript:alert(1)"', `0;url="${BLOCKED_URL}"`],
+    ["5, javascript:alert(1)", `5, ${BLOCKED_URL}`],
+    ["0;javascript:alert(1)", `0;${BLOCKED_URL}`],
+    ["0 javascript:alert(1)", `0 ${BLOCKED_URL}`],
+    ["  1.5 ; url=data:text/html,x", `  1.5 ; url=${BLOCKED_URL}`],
+    ["0;url=java\tscript:alert(1)", `0;url=${BLOCKED_URL}`],
+    ["0;url=vbscript:x", `0;url=${BLOCKED_URL}`],
+    ["0;url=file:///etc/passwd", `0;url=${BLOCKED_URL}`],
+  ])("bloqueia %j", (input, expected) => {
+    expect(evaluateMetaRefresh(input)).toEqual({ value: expected, blocked: true });
+  });
+  test.each([
+    "5",
+    "0;url=/ok",
+    "0; url=https://example.com/x?a=1",
+    "0;url='/ok'",
+    "3,mailto:a@b.co",
+    "width=device-width, initial-scale=1",
+    "Warning: this is a description",
+    "javascript:not-a-refresh-without-delay",
+    "",
+  ])("permite %j", (input) => {
+    expect(evaluateMetaRefresh(input)).toEqual({ value: input, blocked: false });
   });
 });

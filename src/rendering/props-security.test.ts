@@ -258,6 +258,28 @@ describe("S5 cliente: nomes de atributo e de tag", () => {
   });
 });
 
+describe("meta http-equiv=refresh no cliente", () => {
+  test("content com URL perigosa e sanitizado, em qualquer ordem", () => {
+    const a = h("meta", { "http-equiv": "refresh", content: "0;url=javascript:alert(1)" }) as HTMLMetaElement;
+    expect(a.getAttribute("content")).toBe(`0;url=${BLOCKED_URL}`);
+    const b = h("meta", { content: "0;javascript:alert(1)", "http-equiv": "refresh" }) as HTMLMetaElement;
+    expect(b.getAttribute("content")).toBe(`0;${BLOCKED_URL}`);
+    expect(warn).toHaveBeenCalled();
+  });
+  test("refresh seguro e meta comum passam; reativo tambem e checado", () => {
+    expect((h("meta", { content: "5;url=/next" }) as HTMLMetaElement).getAttribute("content")).toBe("5;url=/next");
+    expect((h("meta", { name: "description", content: "Warning: x" }) as HTMLMetaElement).getAttribute("content")).toBe("Warning: x");
+    expect((h("meta", { content: reactive("0;url=javascript:x") }) as HTMLMetaElement).getAttribute("content")).toBe(`0;url=${BLOCKED_URL}`);
+  });
+  test("content de outras tags nao e tocado", () => {
+    expect((h("div", { content: "0;url=javascript:x" }) as HTMLElement).getAttribute("content")).toBe("0;url=javascript:x");
+  });
+  test("SafeUrl em content passa sem sanitizar", () => {
+    const m = h("meta", { "http-equiv": "refresh", content: unsafeUrl("0;url=javascript:void(0)") }) as HTMLMetaElement;
+    expect(m.getAttribute("content")).toBe("0;url=javascript:void(0)");
+  });
+});
+
 describe("SEC-09 cliente: style como string e funcoes de URL (S9)", () => {
   test("string: declaracao perigosa removida, boa mantida, com aviso", () => {
     const d = h("div", { style: "color:red;background:url(javascript:alert(1));position:fixed" }) as HTMLElement;

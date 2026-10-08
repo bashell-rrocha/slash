@@ -13,7 +13,7 @@ import { sanitizeStyleString, isSafeCssValue } from "../utils/css-policy";
 import { isEventHandler, isEventTuple } from "../utils/guards";
 import { processClassValue } from "../utils/helpers";
 import { securityWarn } from "../utils/security-warn";
-import { blockedUrlMessage, evaluateUrl, isUrlAttribute } from "../utils/url-policy";
+import { blockedUrlMessage, evaluateMetaRefresh, evaluateUrl, isUrlAttribute } from "../utils/url-policy";
 
 /**
  * Nomes de atributo válidos (subconjunto seguro do HTML/SVG/XML): impede que uma
@@ -245,6 +245,12 @@ export function computePropUpdate(
   let warning: string | undefined;
   if (isSafeUrl(value)) {
     finalValue = value.value;
+  } else if (key.toLowerCase() === "content" && elementType === "meta") {
+    const result = evaluateMetaRefresh(String(value));
+    finalValue = result.value;
+    if (result.blocked) {
+      warning = process.env.NODE_ENV !== "production" ? blockedUrlMessage(key, String(value)) : undefined;
+    }
   } else if (isUrlAttribute(key, elementType)) {
     const result = evaluateUrl(key, String(value), elementType);
     finalValue = result.value;

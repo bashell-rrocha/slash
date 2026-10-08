@@ -8,7 +8,7 @@ import { isReactive } from "./utils/guards";
 import { escapeJsonForScript } from "./utils/script-json";
 import { isSafeUrl } from "./safe-url";
 import { isSsrElement } from "./ssr-element";
-import { isUrlAttribute, sanitizeUrl } from "./utils/url-policy";
+import { evaluateMetaRefresh, isUrlAttribute, sanitizeUrl } from "./utils/url-policy";
 
 // Flag global para indicar modo SSR
 declare global {
@@ -198,6 +198,10 @@ function genericAttr(tag: string, key: string, value: unknown): string {
     str = value.value;
   } else if (isUrlAttribute(lower, tag)) {
     str = sanitizeUrl(lower, str, tag);
+  } else if (lower === "content" && tag.toLowerCase() === "meta") {
+    const result = evaluateMetaRefresh(str);
+    str = result.value;
+    if (result.blocked && process.env.NODE_ENV !== "production") warnOnce("meta refresh: URL bloqueada em content");
   } else if (lower === "style") {
     str = styleStringToString(str);
   }

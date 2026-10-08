@@ -160,3 +160,20 @@ describe("unsafeUrl (SafeUrl) no SSR", () => {
     expect(render(() => htmlString`<a href=${JSON.parse('{"value":"javascript:x"}')}>x</a>`)).not.toContain("javascript");
   });
 });
+
+describe("meta http-equiv=refresh", () => {
+  test("URL do refresh e sanitizada", () => {
+    const html = render(() => htmlString`<meta http-equiv="refresh" content=${"0;url=javascript:alert(1)"} />`);
+    expect(html).toBe(`<meta http-equiv="refresh" content="0;url=${BLOCKED}">`);
+  });
+  test("a ordem dos atributos nao importa e refresh seguro passa", () => {
+    expect(render(() => htmlString`<meta content=${"0;javascript:x"} http-equiv="refresh" />`)).toContain(`content="0;${BLOCKED}"`);
+    expect(render(() => htmlString`<meta http-equiv="refresh" content="5;url=/next" />`)).toContain('content="5;url=/next"');
+  });
+  test("meta comum nao e alterado", () => {
+    expect(render(() => htmlString`<meta name="description" content="Warning: x" />`)).toContain('content="Warning: x"');
+  });
+  test("content de outras tags nao e tocado", () => {
+    expect(render(() => htmlString`<div content=${"0;url=javascript:x"}></div>`)).toContain('content="0;url=javascript:x"');
+  });
+});

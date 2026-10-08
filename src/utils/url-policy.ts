@@ -137,6 +137,19 @@ export function evaluateUrl(
   return { value: BLOCKED_URL, blocked: true };
 }
 
+// <meta http-equiv="refresh" content="5; url=...">: segue o parser do HTML (atraso numérico,
+// separador `;`/`,` ou espaço, `url=` opcional, aspas opcionais). Sem atraso numérico no
+// início o navegador ignora o refresh, então o valor não é tratado como URL. É aplicado a todo
+// `content` de <meta> (a ordem dos atributos http-equiv/content não é conhecida no cliente).
+const META_REFRESH = /^(\s*[\d.]+\s*[;,]?\s*(?:url\s*=\s*)?['"]?)([\s\S]*?)(['"]?\s*)$/i;
+
+/** PURO: URL do `content` de um meta refresh passa pela política (como href) */
+export function evaluateMetaRefresh(content: string): { value: string; blocked: boolean } {
+  const m = META_REFRESH.exec(content);
+  if (!m || isAllowedSingleUrl("href", m[2] as string, "meta")) return { value: content, blocked: false };
+  return { value: `${m[1]}${BLOCKED_URL}${m[3]}`, blocked: true };
+}
+
 /** Aviso de dev padrão para um valor bloqueado (usado também por props-core) */
 export function blockedUrlMessage(attr: string, value: string): string {
   return `URL bloqueada em ${attr}: ${JSON.stringify(value.slice(0, 40))}. Para URL confiável use unsafeUrl()`;
