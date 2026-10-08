@@ -1,5 +1,6 @@
 import { destroyNode } from "../lifecycle/cleanup";
 import type { Child } from "../types";
+import { securityWarn } from "../utils/security-warn";
 import { appendChildSmart } from "./children";
 
 export type RootView = Child | (() => Child);
@@ -64,6 +65,12 @@ export function render(view: RootView, container: RenderContainer): Node | Node[
 
   const stateScript =
     typeof document !== "undefined" ? document.querySelector('script#__SLASH_STATE__[type="application/json"]') : null;
+
+  if (typeof document !== "undefined" && !stateScript && process.env.NODE_ENV !== "production") {
+    if (document.getElementById("__SLASH_STATE__")) {
+      securityWarn('#__SLASH_STATE__ was ignored: it must be a <script type="application/json"> element');
+    }
+  }
 
   if (resolved.childNodes.length > 0 && stateScript) {
     const state = JSON.parse(stateScript.textContent || "{}");

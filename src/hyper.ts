@@ -1,7 +1,7 @@
 import htm from "htm";
 import { isSafeHtml } from "./safe-html";
 import type { Child, HTMModule, HTMTemplate, Props } from "./types";
-import { markDynamic, unmark } from "./utils/dynamic-text";
+import { markDynamic, unmark, unmarkDeep } from "./utils/dynamic-text";
 import { securityWarn } from "./utils/security-warn";
 
 export type { HydrateContext } from "./hydration/context";
@@ -44,7 +44,7 @@ const keepRawTextChild = (c: unknown): boolean =>
 function hTemplate(tag: unknown, props: Props, ...children: Child[]): Node {
   const realTag = unmark(tag);
   const plainProps = props ? (Object.fromEntries(Object.entries(props).map(([k, v]) => [k, unmark(v)])) as Props) : props;
-  let kids: unknown[] = children.map(unmark);
+  let kids: unknown[] = children.map(unmarkDeep);
   if (typeof realTag === "string" && RAW_TEXT_TAGS.has(realTag.toLowerCase())) {
     const kept = children.filter(keepRawTextChild);
     if (kept.length !== children.length && process.env.NODE_ENV !== "production") {
@@ -60,5 +60,6 @@ function hTemplate(tag: unknown, props: Props, ...children: Child[]): Node {
 
 const boundHtm = (htm as unknown as HTMModule).bind(hTemplate);
 
+// The result never carries the marker: strings come back as strings, arrays are unmarked deeply
 export const html: HTMTemplate = ((strings: TemplateStringsArray, ...values: unknown[]) =>
-  boundHtm(strings, ...values.map(markDynamic))) as HTMTemplate;
+  unmarkDeep(boundHtm(strings, ...values.map(markDynamic)))) as HTMTemplate;

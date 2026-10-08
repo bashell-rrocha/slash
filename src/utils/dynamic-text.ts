@@ -16,6 +16,11 @@ export function markDynamic(value: unknown): unknown {
   return typeof value === "string" ? new DynamicText(value) : value;
 }
 
+/** unmark through arrays (htm returns several roots as an array) */
+export function unmarkDeep(value: unknown): unknown {
+  return Array.isArray(value) ? value.map(unmarkDeep) : unmark(value);
+}
+
 export function unmark<T>(value: T): T | string {
   return value instanceof DynamicText ? value.value : value;
 }

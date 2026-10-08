@@ -71,6 +71,20 @@ function escapeHtml(unsafe: string): string {
 // intermediária não é dobrada), e scripts/bundle-size.test.ts garante que sumiram.
 const warned = new Set<string>();
 
+// Origin of SafeHtml values. Everything hString/htmlString builds (elements, normalised strings,
+// component output) is NOT trusted as raw text: it may carry escaped user data. Only values
+// that never pass through here (unsafeHtml) are accepted inside <script>/<style>.
+// Module-private WeakSet: it cannot be forged from outside, and JSON cannot carry it.
+const GENERATED = new WeakSet<SafeHtml>();
+
+function generated(html: string): SafeHtml {
+  const out = new SafeHtml(html);
+  GENERATED.add(out);
+  return out;
+}
+
+const RAW_TEXT_DROPPED = "A dynamic value inside <script>/<style> was dropped (strings are data, not code). For JSON use unsafeHtml(serializeStateForScript(x))";
+
 function warnOnce(message: string): void {
   if (!isDevMode() || !isWarningsEnabled() || warned.has(message)) return;
   warned.add(message);
@@ -86,6 +100,7 @@ const LOOKS_LIKE_MARKUP = /^\s*<[a-zA-Z!/]/;
 const TAG_NAME = /^[A-Za-z][A-Za-z0-9:-]*$/;
 // Attribute-name grammar, identical to the client's (props-core.ts ATTRIBUTE_NAME): ASCII, fail closed
 const ATTR_NAME = /^[A-Za-z_:][A-Za-z0-9_:.-]*$/;
+const PROTOTYPE_ATTRS = new Set(["__proto__", "constructor", "prototype"]);
 const EVENT_ATTR = /^on/i;
 const RAW_TEXT_ELEMENTS = new Set(["script", "style"]);
 const RESERVED_ATTR_PREFIX = "data-reactive-";
@@ -234,6 +249,12 @@ function propsToAttrs(ctx: RenderContext, tag: string, props: Props | null): str
     }
 
     // Prefixo reservado aos marcadores de hidratação emitidos pelo próprio SSR
+    // Same block as the client: names that would alter the prototype/identity
+    if (PROTOTYPE_ATTRS.has(lowerKey)) {
+      if (process.env.NODE_ENV !== "production") warnOnce(`${lowerKey} cannot be a prop`);
+      continue;
+    }
+
     if (key.toLowerCase().startsWith(RESERVED_ATTR_PREFIX)) {
       if (process.env.NODE_ENV !== "production") warnOnce("data-reactive-* attributes are reserved for hydration and were dropped");
       continue;
@@ -302,10 +323,22 @@ function childToString(child: Child, ctx: RenderContext, rawText = false): strin
   child = unmark(child) as Child;
   if (child == null || child === false) return "";
 
-  if (isSafeHtml(child)) return child.value;
+  if (isSafeHtml(child)) {
+    if (rawText && GENERATED.has(child)) {
+      if (process.env.NODE_ENV !== "production") warnOnce(RAW_TEXT_DROPPED);
+      return "";
+    }
+    return child.value;
+  }
 
   // Descritor de componente isomórfico (Link): renderiza como elemento nativo
-  if (isSsrElement(child)) return hString(child.tag, child.props as Props, ...(child.children as Child[])).value;
+  if (isSsrElement(child)) {
+    if (rawText) {
+      if (process.env.NODE_ENV !== "production") warnOnce(RAW_TEXT_DROPPED);
+      return "";
+    }
+    return hString(child.tag, child.props as Props, ...(child.children as Child[])).value;
+  }
 
   // Função: executar e processar resultado (para .map() e tracking automático)
   if (typeof child === "function") {
@@ -316,6 +349,11 @@ function childToString(child: Child, ctx: RenderContext, rawText = false): strin
   // Reativo (mesma regra do cliente: get + subscribe; State não entra):
   // renderiza como filho comum, sem gravar o valor no estado serializado
   if (isReactive(child)) {
+    // Dynamic by definition: no markers and no content inside <script>/<style>
+    if (rawText) {
+      if (process.env.NODE_ENV !== "production") warnOnce(RAW_TEXT_DROPPED);
+      return "";
+    }
     const id = `s${ctx.counter++}`;
     const inner = childToString(child.get() as Child, ctx, rawText);
     return `<!--reactive-start:${id}-->${inner}<!--reactive-end:${id}-->`;
@@ -339,9 +377,7 @@ function childToString(child: Child, ctx: RenderContext, rawText = false): strin
   if (typeof child === "string") {
     if (rawText) {
       // Escaping does not make code safe (alert(1) survives): a dynamic string is dropped, as on the client
-      if (process.env.NODE_ENV !== "production") warnOnce(
-        "A dynamic string inside <script>/<style> was dropped (strings are data, not code). For JSON use unsafeHtml(serializeStateForScript(x))",
-      );
+      if (process.env.NODE_ENV !== "production") warnOnce(RAW_TEXT_DROPPED);
       return "";
     } else if (LOOKS_LIKE_MARKUP.test(child)) {
       if (process.env.NODE_ENV !== "production") warnOnce("string rendered as text. For trusted HTML use unsafeHtml() (never with user input)");
@@ -365,7 +401,8 @@ export function hString(tag: unknown, props: Props | null, ...rawChildren: Child
       ...plainProps,
       children: rawChildren.map(unmark),
     });
-    return new SafeHtml(childToString(result, ctx));
+    // A SafeHtml result keeps its origin (unsafeHtml stays trusted); anything else is normalised text
+    return isSafeHtml(result) ? result : generated(childToString(result, ctx));
   }
 
   // Elemento nativo
@@ -378,7 +415,7 @@ export function hString(tag: unknown, props: Props | null, ...rawChildren: Child
 
   // Void elements (auto-fecham)
   if (VOID_ELEMENTS.has(tagName)) {
-    return new SafeHtml(`<${tagName}${attrs}>`);
+    return generated(`<${tagName}${attrs}>`);
   }
 
   const rawText = RAW_TEXT_ELEMENTS.has(tagName.toLowerCase());
@@ -386,7 +423,7 @@ export function hString(tag: unknown, props: Props | null, ...rawChildren: Child
   const childHtml = rawChildren
     .map((c) => (typeof c === "string" ? (rawText ? c : escapeHtml(c)) : childToString(c, ctx, rawText)))
     .join("");
-  return new SafeHtml(`<${tagName}${attrs}>${childHtml}</${tagName}>`);
+  return generated(`<${tagName}${attrs}>${childHtml}</${tagName}>`);
 }
 
 // Template literal tag usando HTM (versão string)
@@ -397,7 +434,7 @@ export const htmlString = (strings: TemplateStringsArray, ...values: unknown[]):
   if (isSafeHtml(result)) return result;
   // O htm devolve a raiz como está quando não é um único elemento (texto, valor
   // dinâmico, várias raízes): normaliza para SafeHtml, tudo como dado escapado
-  return new SafeHtml(childToString(result as Child, activeContext ?? createContext()));
+  return generated(childToString(result as Child, activeContext ?? createContext()));
 };
 
 // Serializa o estado para uso dentro de <script>: troca os caracteres que

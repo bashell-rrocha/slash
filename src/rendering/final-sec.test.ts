@@ -199,3 +199,133 @@ describe("minors", () => {
     }
   });
 });
+
+describe("fix round 1: SSR raw-text origin rule", () => {
+  const evil = "alert(1)";
+  const ssr = (fn: () => unknown) => renderToString(fn as never).html;
+  const C = () => evil;
+  const Kids = (p: { children: unknown }) => p.children;
+
+  for (const tag of ["script", "style"]) {
+    test(`<${tag}>: component returning a string is dropped`, () => {
+      expect(ssr(() => htmlString`<${tag}><${C}/></${tag}>`)).toBe(`<${tag}></${tag}>`);
+    });
+    test(`<${tag}>: component echoing dynamic children is dropped`, () => {
+      expect(ssr(() => htmlString`<${tag}><${Kids}>${evil}</${Kids}></${tag}>`)).toBe(`<${tag}></${tag}>`);
+    });
+    test(`<${tag}>: nested htmlString of a dynamic string is dropped`, () => {
+      expect(ssr(() => htmlString`<${tag}>${htmlString`${evil}`}</${tag}>`)).toBe(`<${tag}></${tag}>`);
+    });
+    test(`<${tag}>: element markup is dropped`, () => {
+      expect(ssr(() => htmlString`<${tag}>${htmlString`<b>x</b>`}</${tag}>`)).toBe(`<${tag}></${tag}>`);
+    });
+    test(`<${tag}>: reactive child leaves no markers`, () => {
+      const rx = { get: () => evil, subscribe: () => () => {} };
+      expect(ssr(() => htmlString`<${tag}>${rx as never}</${tag}>`)).toBe(`<${tag}></${tag}>`);
+    });
+    test(`<${tag}>: unsafeHtml and static text survive, also through a component`, () => {
+      expect(ssr(() => htmlString`<${tag}>a;${unsafeHtml("b;")}</${tag}>`)).toBe(`<${tag}>a;b;</${tag}>`);
+      const U = () => unsafeHtml("c;");
+      expect(ssr(() => htmlString`<${tag}><${U}/></${tag}>`)).toBe(`<${tag}>c;</${tag}>`);
+      expect(ssr(() => htmlString`<${tag}>${htmlString`${unsafeHtml("d;")}`}</${tag}>`)).toBe(`<${tag}>d;</${tag}>`);
+    });
+  }
+
+  test("normal HTML contexts keep isSafeHtml semantics", () => {
+    expect(ssr(() => htmlString`<div>${htmlString`<b>x</b>`}${unsafeHtml("<i>y</i>")}</div>`)).toBe("<div><b>x</b><i>y</i></div>");
+  });
+
+  test("client: components and nested html results are dropped inside script/style", () => {
+    const Comp = () => "alert(1)";
+    expect((html`<script><${Comp}/></script>` as HTMLElement).textContent).toBe("");
+    expect((html`<style>${html`${"x"}`}</style>` as HTMLElement).textContent).toBe("");
+    expect((html`<style>${html`${"x"}${"y"}`}</style>` as HTMLElement).textContent).toBe("");
+  });
+
+  test("constructor / __proto__ / prototype attributes are blocked on both sides", () => {
+    for (const k of ["constructor", "prototype", "__proto__"]) {
+      const props = Object.defineProperty({}, k, { value: "v", enumerable: true });
+      expect(ssr(() => htmlString`<div ...${props}></div>`)).toBe("<div></div>");
+      expect((h("div", props as never) as Element).getAttribute(k)).toBeNull();
+    }
+  });
+});
+
+describe("fix round 1: html() output never leaks the marker", () => {
+  const leaks = (v: unknown): boolean =>
+    Array.isArray(v) ? v.some(leaks) : typeof v === "object" && v !== null && v.constructor?.name === "DynamicText";
+
+  test("single dynamic string comes back as a string", () => {
+    expect(html`${"abc"}`).toBe("abc" as never);
+  });
+  test("several roots come back as plain strings in an array", () => {
+    const out = html`${"a"}${"b"}` as unknown;
+    expect(out).toEqual(["a", "b"]);
+    expect(leaks(out)).toBe(false);
+  });
+  test("component children are plain strings, even nested", () => {
+    let seen: unknown;
+    const C = (p: { children: unknown }) => {
+      seen = p.children;
+      return h("i", null);
+    };
+    html`<${C}>${"a"}${"b"}</${C}>`;
+    expect(seen).toEqual(["a", "b"]);
+    expect(leaks(seen)).toBe(false);
+  });
+  test("array value inside children stays plain", () => {
+    const out = html`<p>${["x", "y"]}</p>` as HTMLElement;
+    expect(out.textContent).toBe("xy");
+  });
+});
+
+describe("fix round 1: render() state script type warning", () => {
+  test("warns when #__SLASH_STATE__ lacks type=application/json", async () => {
+    const { render } = await import("./render");
+    const container = document.createElement("div");
+    container.innerHTML = "<p>ssr</p>";
+    document.body.appendChild(container);
+    const decoy = document.createElement("script");
+    decoy.id = "__SLASH_STATE__";
+    document.body.appendChild(decoy);
+    try {
+      render(() => h("p", null, "c"), container);
+      expect(warn.mock.calls.some((c) => /application\/json/.test(String(c[0])))).toBe(true);
+    } finally {
+      decoy.remove();
+      container.remove();
+    }
+  });
+});
+
+describe("fix round 1: deepClone speed", () => {
+  function baseline<T>(obj: T): T {
+    if (obj === null || typeof obj !== "object") return obj;
+    if (obj instanceof Error) return obj;
+    if (obj instanceof Date) return new Date(obj.getTime()) as T;
+    if (Array.isArray(obj)) return obj.map((i) => baseline(i)) as T;
+    const out: Record<string, unknown> = Object.getPrototypeOf(obj) === null ? Object.create(null) : {};
+    for (const k of Object.keys(obj)) out[k] = baseline((obj as Record<string, unknown>)[k]);
+    return out as T;
+  }
+  const best = (fn: () => void) => {
+    let min = Infinity;
+    for (let i = 0; i < 7; i++) {
+      const t = performance.now();
+      fn();
+      min = Math.min(min, performance.now() - t);
+    }
+    return min;
+  };
+  test("at most 1.5x a simple recursive clone", () => {
+    const data = Array.from({ length: 50_000 }, (_, i) => ({ id: i, tags: ["a", "b"], meta: { n: i, ok: true } }));
+    const base = best(() => baseline(data));
+    const ours = best(() => deepClone(data));
+    expect(ours / base).toBeLessThanOrEqual(1.5);
+  }, 20000);
+  test("cycle deep inside still reports circular, shared refs fine", () => {
+    const a: Record<string, unknown> = { x: { y: {} } };
+    (a.x as Record<string, unknown>).back = a;
+    expect(() => deepClone(a)).toThrow(/circular/i);
+  });
+});

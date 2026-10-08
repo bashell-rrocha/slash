@@ -510,10 +510,10 @@ describe("divergencias aceitas entre cliente e SSR", () => {
   test("style objeto: serializacao difere (CSSOM no cliente), mas a politica de valores e a mesma", () => {
     expect(clientAttr("div", { style: { color: "red" } }, "style")).not.toBe(ssrAttr("div", { style: { color: "red" } }, "style") + "x");
   });
-  test("__proto__/constructor como prop: cliente descarta; SSR emite um atributo HTML inerte", () => {
+  test("__proto__/constructor as a prop: dropped on both sides", () => {
     const props = JSON.parse('{"__proto__":"x","constructor":"y"}');
     expect(clientAttr("div", props, "constructor")).toBeNull();
-    expect(ssrAttr("div", props, "constructor")).toBe("y");
+    expect(ssrAttr("div", props, "constructor")).toBeNull();
   });
   test("data-reactive-*: reservado so no SSR (marcadores de hidratacao)", () => {
     expect(ssrAttr("div", { "data-reactive-class": "s0" }, "data-reactive-class")).toBeNull();
