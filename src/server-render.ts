@@ -118,9 +118,11 @@ function captureSignal(ctx: RenderContext, signal: Reactive): string {
   return id;
 }
 
-// Markup confiável vai para o estado serializado como string, como sempre foi
+// Markup e URL confiáveis vão para o estado serializado como string (o brand se perde: falha fechado)
 function toSerializable(value: unknown): unknown {
   if (isSafeHtml(value)) return value.value;
+  // O brand não atravessa JSON: SafeUrl vai como a string, que no cliente segue a política normal
+  if (isSafeUrl(value)) return value.value;
   if (Array.isArray(value)) return value.map(toSerializable);
   return value;
 }
