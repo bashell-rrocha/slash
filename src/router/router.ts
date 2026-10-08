@@ -155,7 +155,12 @@ export function createRouter(config: RouterConfig): RouterInstance {
         const fullPath = search ? `${input.pathname}${search}` : input.pathname
 
         if (replace) {
-          history.replace(fullPath)
+          replacingInitial = initial
+          try {
+            history.replace(fullPath)
+          } finally {
+            replacingInitial = false
+          }
         } else {
           history.push(fullPath)
         }
@@ -173,8 +178,9 @@ export function createRouter(config: RouterConfig): RouterInstance {
 
   // Resolve quando a navegação inicial termina
   let ready: Promise<void> = Promise.resolve()
-  // Durante a navegação inicial, o replace dela não deve reentrar via history.listen
-  let initialPending = false
+  // Ligada só ao redor do replace da navegação inicial, para ele não reentrar
+  // via history.listen (eventos de histórico reais superam a inicial pelo token)
+  let replacingInitial = false
 
   if (initialPath) {
     const input = parseNavigationPath(initialPath)
@@ -203,15 +209,15 @@ export function createRouter(config: RouterConfig): RouterInstance {
       }
 
       if (guarded) {
-        initialPending = true
-        ready = navigate(initialPath, true, false, true)
-          .catch((err) => {
-            console.error("Navigation error:", err)
+        const promise = navigate(initialPath, true, false, true)
+        const initialSeq = navSeq
+        ready = promise.catch((err) => {
+          console.error("Navigation error:", err)
+          // Só encerra isNavigating se nenhuma navegação mais nova está em andamento
+          if (initialSeq === navSeq) {
             state.set({ ...state.get(), isNavigating: false })
-          })
-          .finally(() => {
-            initialPending = false
-          })
+          }
+        })
       }
     }
   }
@@ -219,7 +225,7 @@ export function createRouter(config: RouterConfig): RouterInstance {
   // Listen to history changes (browser only)
   if (!adapter.isSSR()) {
     history.listen((location) => {
-      if (initialPending) return
+      if (replacingInitial) return
       navigate(location, true, true).catch((err) => {
         console.error("Navigation error:", err)
       })
