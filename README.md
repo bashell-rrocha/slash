@@ -214,7 +214,7 @@ render(html`<${App} />`, "#app");
 await router.push("/users/7");
 ```
 
-The router is itself a state (`router.get()`, `router.watch()`) holding `currentRoute`, `params`, `query`, `meta` and `isNavigating`. It also exposes `push`, `replace`, `back`, `forward` and `go`. Guards (global or per route) return `false` to block or a path string to redirect. For SSR, pass `initialPath`. See [ROUTER.md](./ROUTER.md).
+The router is itself a state (`router.get()`, `router.watch()`) holding `currentRoute`, `params`, `query`, `meta` and `isNavigating`. It also exposes `push`, `replace`, `back`, `forward` and `go`. Guards (global or per route) return `false` to block or a path string to redirect. For SSR, pass `initialPath`. Client-side guards are UX only: the server must always authorize access. See [ROUTER.md](./ROUTER.md).
 
 ## Forms
 

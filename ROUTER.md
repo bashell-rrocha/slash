@@ -143,11 +143,19 @@ createRouter({
 
 ### Guards na URL inicial
 
-No browser, a URL inicial passa pelos mesmos guards (globais e da rota), redirects e fallback de `push`, com `replace` (não empilha histórico). Se a rota inicial não tem guard aplicável, ela já está disponível logo após `createRouter`. Se há guard, o estado inicial é `currentRoute: null, isNavigating: true` até a decisão (nenhum conteúdo protegido é renderizado antes); depois vem a rota, o destino do redirect ou, se o guard bloquear, `currentRoute: null`. `router.ready` resolve quando isso termina (já resolvido no caso síncrono).
+No browser, a navegação inicial passa pelos mesmos guards (globais e da rota), redirects e fallback de `push`, com `replace` (não empilha histórico). `router.ready` é uma `Promise<void>` que resolve quando ela termina (já resolvida quando não há guard aplicável).
 
-`initialPath` explícito e o estado do servidor (hidratação) continuam sendo resolvidos de forma síncrona, sem guards no cliente. No SSR o casamento também é síncrono e os guards não rodam (`renderToString` é síncrono): a autorização no servidor é responsabilidade do servidor.
+- **URL do browser** (`window.location`, ou `location.hash` em `mode: "hash"`): sem guard aplicável, a rota já está disponível logo após `createRouter`. Com guard, o estado inicial é `currentRoute: null, isNavigating: true` até a decisão, então nenhum conteúdo protegido é renderizado antes. Depois vem a rota, o destino do redirect ou, se o guard bloquear, `currentRoute: null`.
+- **`initialPath` e estado do servidor (hidratação)**: a rota é aplicada de forma síncrona (sem flash, o markup do SSR é mantido) e os guards rodam em seguida. Se bloquearem, `currentRoute` vira `null`; se redirecionarem, o roteador segue o redirect.
+- **SSR** (sem browser): o casamento continua síncrono e os guards não rodam (`renderToString` é síncrono). A autorização no servidor é responsabilidade do servidor.
 
-Em `mode: "hash"` a rota inicial vem de `location.hash` (por exemplo `/#/sobre?x=1`), não do pathname.
+Outros pontos:
+
+- Um `push`/`replace` feito antes de `ready` prevalece: a navegação inicial pendente é descartada (e `ready` resolve mesmo assim). O mesmo vale para `push` concorrentes: vale o último.
+- Cada navegação segue no máximo 10 redirects encadeados. Acima disso (por exemplo `/x` -> `/y` -> `/x`) o roteador registra `console.error`, define `currentRoute: null, isNavigating: false` e `ready` resolve.
+- Quando um guard bloqueia a URL inicial, a URL continua na barra de endereço, mas `currentRoute` é `null`: renderize um estado vazio ou de erro nesse caso.
+- Em `mode: "hash"` a rota inicial vem de `location.hash` (por exemplo `/#/sobre?x=1`); a query antes do `#` é ignorada.
+- Para remover do DOM o container onde um `Router` está montado, use `destroyNode(container)` (de `@_bashell/slash/core`). Remover o nó só com o DOM mantém a assinatura do roteador ativa.
 
 ## Rotas aninhadas
 
