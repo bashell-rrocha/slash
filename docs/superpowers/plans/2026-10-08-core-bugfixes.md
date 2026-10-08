@@ -112,6 +112,37 @@ test("SSR com Router hidrata no cliente sem erro", ...)      // render() sobre o
 
 ---
 
+### Task 2b: SSR usa a mesma regra de reativo do cliente
+
+**Causa raiz:**
+- `server-render.ts:51-58` considera reativo qualquer objeto com `get` e (`watch` **ou** `subscribe`). Com isso, um `State` vira marcador e entra no JSON de estado.
+- O cliente usa `utils/guards.ts:3-8` (`get` **e** `subscribe`), então `State` não é reativo lá.
+- A diferença não tem efeito útil: `hydrateInternal` (`src/rendering/render.ts:44-60`) limpa o container e renderiza de novo, sem ler o estado serializado.
+
+**Files:**
+- Modify: `src/server-render.ts` (trocar o `isReactive` local pelo de `src/utils/guards.ts` e remover o local)
+- Test: `src/server-render.test.ts`. Ajustar os testes que esperavam marcadores ou entradas de estado para `State`.
+- Docs: `README.md` e `docs/10-ssr` (se existir texto sobre o estado retornado por `renderToString`). O `state` contém só os reativos que não são `State`.
+
+**Interfaces:**
+- Consumes: Task 2, mesmo ramo de `childToString`.
+- Produces: no SSR, `State` interpolado diretamente (`${state}`) recebe o mesmo tratamento que no cliente: não é reativo, não gera marcador e não entra no estado serializado. O objeto cai no ramo de objeto, que já emite o aviso "Unexpected object in child position". `state.get()` interpolado continua funcionando normalmente.
+
+- [ ] **Step 1: Testes que falham:**
+
+```ts
+test("SSR não trata State como reativo (igual ao cliente)", ...)    // htmlString`<p>${createState(7)}</p>` não contém "reactive-start"; renderToString(...).state é {}
+test("SSR com state.get() renderiza o valor sem marcadores", ...)    // "<p>7</p>"
+test("reativo com subscribe continua marcado no SSR", ...)           // o comportamento da Task 2 permanece
+```
+
+- [ ] **Step 2: Rodar e ver falhar.**
+- [ ] **Step 3: Implementar,** reutilizando `isReactive` de `utils/guards.ts`.
+- [ ] **Step 4: Rodar e ver passar.** Depois rode a suíte inteira e o typecheck, e rode `bun test src/` no `slash-ssr` para confirmar que o template não quebrou.
+- [ ] **Step 5: Commit:** `fix(ssr): use the client reactive guard so State is not treated as reactive`, e o `docs:` correspondente.
+
+---
+
 ### Task 3: Estado serializado seguro dentro de `<script>`
 
 **Files:**
@@ -218,4 +249,4 @@ test("createState não mantém registro global", ...)                      // cr
 - [ ] Core: integrar `feature/core-bugfixes` na `develop` com `--no-ff`, simular o CI num clone isolado (`bun install --frozen-lockfile`, `bun test`, `bun run build`, `npm pack --dry-run`), criar `release/0.0.3` (CHANGELOG com as correções), integrar na `main` com a tag `v0.0.3` e de volta na `develop`, e fazer o push. O workflow publica e o usuário aprova em Staged Packages.
 - [ ] `slash-spa` e `slash-ssr`: integrar as features na `develop` e fazer o push.
 - [ ] `slash-doc`: integrar na `develop`, criar `release/0.0.3`, integrar na `main` com a tag `v0.0.3` e fazer o push.
-- [ ] Registrar como pendência, sem corrigir agora, a inconsistência do SSR, que trata `State` como reativo (`server-render.ts:51-58`) enquanto o cliente não. Ela depende de uma decisão de design sobre a hidratação de estados.
+- [ ] Registrar como pendência, sem corrigir agora, que a "hidratação" não reaproveita o DOM do servidor. `hydrateInternal` limpa o container e renderiza de novo, e `hHydrate`/`hydrateReactiveNodes` não estão ligados ao `render`. Religar é uma decisão de design separada, e a documentação de hidratação promete reaproveitamento de DOM.
