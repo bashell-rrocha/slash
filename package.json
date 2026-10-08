@@ -1,6 +1,6 @@
 {
   "name": "@_bashell/slash",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "htm + hyper + reactive signals (no VDOM) — tiny, fast, DX-first",
   "repository": {
     "type": "git",
