@@ -10,59 +10,20 @@
 
 **Spec:** não há spec separado. As causas raiz e as evidências estão na seção "Causas raiz" abaixo, que é a autoridade deste plano.
 
-## ⚠️ Estado da execução (handoff de 2026-10-08) — leia primeiro
+## ⚠️ Estado da execução (atualizado 2026-10-08, 3ª sessão) — leia primeiro
 
-Execução com subagent-driven-development, todos os agentes **Sonnet**: os agentes `developer`, `qa` e `tech-lead` ficam em `~/.claude/agents/`, e o coordenador integra. O ledger detalhado está em `.superpowers/sdd/2026-10-08-core-bugfixes/progress.md`, ignorado pelo git, junto com os briefs, os relatórios `task-N-report.md` e os pacotes de revisão. Os agentes **não** fazem push nem merge.
+Implementação e revisões **concluídas**; a revisão final (tech-lead) e a rodada de correções dela estão limpas.
+Ledger completo (todas as rulings, menores adiados e itens estacionados): `.superpowers/sdd/2026-10-08-core-bugfixes/progress.md`.
 
-**Concluído e aprovado pelo QA:**
-- Core, branch `feature/core-bugfixes`, partindo de `169cfba` (16 commits, último `5ae8631`):
-  - Task 1 (reativos dentro de componentes; `element.ts` passou a usar o marcador `component:end`);
-  - Tasks 2, 2b e 3 (Router no SSR, regra única de reativo, `serializeStateForScript`);
-  - Task 4 (`batch` reescrito).
-  - Suíte: 785 pass, tsc limpo.
+- Core `feature/core-bugfixes` (de `169cfba`): Tasks 1, 1b, 1c, 2, 2b, 3, 3b, 4, 4b, bloqueante do `dist/` (`verify:dist` no `publish.yml`), regra de confiança, correções da revisão final. 805 pass, tsc limpo, `verify:dist` OK.
+- `slash-spa` `feature/router-navigation-e2e` (E2E 16/16), `slash-ssr` `feature/safe-state-serialization` (E2E 1/1), `slash-ssg` `feature/core-bugfix-alignment` (174 unit + 14 E2E), `doc` `feature/api-accuracy-fixes` (36 páginas).
 
-**Feito, mas ainda sem QA (Task 5):**
-- `slash-spa`, branch `feature/router-navigation-e2e`, commit `7cf2e6e`: E2E de navegação. Ele falha sem a Task 1 e passa com ela. O agente também:
-  - adicionou `testMatch: '**/*.e2e.ts'` (antes nenhum E2E rodava);
-  - trocou o `webServer` do Playwright para `bun run dev`, porque `bun run start` serve página em branco: `dist/index.html` pede `/client.js`, mas o build gera nomes com hash;
-  - pôs `conditions: ["bun"]` no build de dev;
-  - deixou `reuseExistingServer: false`.
-- `slash-ssr`, branch `feature/safe-state-serialization`, commit `17d4f9e`: `serializeStateForScript`, com o script de estado extraído para `src/state-script.ts` e `replace` com função. Também recebeu `conditions: ["bun"]` e `reuseExistingServer: false`. 14 pass. O template **não tem E2E**.
+**Parado antes da Task 7** (merge, `release/0.0.3`, push, publicação) aguardando decisões do usuário:
+- R5 (regra de confiança do SSR — XSS de projeto): liberar a 0.0.3 com o aviso documentado ou condicionar ao redesenho;
+- 0.0.2 em Staged Packages tem o CJS quebrado: rejeitar e publicar só a 0.0.3?
+- R6 (input recriado em re-render), R7 (ErrorBoundary não captura erros dos filhos), hidratação real, guards no SSR: decisões de design para depois.
 
-**Pendências, em ordem:**
-1. ~~BLOQUEANTE: `dist/` quebrado~~ **Resolvido (2ª sessão de 2026-10-08).** A hipótese de minify/drop era falsa: a build sem minificação também quebrava (`__INVALID__REF__`).
-   - **Causa:** o `require("../hyper")`/`require("./context")` em `src/hydration/walker.ts` (código ESM) fazia o Bun embrulhar os módulos em `__esm`/`__toCommonJS`; com splitting, o `exports_hyper` virava referência inválida. O `ece2689` só mudou o grafo e expôs o bug. Correção: `c4bcfd5` (imports ESM).
-   - **Segundo bug, anterior (já na `develop` e nas versões 0.0.1/0.0.2 publicadas):** todos os `dist/*.cjs` quebravam, porque o Bun não suporta splitting em CJS. Correção: `eca690a` (splitting só no ESM).
-   - **Guarda:** `2a3ce8a` adiciona `scripts/verify-dist.mjs` (`bun run verify:dist`), que faz `import` e `require` no Node de cada export do `package.json`, e o passo correspondente no `publish.yml`.
-   - **Conhecido, não corrigido (comportamento do Bun):** `core.mjs`/`ssr.mjs` também servem de chunk para o `index.mjs` e expõem nomes internos minificados (o `verify:dist` avisa).
-   - **Templates:** `conditions: ["bun"]` removido (spa `69a1a46`, ssr `98fd470`). E2E do spa: 12 pass e os 4 antigos falhando (item 2). SSR: 14 pass e smoke do dev OK.
-2. **QA da Task 5**, avaliando os riscos:
-   - a troca para `bun run dev` esconde o bug do `bun run start` (que **deve ser corrigido**, não contornado);
-   - os **4 E2E antigos que falham** em `slash-spa/tests/e2e/task-manager.e2e.ts` (nunca rodavam) devem ser corrigidos, porque o usuário exige tudo resolvido;
-   - o `conditions: ["bun"]` já foi removido (item 1);
-   - o `resolveSlashSourcePlugin` em `scripts/dev.ts` dos dois templates está morto (filtra `slash`, mas o pacote é `@_bashell/slash`).
-3. **Task 6:** site de docs (`packages/doc`). Incluir também `src/content/docs/fundamentos/batch.md`, que cita internos removidos (`__addBatchEndCallback`, `__removeBatchEndCallback`, `__recordBatchUpdate`).
-4. **Pendência menor:** no `README.md` e no `ROUTER.md`, a frase da regra de confiança deve citar explicitamente o caso `${state.get()}`.
-5. **Revisão final:** tech-lead (Sonnet) sobre a branch inteira, de `169cfba` até `HEAD`, com os pendentes do ledger.
-6. **Task 7:** integração, simulação do CI num clone limpo **incluindo o import do `dist/`**, `release/0.0.3` e push. A publicação sai pelo GitHub Actions e precisa da aprovação do usuário em npm → Staged Packages.
-
-**Decisões já tomadas (rulings), detalhes no ledger:**
-- **R1:** no SSR, reatividade = guard do cliente (`get` + `subscribe`); `State` nunca é reativo; o valor do reativo passa por `childToString` e não é serializado.
-- **R2:** o teste do Review Focus 2 foi reformulado.
-- **R3:** guard de marcadores separados, aceito como está.
-- **R4:** o `server.ts` do `slash-ssr` fica com a Task 5.
-- **R5:** a regra de confiança do SSR (string que começa com `<` é HTML cru, inclusive `state.get()` fora do `renderToString`) é uma **armadilha de XSS de projeto, anterior a este plano**. Precisa de decisão do usuário: por exemplo, `htmlString` devolver um tipo marcado como HTML seguro. Não corrigir sem aprovação.
-
-**Pendências do usuário, fora deste plano:**
-- aprovar a **0.0.2** do core em Staged Packages (publicada pelo CI em 2026-10-08);
-- apontar o DNS de `slash.bashell.com.br`;
-- hidratação real (o `render` limpa e re-renderiza; `hHydrate` não está ligado).
-
-**Ambiente:**
-- antes de qualquer push, `export SSH_AUTH_SOCK=/run/user/1000/ssh-agent.socket` (depois de reboot, o usuário precisa rodar `ssh-add ~/.ssh/id_ed25519`);
-- portas 3000/4000 livres no momento;
-- autor dos commits configurado em cada repositório; mensagens terminam com `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`;
-- o script de git flow usado nas releases está no scratchpad desta sessão e se perde. Faça o git flow manualmente: `release/x.y.z` a partir da `develop`, bump no `package.json`/`jsr.json`, entrada no CHANGELOG, merge `--no-ff` na `main`, tag `vx.y.z` anotada, merge `--no-ff` de volta na `develop`.
+**Task 7, quando liberada:** CHANGELOG 0.0.3 (itens listados pela revisão final no ledger, incluindo CJS quebrado em 0.0.1/0.0.2, `router.ready` obrigatório no tipo, `push` para a URL atual não reconstrói a página, `State` não reativo no SSR, internos `__` do batch removidos); `ssg.md` `^0.0.2` → `^0.0.3` no site de docs; integração das 5 branches; simulação do CI em clone limpo com `verify:dist`; git flow manual; push com `SSH_AUTH_SOCK`. **Rodar todo teste/build/E2E com `systemd-run --user --scope -p MemoryMax=3G -p MemorySwapMax=0 timeout …` e um agente por vez (máquina de 16 GB sem swap).**
 
 ## Causas raiz (confirmadas por reprodução)
 
