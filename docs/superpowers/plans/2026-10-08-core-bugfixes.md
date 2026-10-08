@@ -30,24 +30,17 @@ Execução com subagent-driven-development, todos os agentes **Sonnet**: os agen
 - `slash-ssr`, branch `feature/safe-state-serialization`, commit `17d4f9e`: `serializeStateForScript`, com o script de estado extraído para `src/state-script.ts` e `replace` com função. Também recebeu `conditions: ["bun"]` e `reuseExistingServer: false`. 14 pass. O template **não tem E2E**.
 
 **Pendências, em ordem:**
-1. **BLOQUEANTE: o `dist/` do core sai quebrado em runtime nesta branch.** O build "passa", mas `node -e "import('./dist/index.mjs')"` falha com `Export 'T' is not defined in module` (o nome varia: `T`, `B`). O chunk compartilhado exporta um identificador que não declara.
-   - **Bisect feito:**
-     - `develop` ok;
-     - `00cc495` ok;
-     - `e4a5929` ok;
-     - **`ece2689` quebra**: `fix(ssr): use the client reactive guard`. Ali o `src/server-render.ts` passou a importar `isReactive` de `src/utils/guards.ts`, compartilhado com o bundle do cliente.
-   - **Hipótese:** bug do Bun 1.3.6 com `splitting: true` combinado com `minify.identifiers` e/ou `drop: ['console','debugger']` (`scripts/build.ts:32-45`).
-   - **Próximo passo** (seguir o skill `systematic-debugging`): testar variantes do build isoladas, uma de cada vez:
-     - `identifiers: false`;
-     - `drop: []`;
-     - `syntax: false`.
-
-     Depois de achar o gatilho, escolher a correção (ajustar o build, ou evitar o import compartilhado) e **adicionar um teste ou script que importe todos os entrypoints do `dist/`**: o `bundle-size.test.ts` e o CI só checam tamanho e build. Coloque essa verificação também no workflow `publish.yml`, antes de publicar.
-   - Revalidar com o `slash-spa` e o `slash-ssr` **sem** o `conditions: ["bun"]`, se ele tiver sido só contorno.
+1. ~~BLOQUEANTE: `dist/` quebrado~~ **Resolvido (2ª sessão de 2026-10-08).** A hipótese de minify/drop era falsa: a build sem minificação também quebrava (`__INVALID__REF__`).
+   - **Causa:** o `require("../hyper")`/`require("./context")` em `src/hydration/walker.ts` (código ESM) fazia o Bun embrulhar os módulos em `__esm`/`__toCommonJS`; com splitting, o `exports_hyper` virava referência inválida. O `ece2689` só mudou o grafo e expôs o bug. Correção: `c4bcfd5` (imports ESM).
+   - **Segundo bug, anterior (já na `develop` e nas versões 0.0.1/0.0.2 publicadas):** todos os `dist/*.cjs` quebravam, porque o Bun não suporta splitting em CJS. Correção: `eca690a` (splitting só no ESM).
+   - **Guarda:** `2a3ce8a` adiciona `scripts/verify-dist.mjs` (`bun run verify:dist`), que faz `import` e `require` no Node de cada export do `package.json`, e o passo correspondente no `publish.yml`.
+   - **Conhecido, não corrigido (comportamento do Bun):** `core.mjs`/`ssr.mjs` também servem de chunk para o `index.mjs` e expõem nomes internos minificados (o `verify:dist` avisa).
+   - **Templates:** `conditions: ["bun"]` removido (spa `69a1a46`, ssr `98fd470`). E2E do spa: 12 pass e os 4 antigos falhando (item 2). SSR: 14 pass e smoke do dev OK.
 2. **QA da Task 5**, avaliando os riscos:
    - a troca para `bun run dev` esconde o bug do `bun run start` (que **deve ser corrigido**, não contornado);
    - os **4 E2E antigos que falham** em `slash-spa/tests/e2e/task-manager.e2e.ts` (nunca rodavam) devem ser corrigidos, porque o usuário exige tudo resolvido;
-   - o `conditions: ["bun"]` deve ser revisto depois do item 1.
+   - o `conditions: ["bun"]` já foi removido (item 1);
+   - o `resolveSlashSourcePlugin` em `scripts/dev.ts` dos dois templates está morto (filtra `slash`, mas o pacote é `@_bashell/slash`).
 3. **Task 6:** site de docs (`packages/doc`). Incluir também `src/content/docs/fundamentos/batch.md`, que cita internos removidos (`__addBatchEndCallback`, `__removeBatchEndCallback`, `__recordBatchUpdate`).
 4. **Pendência menor:** no `README.md` e no `ROUTER.md`, a frase da regra de confiança deve citar explicitamente o caso `${state.get()}`.
 5. **Revisão final:** tech-lead (Sonnet) sobre a branch inteira, de `169cfba` até `HEAD`, com os pendentes do ledger.
