@@ -126,10 +126,69 @@ describe("dependências dinâmicas de componente", () => {
   });
 });
 
+describe("robustez de re-renderização", () => {
+  beforeEach(() => setHydrateContext(null));
+
+  it("erro antes de ler qualquer state mantém os watchers anteriores", () => {
+    const n = createState(0);
+    let fail = false;
+    const Comp = () => {
+      if (fail) throw new Error("boom");
+      return html`<p>${n.get()}</p>`;
+    };
+    const el = document.createElement("div");
+    render(html`<${Comp}/>` as any, el);
+    fail = true;
+    expect(() => n.set(1)).toThrow("boom");
+    fail = false;
+    n.set(2);
+    expect(el.textContent).toBe("2");
+  });
+
+  it("render iniciado dentro de render do mesmo componente não perde dependências", () => {
+    const n = createState(0);
+    const m = createState("x");
+    let nested = true;
+    const Comp = () => {
+      const v = n.get();
+      if (v === 1 && nested) {
+        nested = false;
+        n.set(2); // re-render aninhado
+      }
+      return html`<p>${v}${m.get()}</p>`;
+    };
+    const el = document.createElement("div");
+    render(html`<${Comp}/>` as any, el);
+    n.set(1);
+    expect(el.textContent).toBe("2x");
+    expect(el.querySelectorAll("p").length).toBe(1);
+    m.set("y");
+    expect(el.textContent).toBe("2y");
+    n.set(3);
+    expect(el.textContent).toBe("3y");
+  });
+
+  it("pai e filho lendo o mesmo state: filho renderiza no máximo 2 vezes por set", () => {
+    const x = createState(0);
+    let childRuns = 0;
+    const Child = () => {
+      childRuns++;
+      return html`<i>${x.get()}</i>`;
+    };
+    const Parent = () => html`<div>${x.get()}<${Child}/></div>`;
+    const el = document.createElement("div");
+    render(html`<${Parent}/>` as any, el);
+    const before = childRuns;
+    x.set(1);
+    expect(childRuns - before).toBe(2);
+    expect(el.textContent).toBe("11");
+  });
+});
+
 describe("diffTrackedStates", () => {
   it("separa states novos, removidos e mantidos", () => {
     const a = {} as any, b = {} as any, c = {} as any;
-    const d = diffTrackedStates(new Set([a, b]), new Set([b, c]));
+    const d = diffTrackedStates(new Map<any, unknown>([[a, 1], [b, 1]]), new Set([b, c]));
     expect(d.add).toEqual([c]);
     expect(d.remove).toEqual([a]);
   });
