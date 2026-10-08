@@ -5,6 +5,7 @@
 import type { RouterInstance } from "./types"
 import type { Reactive, Child } from "../types"
 import { h as originalH } from "../hyper"
+import { ssrElement } from "../ssr-element"
 import { securityWarn } from "../utils/security-warn"
 import { BLOCKED_URL, sanitizeUrl } from "../utils/url-policy"
 
@@ -74,8 +75,8 @@ const EXTERNAL_URL = /^(?:https?:|mailto:|tel:)/i
  * Exceção explícita: a prop `external` com URL absoluta http(s), mailto ou tel
  * renderiza um link nativo com rel="noopener noreferrer" (href passa por
  * sanitizeUrl). As formas "//", "\\" e "/\\" são sempre bloqueadas.
- * No SSR renderiza <a href> (usa o renderizador de string registrado em
- * globalThis.__SLASH_SSR_H__).
+ * No SSR devolve um descritor (ssr-element) que o renderizador de string expande
+ * em <a href> com a mesma política de URL (sem handler, sem global mutável).
  */
 export function Link({
   to,
@@ -124,11 +125,16 @@ export function Link({
     // external válido: comportamento nativo do navegador
   }
 
-  const g = globalThis as { __SLASH_SSR__?: boolean; __SLASH_SSR_H__?: (...a: unknown[]) => unknown }
-  const hSsr = g.__SLASH_SSR__ ? g.__SLASH_SSR_H__ : undefined
-  const render = (hSsr as typeof h | undefined) ?? h
+  // SSR (flag do renderToString): descritor que o renderizador de string expande em <a href>
+  if ((globalThis as { __SLASH_SSR__?: boolean }).__SLASH_SSR__) {
+    return ssrElement(
+      "a",
+      { ...props, href, ...(nativeExternal ? { rel: "noopener noreferrer" } : {}) },
+      children
+    ) as unknown as Node
+  }
 
-  return render(
+  return h(
     "a",
     {
       ...props,

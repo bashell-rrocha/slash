@@ -6,6 +6,7 @@ import type { Child, Props, Reactive } from "./types";
 import { isReactive } from "./utils/guards";
 import { escapeJsonForScript } from "./utils/script-json";
 import { isSafeUrl } from "./safe-url";
+import { isSsrElement } from "./ssr-element";
 import { isUrlAttribute, sanitizeUrl } from "./utils/url-policy";
 
 // Flag global para indicar modo SSR
@@ -308,6 +309,9 @@ function childToString(child: Child, ctx: RenderContext, rawText = false): strin
   if (child == null || child === false) return "";
 
   if (isSafeHtml(child)) return child.value;
+
+  // Descritor de componente isomórfico (Link): renderiza como elemento nativo
+  if (isSsrElement(child)) return hString(child.tag, child.props as Props, ...(child.children as Child[])).value;
 
   // Função: executar e processar resultado (para .map() e tracking automático)
   if (typeof child === "function") {

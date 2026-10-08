@@ -4,6 +4,7 @@ import { setHydrateContext } from "../hydration/context";
 import { resetSecurityWarnings } from "../utils/security-warn";
 import { BLOCKED_URL } from "../utils/url-policy";
 import { Link } from "./components";
+import { htmlString, renderToString } from "../server-render";
 import { createRouter } from "./router";
 
 const routes = [
@@ -20,7 +21,6 @@ beforeEach(() => {
 afterEach(() => {
   warn.mockRestore();
   delete (globalThis as any).__SLASH_SSR__;
-  delete (globalThis as any).__SLASH_SSR_H__;
 });
 
 function make(to: any, extra: Record<string, unknown> = {}) {
@@ -151,26 +151,58 @@ describe("Link normaliza caminhos do app", () => {
   });
 });
 
-describe("Link no SSR", () => {
-  test("com o renderizador de string registrado, produz <a href>", () => {
-    (globalThis as any).__SLASH_SSR__ = true;
-    const calls: unknown[][] = [];
-    (globalThis as any).__SLASH_SSR_H__ = (...args: unknown[]) => { calls.push(args); return "<a>"; };
-    const router = createRouter({ routes, initialPath: "/" });
-    const out = Link({ to: "/about", router, className: "c", children: "About" });
-    expect(out).toBe("<a>");
-    const [tag, props, children] = calls[0] as [string, Record<string, unknown>, unknown];
-    expect(tag).toBe("a");
-    expect(props.href).toBe("/about");
-    expect(props.className).toBe("c");
-    expect(children).toBe("About");
+describe("Link no SSR (renderToString)", () => {
+  const router = () => createRouter({ routes, initialPath: "/" });
+  const ssr = (fn: () => unknown) => renderToString(fn as never).html;
+
+  test("caminho do app: <a href> sem handler", () => {
+    const r = router();
+    expect(ssr(() => htmlString`<${Link} to="/a" router=${r}>Ir</${Link}>`)).toBe('<a href="/a">Ir</a>');
   });
-  test("no SSR o href também passa pela política", () => {
-    (globalThis as any).__SLASH_SSR__ = true;
-    let seen: Record<string, unknown> = {};
-    (globalThis as any).__SLASH_SSR_H__ = (_t: string, p: Record<string, unknown>) => { seen = p; return ""; };
-    const router = createRouter({ routes, initialPath: "/" });
-    Link({ to: "javascript:alert(1)", router });
-    expect(seen.href).toBe(BLOCKED_URL);
+  test("props repassadas e filhos escapados", () => {
+    const r = router();
+    const html = ssr(() => htmlString`<${Link} to="/a?x=1&y=2" router=${r} className="c" title="t">${"<b>x</b>"}</${Link}>`);
+    expect(html).toBe('<a class="c" title="t" href="/a?x=1&amp;y=2">&lt;b&gt;x&lt;/b&gt;</a>');
+  });
+  test("filho SafeHtml é preservado", () => {
+    const r = router();
+    const html = ssr(() => htmlString`<${Link} to="/a" router=${r}><b>x</b></${Link}>`);
+    expect(html).toBe('<a href="/a"><b>x</b></a>');
+  });
+  test("to perigoso: href bloqueado (mesma regra do cliente) e um aviso", () => {
+    const r = router();
+    for (const to of ["javascript:alert(1)", "//evil.com", "/\\evil", "https://evil.com", "data:text/html,x"]) {
+      expect(ssr(() => htmlString`<${Link} to=${to} router=${r}>x</${Link}>`)).toBe(`<a href="${BLOCKED_URL}">x</a>`);
+    }
+  });
+  test("external: link nativo com rel", () => {
+    const r = router();
+    const html = ssr(() => htmlString`<${Link} to="https://example.com/x" external=${true} router=${r}>x</${Link}>`);
+    expect(html).toBe('<a href="https://example.com/x" rel="noopener noreferrer">x</a>');
+  });
+  test("external não libera javascript:, //host nem /\\host", () => {
+    const r = router();
+    for (const to of ["javascript:alert(1)", "//evil.com", "/\\evil.com"]) {
+      expect(ssr(() => htmlString`<${Link} to=${to} external=${true} router=${r}>x</${Link}>`)).toBe(
+        `<a href="${BLOCKED_URL}">x</a>`,
+      );
+    }
+  });
+  test("props.href não substitui o href calculado", () => {
+    const r = router();
+    const html = ssr(() => htmlString`<${Link} to="/a" href="javascript:alert(1)" router=${r}>x</${Link}>`);
+    expect(html).toBe('<a href="/a">x</a>');
+  });
+  test("não depende de nenhum global de renderização além da flag do renderToString", () => {
+    ssr(() => htmlString`<${Link} to="/a" router=${router()}>x</${Link}>`);
+    const extra = Object.keys(globalThis).filter(
+      (k) => k.startsWith("__SLASH_") && !["__SLASH_SSR__", "__SLASH_TRACK_ACCESS__", "__SLASH_TRACK_STATE__"].includes(k),
+    );
+    expect(extra).toEqual([]);
+    expect((globalThis as any).__SLASH_SSR__).toBeFalsy();
+  });
+  test("fora do renderToString (flag desligada) o Link continua criando um nó DOM", () => {
+    const { link } = make("/a");
+    expect(link.tagName).toBe("A");
   });
 });
