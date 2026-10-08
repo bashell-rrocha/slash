@@ -14,3 +14,13 @@ describe("SafeUrl / unsafeUrl", () => {
     expect(isSafeUrl(null)).toBe(false);
   });
 });
+
+describe("exports públicos", () => {
+  test("core, ssr e index expõem unsafeUrl/isSafeUrl", async () => {
+    const [core, ssr, index] = await Promise.all([import("./core"), import("./ssr"), import("./index")]);
+    for (const mod of [core, ssr, index]) {
+      expect(mod.unsafeUrl).toBe(unsafeUrl);
+      expect(mod.isSafeUrl).toBe(isSafeUrl);
+    }
+  });
+});
