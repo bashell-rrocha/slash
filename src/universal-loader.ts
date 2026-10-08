@@ -104,7 +104,7 @@ export function invalidateLoader(key?: string): void {
  * embutir em <script type="application/json"> (escapa <, >, &, U+2028, U+2029)
  */
 export function serializeLoaderData(data: Record<string, unknown>): string {
-  return escapeJsonForScript(JSON.stringify(data));
+  return escapeJsonForScript(JSON.stringify(data) ?? "null");
 }
 
 /**

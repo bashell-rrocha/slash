@@ -358,7 +358,7 @@ export const htmlString = (htm as any).bind(hString) as (
 // Serializa o estado para uso dentro de <script>: troca os caracteres que
 // permitiriam fechar a tag ou abrir comentário por escapes JSON equivalentes
 export function serializeStateForScript(state: unknown): string {
-  return escapeJsonForScript(JSON.stringify(state));
+  return escapeJsonForScript(JSON.stringify(state) ?? "null");
 }
 
 // API principal
