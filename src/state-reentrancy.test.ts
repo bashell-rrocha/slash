@@ -72,4 +72,28 @@ describe('set reentrante em watcher: o último valor vence', () => {
     s.set({ n: 1 })
     expect(seen).toEqual([])
   })
+
+  test('erro na notificação aninhada sem catch sobe pelo set mais externo', () => {
+    const s = createState({ n: 0 })
+    const a: number[] = []
+    const b: number[] = []
+    s.watch((v) => { if (v.n === 1) s.set({ n: 2 }) })
+    s.watch((v) => { if (v.n === 2) throw new Error('boom') })
+    s.watch((v) => a.push(v.n))
+    s.watch((v) => b.push(v.n))
+    expect(() => s.set({ n: 1 })).toThrow('boom')
+    expect(s.get().n).toBe(2)
+    expect(a).toEqual([2])
+    expect(b).toEqual([2])
+  })
+
+  test('batch() reentrante no mesmo estado durante a notificação', () => {
+    const s = createState({ n: 0 })
+    const seen: number[] = []
+    s.watch((v) => { if (v.n === 1) batch(() => s.set({ n: 2 })) })
+    s.watch((v) => seen.push(v.n))
+    s.set({ n: 1 })
+    expect(seen).toEqual([2])
+    expect(seen[seen.length - 1]).toBe(s.get().n)
+  })
 })
