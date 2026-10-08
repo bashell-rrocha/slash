@@ -3,6 +3,8 @@
  */
 
 import { describe, expect, test, beforeEach } from "bun:test"
+import { html, render } from "../core"
+import { Router } from "./components"
 import { createRouter } from "./router"
 import type { RouteConfig } from "./types"
 
@@ -336,5 +338,113 @@ describe("createRouter", () => {
     // Assert - isNavigating should be false after navigation completes
     expect(stateAfter.isNavigating).toBe(false)
     expect(stateAfter.currentRoute?.path).toBe("/slow")
+  })
+})
+
+// happy-dom começa em about:blank; setURL define uma origem real para location
+function setUrl(path: string) {
+  ;(window as any).happyDOM.setURL(`http://localhost${path}`)
+}
+
+describe("navegação inicial e guards", () => {
+  const routes: RouteConfig[] = [
+    { path: "/", component: () => "home" },
+    { path: "/about", component: () => "about" },
+    { path: "/sobre", component: () => "sobre" },
+    { path: "/login", component: () => "login" },
+    { path: "/dashboard", component: () => "dashboard" },
+    { path: "/private", component: () => "private", guards: [() => "/login"] },
+  ]
+
+  beforeEach(() => {
+    setUrl("/")
+    window.location.hash = ""
+    delete (globalThis as any).__SLASH_SSR__
+  })
+
+  test("guard global que bloqueia a URL inicial", async () => {
+    setUrl("/dashboard")
+    const router = createRouter({
+      routes,
+      guards: [(to) => to.path !== "/dashboard"],
+    })
+
+    expect(router.get().currentRoute?.path).not.toBe("/dashboard")
+    await router.ready
+    expect(router.get().currentRoute).toBeNull()
+    expect(router.get().isNavigating).toBe(false)
+  })
+
+  test("guard de rota com redirect na URL inicial usa replace", async () => {
+    setUrl("/private")
+    const router = createRouter({ routes })
+    const before = window.history.length
+
+    await router.ready
+    expect(router.get().currentRoute?.path).toBe("/login")
+    expect(window.location.pathname).toBe("/login")
+    expect(window.history.length).toBe(before)
+  })
+
+  test("rota inicial sem guard aplicável fica disponível sincronamente", async () => {
+    setUrl("/about")
+    const router = createRouter({ routes, guards: [] })
+
+    expect(router.get().currentRoute?.path).toBe("/about")
+    await router.ready
+    expect(router.get().currentRoute?.path).toBe("/about")
+  })
+
+  test("guard assíncrono pendente mantém currentRoute null e isNavigating true", async () => {
+    setUrl("/dashboard")
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const router = createRouter({
+      routes,
+      guards: [async () => { await gate }],
+    })
+
+    expect(router.get().currentRoute).toBeNull()
+    expect(router.get().isNavigating).toBe(true)
+    release()
+    await router.ready
+    expect(router.get().currentRoute?.path).toBe("/dashboard")
+    expect(router.get().isNavigating).toBe(false)
+  })
+
+  test("modo hash lê a rota inicial de location.hash com query", () => {
+    window.location.hash = "#/sobre?x=1"
+    const router = createRouter({ routes, mode: "hash" })
+
+    expect(router.get().currentRoute?.path).toBe("/sobre")
+    expect(router.get().query).toEqual({ x: "1" })
+  })
+
+  test("SSR mantém o casamento síncrono sem rodar guards", () => {
+    ;(globalThis as any).__SLASH_SSR__ = true
+    try {
+      const router = createRouter({
+        routes,
+        initialPath: "/dashboard",
+        guards: [() => false],
+      })
+      expect(router.get().currentRoute?.path).toBe("/dashboard")
+    } finally {
+      delete (globalThis as any).__SLASH_SSR__
+    }
+  })
+
+  test("Router montado com guard pendente renderiza vazio e depois a rota", async () => {
+    setUrl("/dashboard")
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const router = createRouter({ routes, guards: [async () => { await gate }] })
+    const container = document.createElement("div")
+    render(html`<${Router} router=${router}/>`, container)
+
+    expect(container.textContent).toBe("")
+    release()
+    await router.ready
+    expect(container.textContent).toBe("dashboard")
   })
 })
