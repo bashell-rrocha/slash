@@ -55,6 +55,14 @@ const IMAGE_TAGS = new Set(["img", "source", "video", "image", "link"]);
 const DATA_IMAGE = /^data:image\/(?:png|jpeg|gif|webp|avif)[;,]/i;
 const SCHEME = /^([a-z][a-z0-9+.-]*):/i;
 
+/**
+ * `url()` de CSS segue a MESMA lista dos atributos de URL de imagem: relativa (inclui `//host`,
+ * como em href), http(s)/mailto/tel e data:image raster; svg+xml, data:text e o resto são rejeitados.
+ */
+export function isAllowedCssUrl(url: string): boolean {
+  return isAllowedSingleUrl("src", url, "img");
+}
+
 /** true se o atributo carrega uma URL (case-insensitive) */
 export function isUrlAttribute(attr: string, tag?: string): boolean {
   const name = attr.toLowerCase();

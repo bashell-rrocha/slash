@@ -9,7 +9,7 @@
 import { isSafeHtml } from "../safe-html";
 import { isSafeUrl } from "../safe-url";
 import type { Elementish } from "../types";
-import { isForbiddenStyleKey, isSafeCssValue, sanitizeStyleString } from "../utils/css-policy";
+import { isForbiddenStyleKey, isSafeCssValue, isVendorStyleKey, sanitizeStyleString, styleKeyToCssName } from "../utils/css-policy";
 import { isEventHandler, isEventTuple } from "../utils/guards";
 import { processClassValue } from "../utils/helpers";
 import { securityWarn } from "../utils/security-warn";
@@ -191,6 +191,17 @@ export function computePropUpdate(
   // 3.1) style como string: só as declarações seguras (mesma política do SSR)
   if (key === "style" && typeof value === "string") {
     const { value: safeStyle, rejected } = sanitizeStyleString(value);
+    // Nada seguro sobrou: o atributo style é omitido (mesma regra do SSR)
+    if (safeStyle === "") {
+      return {
+        type: "REMOVE_ATTRIBUTE",
+        key,
+        value: "",
+        ...(process.env.NODE_ENV !== "production" && rejected
+          ? { metadata: { warning: "style: declaração rejeitada (nome ou valor CSS inseguro)" } }
+          : {}),
+      };
+    }
     return {
       type: "SET_ATTRIBUTE",
       key,
@@ -351,9 +362,11 @@ export function applyPropUpdate(element: Elementish, update: PropUpdate): void {
         const st = element.style as unknown as Record<string, unknown> & CSSStyleDeclaration;
         for (const [k, v] of Object.entries(update.value as Record<string, unknown>)) {
           const empty = v == null || v === false;
-          if (k.includes("-")) {
-            if (empty) st.removeProperty(k);
-            else st.setProperty(k, String(v));
+          if (k.includes("-") || isVendorStyleKey(k)) {
+            // dashed, custom property (--x verbatim) e vendor camelCase (WebkitX -> -webkit-x)
+            const name = styleKeyToCssName(k);
+            if (empty) st.removeProperty(name);
+            else st.setProperty(name, String(v));
           } else if (k in st && typeof st[k] !== "function") {
             st[k] = empty ? "" : v;
           }

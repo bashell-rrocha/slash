@@ -205,7 +205,6 @@ describe("paridade: style", () => {
   const DANGEROUS = [
     "url(javascript:alert(1))",
     "url(data:text/html,x)",
-    "url(//evil.com/x)",
     "expression(alert(1))",
     "javascript:alert(1)",
     "image('https://evil/x.png')",
@@ -239,6 +238,39 @@ describe("paridade: style", () => {
       }
     });
   }
+  test("style sem nenhuma declaracao segura: atributo omitido nos dois lados", () => {
+    both("div", { style: "background:url(javascript:x)" }, "style", null);
+    both("div", { style: "expression(1)" }, "style", null);
+    both("div", { style: "" }, "style", null);
+    expect(clientAttr("div", { style: { backgroundImage: "url(javascript:x)" } }, "style") ?? "").toBe("");
+    expect(ssrAttr("div", { style: { backgroundImage: "url(javascript:x)" } }, "style")).toBeNull();
+  });
+  test("url() segue a lista dos atributos de URL; escapes e ';' entre aspas sobrevivem (string)", () => {
+    for (const style of [
+      "background:url(img/bg.png)",
+      "background:url(//cdn.example.com/x.png)",
+      "background:url(data:image/png;base64,AAAA)",
+      'content:"\\2022"',
+      "content:'a;b'; color:red",
+      "color:red /* nota */",
+    ]) both("div", { style }, "style", style);
+  });
+  test("escapes CSS e comentarios no meio de tokens nao driblam a politica (string e objeto)", () => {
+    for (const v of ["\\75rl(javascript:x)", "ur\\l(javascript:x)", "e/**/xpression(1)", "url(data:image/svg+xml,<svg/>)", "exp\\72 ession(1)"]) {
+      both("div", { style: `color:red;background:${v}` }, "style", "color:red");
+      for (const out of [clientAttr("div", { style: { color: "red", background: v } }, "style"), ssrAttr("div", { style: { color: "red", background: v } }, "style")]) {
+        expect(out ?? "").not.toMatch(/javascript|xpression|svg|\\/i);
+      }
+    }
+  });
+  test("chaves de objeto: --custom verbatim e prefixos de vendor", () => {
+    const c = h("div", { style: { "--myVar": "1px", WebkitTransition: "all 1s", msTransform: "none" } }) as HTMLElement;
+    expect(c.style.getPropertyValue("--myVar")).toBe("1px");
+    expect(c.style.getPropertyValue("-webkit-transition")).toBe("all 1s");
+    expect(ssrAttr("div", { style: { "--myVar": "1px", WebkitTransition: "all 1s", msTransform: "none", MozAppearance: "none", webkitFilter: "none" } }, "style")).toBe(
+      "--myVar: 1px; -webkit-transition: all 1s; -ms-transform: none; -moz-appearance: none; -webkit-filter: none",
+    );
+  });
   test("objeto: ';' no valor nao cria declaracao nova", () => {
     const style = { color: "red", background: "red;position:fixed" };
     for (const out of [clientAttr("div", { style }, "style"), ssrAttr("div", { style }, "style")]) {

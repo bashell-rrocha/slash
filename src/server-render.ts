@@ -3,7 +3,7 @@ import htm from "htm";
 import { isDevMode, isWarningsEnabled } from "./dev-warnings";
 import { isSafeHtml, SafeHtml } from "./safe-html";
 import type { Child, Props, Reactive } from "./types";
-import { isForbiddenStyleKey, isSafeCssDeclaration, sanitizeStyleString } from "./utils/css-policy";
+import { isForbiddenStyleKey, isSafeCssDeclaration, sanitizeStyleString, styleKeyToCssName } from "./utils/css-policy";
 import { isEventHandler, isEventTuple, isReactive } from "./utils/guards";
 import { escapeJsonForScript } from "./utils/script-json";
 import { isSafeUrl } from "./safe-url";
@@ -163,7 +163,7 @@ function styleObjectToString(style: Record<string, unknown>): string {
       if (process.env.NODE_ENV !== "production") warnOnce("declaração de style rejeitada (nome ou valor CSS inseguro)");
       continue;
     }
-    const name = k.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
+    const name = styleKeyToCssName(k);
     const value = String(v).trim();
     if (!isSafeCssDeclaration(name, value)) {
       if (process.env.NODE_ENV !== "production") warnOnce("declaração de style rejeitada (nome ou valor CSS inseguro)");
@@ -207,6 +207,8 @@ function genericAttr(tag: string, key: string, value: unknown, metaRefresh = fal
     if (result.blocked && process.env.NODE_ENV !== "production") warnOnce("meta refresh: URL bloqueada em content");
   } else if (lower === "style") {
     str = styleStringToString(str);
+    // Sem nenhuma declaração segura: o atributo style some (mesma regra do cliente)
+    if (str === "") return "";
   }
   return ` ${key}="${escapeHtml(str)}"`;
 }

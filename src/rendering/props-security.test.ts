@@ -305,7 +305,7 @@ describe("SEC-09 cliente: style como string e funcoes de URL (S9)", () => {
     expect(d.getAttribute("style")).toBe("color: red");
     expect(warn).not.toHaveBeenCalled();
   });
-  test.each(["expression(alert(1))", "url(javascript:x)", "image('https://e/x.png')", "element(#a)", "paint(w)", "cross-fade(url(/a), url(/b), 50%)", "url(//evil/x)"])(
+  test.each(["expression(alert(1))", "url(javascript:x)", "image('https://e/x.png')", "element(#a)", "paint(w)", "cross-fade(url(/a), url(/b), 50%)"])(
     "string: %s e removido",
     (v) => {
       const d = h("div", { style: `color:red;background:${v}` }) as HTMLElement;
