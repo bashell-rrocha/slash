@@ -71,7 +71,8 @@
     "dev": "concurrently --kill-others --names \"types,bundle\" \"bun run dev:types\" \"bun run dev:bundle\"",
     "test": "bun test",
     "test:watch": "bun test --watch",
-    "test:bundle": "bun test scripts/bundle-size.test.ts"
+    "test:bundle": "bun test scripts/bundle-size.test.ts",
+    "verify:dist": "node scripts/verify-dist.mjs"
   },
   "dependencies": {
     "htm": "^3.1.1"
