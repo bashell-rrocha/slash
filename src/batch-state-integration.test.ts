@@ -467,6 +467,23 @@ describe('batch + state integration', () => {
       expect(seenB).toEqual([101])
     })
 
+    test('batch dentro de watcher com notificador de B ainda pendente notifica B uma vez com o valor novo', () => {
+      const a = createState(0)
+      const b = createState(0)
+      const seenB: number[] = []
+      a.watch(() => {
+        batch(() => b.set(7))
+      })
+      b.watch((v) => seenB.push(v))
+
+      batch(() => {
+        a.set(1)
+        b.set(5)
+      })
+
+      expect(seenB).toEqual([7])
+    })
+
     test('batch dentro de watcher durante o flush notifica uma vez', () => {
       const a = createState(0)
       const b = createState(0)

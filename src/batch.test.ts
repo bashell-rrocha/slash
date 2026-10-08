@@ -95,11 +95,15 @@ describe('batch (Imperative Shell)', () => {
     test('batch vazio não chama nada', () => {
       let calls = 0
       const notify = () => calls++
+      batch(() => {
+        __enqueueBatchNotify(notify)
+      })
+      expect(calls).toBe(1)
+
       batch(() => {})
-      batch(() => {})
-      expect(calls).toBe(0)
+
+      expect(calls).toBe(1)
       expect(__pendingBatchNotifyCount()).toBe(0)
-      expect(notify).toBeDefined()
     })
 
     test('notificador que lança não impede os demais; primeiro erro é relançado', () => {
