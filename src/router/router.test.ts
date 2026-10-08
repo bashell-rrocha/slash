@@ -201,14 +201,15 @@ describe("createRouter", () => {
   })
 
   test("should block navigation when guard returns false", async () => {
-    // Arrange
-    const guard = () => false
+    // Arrange: o guard bloqueia só /about; a rota inicial "/" passa pelos guards
+    const guard = (to: any) => to.path !== "/about"
 
     const router = createRouter({
       routes: mockRoutes,
       guards: [guard],
       initialPath: "/",
     })
+    await router.ready
 
     // Act
     await router.push("/about")
@@ -446,5 +447,166 @@ describe("navegação inicial e guards", () => {
     release()
     await router.ready
     expect(container.textContent).toBe("dashboard")
+  })
+
+  test("push antes de ready não é sobrescrito pela navegação inicial", async () => {
+    setUrl("/p2")
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const r2: RouteConfig[] = [
+      { path: "/p2", component: () => "p2", guards: [async () => { await gate }] },
+      { path: "/a", component: () => "a" },
+    ]
+    const router = createRouter({ routes: r2 })
+
+    await router.push("/a")
+    release()
+    await router.ready
+
+    expect(router.get().currentRoute?.path).toBe("/a")
+    expect(window.location.pathname).toBe("/a")
+  })
+
+  test("dois push concorrentes terminam no último", async () => {
+    let releaseA!: () => void
+    const gateA = new Promise<void>((r) => (releaseA = r))
+    const r2: RouteConfig[] = [
+      { path: "/", component: () => "home" },
+      { path: "/a", component: () => "a", guards: [async () => { await gateA }] },
+      { path: "/b", component: () => "b" },
+    ]
+    const router = createRouter({ routes: r2 })
+
+    const pa = router.push("/a")
+    const pb = router.push("/b")
+    releaseA()
+    await Promise.all([pa, pb])
+
+    expect(router.get().currentRoute?.path).toBe("/b")
+    expect(router.get().isNavigating).toBe(false)
+  })
+
+  test("loop de redirect na URL inicial é interrompido", async () => {
+    setUrl("/x")
+    const errors: unknown[] = []
+    const orig = console.error
+    console.error = (...a: unknown[]) => { errors.push(a) }
+    try {
+      const router = createRouter({
+        routes: [
+          { path: "/x", component: () => "x", guards: [() => "/y"] },
+          { path: "/y", component: () => "y", guards: [() => "/x"] },
+        ],
+      })
+      await router.ready
+      expect(router.get().currentRoute).toBeNull()
+      expect(router.get().isNavigating).toBe(false)
+      expect(errors.length).toBeGreaterThan(0)
+    } finally {
+      console.error = orig
+    }
+  }, 2000)
+
+  test("initialPath bloqueado por guard no browser vira currentRoute null", async () => {
+    const router = createRouter({
+      routes,
+      initialPath: "/dashboard",
+      guards: [() => false],
+    })
+
+    // Aplicada de forma síncrona (sem flash, markup do SSR preservado)
+    expect(router.get().currentRoute?.path).toBe("/dashboard")
+    await router.ready
+    expect(router.get().currentRoute).toBeNull()
+    expect(router.get().isNavigating).toBe(false)
+  })
+
+  test("initialPath com redirect de guard segue o redirect", async () => {
+    const router = createRouter({ routes, initialPath: "/private" })
+
+    expect(router.get().currentRoute?.path).toBe("/private")
+    await router.ready
+    expect(router.get().currentRoute?.path).toBe("/login")
+  })
+
+  test("estado do servidor bloqueado por guard vira currentRoute null", async () => {
+    const el = document.createElement("script")
+    el.id = "__SLASH_STATE__"
+    el.textContent = JSON.stringify({ currentRoute: { path: "/dashboard" } })
+    document.body.appendChild(el)
+    try {
+      const router = createRouter({ routes, guards: [() => false] })
+      expect(router.get().currentRoute?.path).toBe("/dashboard")
+      await router.ready
+      expect(router.get().currentRoute).toBeNull()
+    } finally {
+      el.remove()
+    }
+  })
+
+  test("estado do servidor com redirect de guard segue o redirect", async () => {
+    const el = document.createElement("script")
+    el.id = "__SLASH_STATE__"
+    el.textContent = JSON.stringify({ currentRoute: { path: "/private" } })
+    document.body.appendChild(el)
+    try {
+      const router = createRouter({ routes })
+      await router.ready
+      expect(router.get().currentRoute?.path).toBe("/login")
+    } finally {
+      el.remove()
+    }
+  })
+
+  test("criar o router não altera history.length", () => {
+    setUrl("/about")
+    const before = window.history.length
+    createRouter({ routes })
+    expect(window.history.length).toBe(before)
+  })
+
+  test("guard que lança na URL inicial bloqueia e resolve ready", async () => {
+    setUrl("/dashboard")
+    const orig = console.error
+    console.error = () => {}
+    try {
+      const router = createRouter({
+        routes,
+        guards: [() => { throw new Error("boom") }],
+      })
+      await router.ready
+      expect(router.get().currentRoute).toBeNull()
+      expect(router.get().isNavigating).toBe(false)
+    } finally {
+      console.error = orig
+    }
+  })
+
+  test("modo hash ignora a query antes do # na rota inicial", () => {
+    ;(window as any).happyDOM.setURL("http://localhost/?q=1#/sobre?x=1")
+    const router = createRouter({ routes, mode: "hash" })
+
+    expect(router.get().currentRoute?.path).toBe("/sobre")
+    expect(router.get().query).toEqual({ x: "1" })
+  })
+
+  test("SSR sem initialPath não resolve rota e ready já está resolvido", async () => {
+    ;(globalThis as any).__SLASH_SSR__ = true
+    try {
+      const router = createRouter({ routes })
+      expect(router.get().currentRoute).toBeNull()
+      await router.ready
+    } finally {
+      delete (globalThis as any).__SLASH_SSR__
+    }
+  })
+
+  test("modo hash: redirect de guard na URL inicial", async () => {
+    ;(window as any).happyDOM.setURL("http://localhost/#/private")
+    const router = createRouter({ routes, mode: "hash" })
+
+    await router.ready
+    expect(router.get().currentRoute?.path).toBe("/login")
+    expect(window.location.hash).toBe("#/login")
   })
 })
