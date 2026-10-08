@@ -64,30 +64,28 @@ batch(() => {
 // Log: "State changed: { count: 3, name: 'Jane' }" (apenas uma vez)
 ```
 
-### Comportamento atual
+### Semântica
 
-Pontos que valem conhecer (verificados contra a implementação):
-
-- Ao terminar, o batch notifica os watchers de **todos** os states existentes uma vez, inclusive states que não foram alterados dentro do batch. Mantenha os watchers idempotentes.
-- Se nenhum `set` mudou valor dentro do batch, ninguém é notificado.
-- Se a função lançar um erro, as notificações ainda acontecem (o `finally` do batch roda) e o erro é propagado.
-- Batches aninhados não são contabilizados: o fim do batch interno encerra o modo batch, e os `set` seguintes do batch externo notificam imediatamente.
+- Só são notificados os states que **mudaram de valor** dentro do batch. States não alterados não notificam, e um batch em que nenhum `set` mudou valor não notifica ninguém.
+- Cada state alterado notifica **uma única vez**, com o **valor final**, na ordem em que foi alterado pela primeira vez. Qualquer `set` que muda o valor marca o state como pendente, mesmo que ele volte ao valor inicial.
+- Batches **aninhados** são suportados: o fim do batch interno não encerra o externo, e as notificações só ocorrem no fim do batch **mais externo**.
+- Se a função lançar um erro, as notificações ainda acontecem e o erro é propagado.
+- Um `set` feito por um watcher durante as notificações (já fora do batch) notifica normalmente.
+- Erros em watchers são isolados, dentro e fora de batch: todos os watchers rodam e o primeiro erro é relançado no final. Se `fn` e um watcher lançarem, o erro de `fn` é o propagado.
 
 ### Estado Interno
 
-Batch mantém um contador de updates pendentes:
+Batch mantém um contador de profundidade e uma fila de notificadores pendentes:
 
 ```typescript
-interface BatchContext {
-  status: { type: 'IDLE' } | { type: 'BATCHING', pendingUpdates: number }
-}
+function enterBatch(depth: number): number
+function exitBatch(depth: number): { depth: number; flush: boolean }
 ```
 
 **Fluxo:**
-1. `batch()` called → status = BATCHING, pendingUpdates = 0
-2. `state.set()` → pendingUpdates++
-3. `state.set()` → pendingUpdates++
-4. Batch ends → Notifica watchers se pendingUpdates > 0 → status = IDLE
+1. `batch()` called → profundidade++
+2. `state.set()` que muda o valor → enfileira o notificador do state (deduplicado)
+3. Batch termina → profundidade--; se voltou a 0, cada notificador pendente roda uma vez
 
 **Implementação Core:** [src/batch-core.ts](../../src/batch-core.ts:1)
 
