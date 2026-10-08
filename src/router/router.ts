@@ -52,8 +52,21 @@ export function createRouter(config: RouterConfig): RouterInstance {
   let lastPath: string | null = null
   const pathKey = (p: string): string => {
     const input = parseNavigationPath(p)
-    const [, search] = splitPath(p)
+    const [, search] = splitPath(stripHash(p))
     return search ? `${input.pathname}${search}` : input.pathname
+  }
+
+  const stripHash = (p: string): string => {
+    const i = p.indexOf("#")
+    return i === -1 ? p : p.slice(0, i)
+  }
+
+  // "?q" and "#h" are relative to the current path (D7); anything else is passed as is
+  const resolveRelative = (path: string): string => {
+    if (typeof path !== "string" || (path[0] !== "?" && path[0] !== "#")) return path
+    const current = stripHash(history.location() || "/")
+    const [pathname, search] = splitPath(current)
+    return path[0] === "?" ? `${pathname || "/"}${path}` : `${pathname || "/"}${search}${path}`
   }
 
   /**
@@ -166,8 +179,10 @@ export function createRouter(config: RouterConfig): RouterInstance {
       // Update browser history (skip in SSR and history-triggered navigations)
       if (!adapter.isSSR() && !fromHistory) {
         const input = parseNavigationPath(path)
-        const [, search] = splitPath(path)
-        const fullPath = search ? `${input.pathname}${search}` : input.pathname
+        const [, search] = splitPath(stripHash(path))
+        const hashIndex = path.indexOf("#")
+        const hash = hashIndex === -1 ? "" : path.slice(hashIndex)
+        const fullPath = (search ? `${input.pathname}${search}` : input.pathname) + hash
 
         if (replace) {
           replacingInitial = initial
@@ -255,11 +270,11 @@ export function createRouter(config: RouterConfig): RouterInstance {
     ...state,
 
     async push(path: string): Promise<void> {
-      await navigate(path, false)
+      await navigate(resolveRelative(path), false)
     },
 
     async replace(path: string): Promise<void> {
-      await navigate(path, true)
+      await navigate(resolveRelative(path), true)
     },
 
     back(): void {

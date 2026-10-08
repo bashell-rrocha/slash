@@ -70,13 +70,8 @@ export function isAllowedImageUrl(url: string): boolean {
 }
 
 /** @deprecated use isAllowedImageUrl; mantém o comportamento estrito anterior (sem svg+xml e blob:) */
-export function isAllowedCssUrl(url: string): boolean {
-  const scheme = SCHEME.exec(normalizeForSchemeCheck(url));
-  if (scheme && (scheme[1] as string).toLowerCase() === "blob") return false;
-  const normalized = normalizeForSchemeCheck(url);
-  if (DATA_SVG.test(normalized)) return false;
-  return isAllowedImageUrl(url);
-}
+export const isAllowedCssUrl = (url: string): boolean =>
+  !/^(?:blob:|data:image\/svg)/i.test(normalizeForSchemeCheck(url)) && isAllowedImageUrl(url);
 
 /** true se o atributo carrega uma URL (case-insensitive) */
 export function isUrlAttribute(attr: string, tag?: string): boolean {
@@ -117,36 +112,36 @@ function isAllowedSingleUrl(attr: string, value: string, tag?: string): boolean 
   return false;
 }
 
-const isSrcsetSpace = (c: string): boolean => c === " " || c === "\t" || c === "\n" || c === "\f" || c === "\r";
-
 // Varredura linear dos candidatos do srcset como no HTML: a URL é a sequência de não-espaços (pode
 // conter vírgulas, como em data:); vírgula final da URL encerra o candidato; senão os descritores
 // vão até a próxima vírgula fora de parênteses.
 function parseSrcset(value: string): Array<{ url: string; desc: string }> {
   const out: Array<{ url: string; desc: string }> = [];
   const n = value.length;
+  const skip = (re: RegExp, from: number): number => {
+    let i = from;
+    while (i < n && re.test(value[i] as string)) i++;
+    return i;
+  };
   let i = 0;
-  while (i < n) {
-    while (i < n && (isSrcsetSpace(value[i] as string) || value[i] === ",")) i++;
-    if (i >= n) break;
-    const start = i;
-    while (i < n && !isSrcsetSpace(value[i] as string)) i++;
-    let url = value.slice(start, i);
+  while ((i = skip(/[\s,]/, i)) < n) {
+    const end = skip(/\S/, i);
+    const url = value.slice(i, end);
+    i = end;
     if (url.endsWith(",")) {
-      url = url.replace(/,+$/, "");
-      out.push({ url, desc: "" });
+      let e = url.length;
+      while (url[e - 1] === ",") e--;
+      out.push({ url: url.slice(0, e), desc: "" });
       continue;
     }
-    const dStart = i;
-    let depth = 0;
-    while (i < n) {
-      const c = value[i] as string;
+    const start = i;
+    for (let depth = 0; i < n; i++) {
+      const c = value[i];
       if (c === "(") depth++;
       else if (c === ")" && depth > 0) depth--;
-      else if (c === "," && depth === 0) break;
-      i++;
+      else if (c === "," && !depth) break;
     }
-    out.push({ url, desc: value.slice(dStart, i).trim() });
+    out.push({ url, desc: value.slice(start, i).trim() });
   }
   return out;
 }
@@ -224,7 +219,7 @@ export function evaluateMetaRefresh(content: string): { value: string; blocked: 
 
 /** Aviso de dev padrão para um valor bloqueado (usado também por props-core) */
 export function blockedUrlMessage(attr: string, value: string): string {
-  return `URL bloqueada em ${attr}: ${JSON.stringify(value.slice(0, 40))}. Para URL confiável use unsafeUrl()`;
+  return `Blocked URL in ${attr}: ${JSON.stringify(value.slice(0, 40))}. For a trusted URL use unsafeUrl()`;
 }
 
 /**

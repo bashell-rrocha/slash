@@ -32,6 +32,10 @@ describe("ReDoS bounds", () => {
       expect(result.blocked).toBe(true);
     }
   });
+  test("srcset with long comma runs: < 50 ms", () => {
+    const v = `a${",".repeat(15_000)}x,`;
+    expect(timed(() => evaluateUrl("srcset", v, "img"))).toBeLessThan(50);
+  });
   test("srcset above 16 KB fails closed", () => {
     const r = evaluateUrl("srcset", `/a.png 1x, ${"/b.png 2x, ".repeat(3000)}`, "img");
     expect(r.blocked).toBe(true);

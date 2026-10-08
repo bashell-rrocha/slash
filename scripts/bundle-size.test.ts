@@ -99,8 +99,8 @@ async function buildEntry(entry: string): Promise<string> {
 
 // Textos de avisos de dev de TODAS as frentes (core/props, router/Link, SSR)
 const DEV_WARNING_TEXTS = {
-  core: ['URL bloqueada', 'unsafeHtml()', 'handlers reativos', 'atributo inválido', 'só aceita função', 'style ignora', 'bloqueada (injeta HTML)', 'não pode ser prop', 'style: declaração rejeitada', 'meta refresh'],
-  router: ['deve ser um caminho do app'],
+  core: ['Blocked URL', 'unsafeHtml()', 'handlers reativos', 'atributo inválido', 'só aceita função', 'style ignora', 'bloqueada (injeta HTML)', 'não pode ser prop', 'style: declaração rejeitada', 'meta refresh'],
+  router: ['must be an app path'],
   ssr: [
     'declaração de style rejeitada',
     'srcdoc só aceita SafeHtml',
@@ -147,7 +147,7 @@ describe('Bundle Size Optimization', () => {
     expect(result.success).toBe(true);
     const code = (await Promise.all(result.outputs.map((o) => o.text()))).join('\n');
     await rm(outdir, { recursive: true, force: true });
-    for (const text of [...DEV_WARNING_TEXTS.ssr, ...DEV_WARNING_TEXTS.router, 'URL bloqueada']) {
+    for (const text of [...DEV_WARNING_TEXTS.ssr, ...DEV_WARNING_TEXTS.router, 'Blocked URL']) {
       expect(code).toContain(text);
     }
   }, 30000);

@@ -31,6 +31,41 @@ function isBrowser(): boolean {
   return typeof window !== "undefined" && typeof window.history !== "undefined"
 }
 
+// Base usada quando a location não é http(s) (about:blank em testes): só há caminhos do app
+const FALLBACK_BASE = "http://slash.invalid/"
+
+function resolveBase(): string {
+  const protocol = window.location.protocol
+  return protocol === "http:" || protocol === "https:" ? window.location.href : FALLBACK_BASE
+}
+
+/**
+ * Resolve `raw` against the current location. Returns null if it is not a valid URL.
+ */
+function resolveUrl(raw: string): URL | null {
+  try {
+    return new URL(raw, resolveBase())
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Normalized listener path (pathname + search + hash) for a pushState/replaceState url,
+ * resolved BEFORE the native call so relative urls ("?q", "#h") use the previous location.
+ */
+function normalizedPath(url: string | URL | null | undefined): string | null {
+  if (url === undefined || url === null) {
+    return null
+  }
+  const resolved = resolveUrl(String(url))
+  return resolved ? resolved.pathname + resolved.search + resolved.hash : null
+}
+
+function currentPath(): string {
+  return window.location.pathname + window.location.search + window.location.hash
+}
+
 /**
  * Track if history has been patched globally
  */
@@ -102,18 +137,18 @@ function setupHistoryInterception(): void {
 
   // Monkey patch history.pushState and replaceState
   window.history.pushState = function (data, title, url) {
+    const normalized = normalizedPath(url)
     const result = originalPushState!(data, title, url)
-    // Notify all listeners with the new path
-    // url can be a full URL or just a path
-    const path = typeof url === "string" ? url : window.location.pathname + window.location.search
+    // Listeners always receive the normalized same-origin path, never the raw url
+    const path = normalized ?? currentPath()
     globalListeners.forEach((listener) => listener(path))
     return result
   }
 
   window.history.replaceState = function (data, title, url) {
+    const normalized = normalizedPath(url)
     const result = originalReplaceState!(data, title, url)
-    // Notify all listeners with the new path
-    const path = typeof url === "string" ? url : window.location.pathname + window.location.search
+    const path = normalized ?? currentPath()
     globalListeners.forEach((listener) => listener(path))
     return result
   }
@@ -182,19 +217,15 @@ function shouldInterceptLink(anchor: HTMLAnchorElement, event: MouseEvent): bool
     return false
   }
 
-  // Ignore external links
-  // Check if href starts with http:// or https:// and is different origin
-  if (href.startsWith("http://") || href.startsWith("https://")) {
-    try {
-      const url = new URL(href)
-      const currentOrigin = window.location.origin
-      if (url.origin !== currentOrigin) {
-        return false
-      }
-    } catch {
-      // Invalid URL, ignore
-      return false
-    }
+  // Resolve like the browser would; only same-origin http(s) is handled by the SPA.
+  // mailto:, tel:, sms:, //host, other schemes and cross-origin links stay native.
+  const url = resolveUrl(href)
+  if (!url || (url.protocol !== "http:" && url.protocol !== "https:")) {
+    return false
+  }
+  const base = new URL(resolveBase())
+  if (url.origin !== base.origin) {
+    return false
   }
 
   // At this point, it's either a relative path or same-origin absolute URL
