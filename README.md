@@ -130,6 +130,8 @@ batch(() => {
 }); // logs once: { first: "Ada", last: "Lovelace" }
 ```
 
+Watcher errors during the flush are isolated (every watcher runs) and the first one is rethrown to the caller. If the batch function itself also throws, its error wins and the watcher error is only reported with `console.error`; the production build strips `console` calls (`drop: ['console']`), so in that case the watcher error is silent in production.
+
 Pass `{ enableHistory: true }` as the second argument to `createState` to record changes and use `getHistory()` / `clearHistory()` (time-travel debugging).
 
 ## Components and lifecycle
@@ -169,7 +171,7 @@ Lifecycle:
 - **Cleanup:** removed nodes are destroyed (`destroyNode`), which releases their watchers.
 - **Side effects:** use `state.watch()` outside the template for logging, persistence and the like.
 
-Wrap risky children in `ErrorBoundary`:
+Wrap risky children in `ErrorBoundary`. Note: `html` evaluates children before the boundary runs, so errors thrown while *building* the children are not caught by it (they propagate to the caller). To protect a subtree, use `safeRender(() => view, fallback)` (`fallback` is required):
 
 ```typescript
 import { html, ErrorBoundary } from "@_bashell/slash/core";
@@ -179,6 +181,11 @@ html`
     <${Counter} />
   <//>
 `;
+
+// Protect a subtree whose construction may throw
+import { safeRender } from "@_bashell/slash/core";
+
+html`${safeRender(() => html`<${Counter} />`, (error) => html`<p>Failed: ${error.message}</p>`)}`;
 ```
 
 ## Router
@@ -241,7 +248,7 @@ Available helpers: `textFieldControl`, `checkboxControl`, `radioControl`, `Selec
 ## SSR and hydration
 
 - `htmlString` is the server twin of `html`: same syntax, returns a string.
-- `renderToString(view)` returns `{ html, state }`. Embed `state` with `serializeStateForScript(state)` (JSON with `<`, `>`, `&`, U+2028 and U+2029 escaped, so values cannot close the tag) in a `<script id="__SLASH_STATE__" type="application/json">` tag. SSR follows the client rule for reactives (an object with `get` and `subscribe`, such as `Router`): they are wrapped in `<!--reactive-start:id-->` markers and rendered like plain children, and their value is not written to `state`. In SSR, a string child (plain or returned by a reactive) that starts with `<` is treated as already-rendered HTML and emitted as-is, including `${state.get()}` in `htmlString`; never return user-provided text starting with `<` from a reactive, component, or `state.get()` without escaping it (`htmlString` output is safe). A `State` is not reactive: interpolate `state.get()` to render its value, but ensure user-provided text starting with `<` is escaped.
+- `renderToString(view)` returns `{ html, state }`. Embed `state` with `serializeStateForScript(state)` (JSON with `<`, `>`, `&`, U+2028 and U+2029 escaped, so values cannot close the tag) in a `<script id="__SLASH_STATE__" type="application/json">` tag. SSR follows the client rule for reactives (an object with `get` and `subscribe`, such as `Router`): they are wrapped in `<!--reactive-start:id-->` markers and rendered like plain children, and their value is not written to `state`. In SSR, a string child (plain or returned by a reactive) that starts with `<` is treated as already-rendered HTML and emitted as-is, including `${state.get()}` in `htmlString`; never return user-provided text starting with `<` from a reactive, component, or `state.get()` as-is. Inside `htmlString`, prefix a space to user strings that may start with `<`, e.g. `const text = (v: string) => (v.startsWith("<") ? ` ${v}` : v)` (do not pre-escape: `htmlString` already escapes, so it would double-escape); `escapeHtml`-style escaping is only for plain template-literal shells. A `State` is not reactive: interpolate `state.get()` to render its value, applying the same rule to user-provided text.
 - `renderToStream(view)` is an async generator that yields HTML chunks and ends with the `__SLASH_STATE__` script.
 - `render(view, container)` hydrates automatically when the container already has content and a `__SLASH_STATE__` script exists. Otherwise it renders from scratch. There is no separate `hydrate()` function.
 - Data loading helpers: `createLoader`, `invalidateLoader`, `serializeLoaderData` (safe for `<script type="application/json">`: escapes `<`, `>`, `&`, U+2028 and U+2029), `deserializeLoaderData`, `hydrateLoaderCache`, `isServer`.

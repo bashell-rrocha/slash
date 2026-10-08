@@ -230,7 +230,7 @@ const Profile = () => html`
 - Um componente que não lê nenhum state na primeira renderização é estático e não se inscreve depois
 - Se uma re-renderização não lê nenhum state, o componente também fica estático: ele perde todas as dependências e só volta a reagir se for remontado
 
-**Implementação:** [src/rendering/element-core.ts](../../src/rendering/element-core.ts:1)
+**Implementação:** o rastreamento de states fica em [src/rendering/element.ts](../../src/rendering/element.ts:1); o helper de diff está em [src/rendering/element-core.ts](../../src/rendering/element-core.ts:1)
 
 ### State em Props
 

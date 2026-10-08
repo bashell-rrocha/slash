@@ -147,6 +147,7 @@ No browser, a navegação inicial passa pelos mesmos guards (globais e da rota),
 
 - **URL do browser** (`window.location`, ou `location.hash` em `mode: "hash"`): sem guard aplicável, a rota já está disponível logo após `createRouter`. Com guard, o estado inicial é `currentRoute: null, isNavigating: true` até a decisão, então nenhum conteúdo protegido é renderizado antes. Depois vem a rota, o destino do redirect ou, se o guard bloquear, `currentRoute: null`.
 - **`initialPath` e estado do servidor (hidratação)**: a rota é aplicada de forma síncrona (sem flash, o markup do SSR é mantido) e os guards rodam em seguida. Se bloquearem, `currentRoute` vira `null`; se redirecionarem, o roteador segue o redirect.
+- **`initialPath` explícito com guards no navegador**: a navegação inicial termina com `history.replace`, então a URL é reescrita para o caminho resolvido (o próprio `initialPath` ou o destino de um redirect).
 - **SSR** (sem browser): o casamento continua síncrono e os guards não rodam (`renderToString` é síncrono). A autorização no servidor é responsabilidade do servidor.
 
 Outros pontos:
@@ -173,7 +174,7 @@ Outros pontos:
 
 Passe `initialPath` para que o roteador resolva a rota de forma síncrona na criação (no servidor e na hidratação). No cliente, sem `initialPath`, ele usa `window.location`.
 
-No servidor, `Router({ router })` funciona dentro de `htmlString`/`renderToString`: o HTML da rota é emitido de verdade (não escapado), entre marcadores `<!--reactive-start:id-->`, e não é gravado no estado serializado. Regra de confiança: no SSR, uma string (filho comum ou retornada por um reativo) que começa com `<` é tratada como HTML já renderizado e emitida como está, incluindo `${state.get()}` dentro de `htmlString`; nunca devolva de um reativo, componente ou `state.get()` texto vindo do usuário que comece com `<` sem escapá-lo (a saída de `htmlString` é segura).
+No servidor, `Router({ router })` funciona dentro de `htmlString`/`renderToString`: o HTML da rota é emitido de verdade (não escapado), entre marcadores `<!--reactive-start:id-->`, e não é gravado no estado serializado. Regra de confiança: no SSR, uma string (filho comum ou retornada por um reativo) que começa com `<` é tratada como HTML já renderizado e emitida como está, incluindo `${state.get()}` dentro de `htmlString`; nunca devolva de um reativo, componente ou `state.get()` texto vindo do usuário que comece com `<` como está. Dentro de `htmlString`, prefixe um espaço nas strings do usuário que possam começar com `<`: `const text = (v: string) => (v.startsWith("<") ? ` ${v}` : v)` (não escape antes: `htmlString` já escapa e haveria escape duplo); escape no estilo `escapeHtml` só em shells de template literal comuns.
 
 ```typescript
 import { Router, createRouter } from "@_bashell/slash/router";

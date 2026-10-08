@@ -72,7 +72,7 @@ batch(() => {
 - Se a função lançar um erro, as notificações ainda acontecem e o erro é propagado.
 - Um `set` feito por um watcher durante as notificações (já fora do batch) notifica normalmente.
 - Esse `set` segue a regra "o último valor vence": nenhum watcher recebe um valor velho depois do novo. Veja [Estado](../04-state/README.md).
-- Erros em watchers são isolados, dentro e fora de batch: todos os watchers rodam e o primeiro erro é relançado no final. Se `fn` e um watcher lançarem, o erro de `fn` é o propagado e o do watcher é registrado com `console.error("[slash] erro em watcher durante o flush do batch", err)`.
+- Erros em watchers são isolados, dentro e fora de batch: todos os watchers rodam e o primeiro erro é relançado no final. Se `fn` e um watcher lançarem, o erro de `fn` é o propagado e o do watcher é registrado com `console.error("[slash] erro em watcher durante o flush do batch", err)`. Esse `console.error` é removido no build de produção (`drop: ['console']`), então nesse caso o erro do watcher fica silencioso em produção. Quando só o watcher lança, o erro continua propagando para quem chamou `batch`/`set`.
 - Se um watcher altera um state cuja notificação ainda estava pendente no mesmo flush, esse state notifica uma única vez com o valor mais recente (sem duplicar).
 
 ### Estado Interno
