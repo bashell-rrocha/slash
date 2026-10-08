@@ -1,5 +1,6 @@
 // src/universal-loader.ts
 // Sistema de data fetching universal (isomórfico)
+import { escapeJsonForScript } from "./utils/script-json";
 
 type LoaderContext = {
   params: Record<string, string>;
@@ -99,10 +100,11 @@ export function invalidateLoader(key?: string): void {
 }
 
 /**
- * Pré-carrega dados no servidor para hidratação
+ * Pré-carrega dados no servidor para hidratação. A saída é segura para
+ * embutir em <script type="application/json"> (escapa <, >, &, U+2028, U+2029)
  */
 export function serializeLoaderData(data: Record<string, unknown>): string {
-  return JSON.stringify(data);
+  return escapeJsonForScript(JSON.stringify(data));
 }
 
 /**

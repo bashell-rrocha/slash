@@ -2,6 +2,7 @@
 import htm from "htm";
 import type { Child, Props, Reactive } from "./types";
 import { isReactive } from "./utils/guards";
+import { escapeJsonForScript } from "./utils/script-json";
 
 // Flag global para indicar modo SSR
 declare global {
@@ -357,12 +358,7 @@ export const htmlString = (htm as any).bind(hString) as (
 // Serializa o estado para uso dentro de <script>: troca os caracteres que
 // permitiriam fechar a tag ou abrir comentário por escapes JSON equivalentes
 export function serializeStateForScript(state: unknown): string {
-  return JSON.stringify(state)
-    .replace(/</g, "\\u003c")
-    .replace(/>/g, "\\u003e")
-    .replace(/&/g, "\\u0026")
-    .replace(/\u2028/g, "\\u2028")
-    .replace(/\u2029/g, "\\u2029");
+  return escapeJsonForScript(JSON.stringify(state));
 }
 
 // API principal
