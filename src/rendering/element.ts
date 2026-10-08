@@ -173,7 +173,7 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
   const tagName = String(tag || "div");
   // S5: tag inválida é erro de programação (nunca dado): falha cedo e com mensagem clara
   if (!isValidTagName(tagName)) {
-    throw new Error(`[slash] Nome de tag inválido: ${JSON.stringify(tagName)}`);
+    throw new Error(`[slash] Invalid tag name: ${JSON.stringify(tagName)}`);
   }
   const el = (
     SVG_TAGS.has(tagName)

@@ -554,3 +554,13 @@ describe("chaves proibidas de objeto de style sem distinguir caixa", () => {
     expect(isForbiddenStyleKey("backgroundColor")).toBe(false);
   });
 });
+
+describe("url() follows the <img src> policy (D4)", () => {
+  test("blocked and allowed urls match evaluateUrl for src on img", async () => {
+    const { evaluateUrl } = await import("./url-policy");
+    const { isSafeCssValue } = await import("./css-policy");
+    for (const u of ["javascript:alert(1)", "/a.png", "https://x/a.png", "data:text/html,x", "data:image/png;base64,AAAA", "data:image/svg+xml,%3Csvg%3E"]) {
+      expect({ u, ok: isSafeCssValue(`url("${u}")`) }).toEqual({ u, ok: !evaluateUrl("src", u, "img").blocked });
+    }
+  });
+});

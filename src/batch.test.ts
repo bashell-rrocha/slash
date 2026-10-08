@@ -145,7 +145,7 @@ describe('batch (Imperative Shell)', () => {
           })
         }).toThrow('fn')
         expect(logged).toEqual([
-          ['[slash] erro em watcher durante o flush do batch', watcherError]
+          ['[slash] error in watcher during batch flush', watcherError]
         ])
       } finally {
         console.error = original

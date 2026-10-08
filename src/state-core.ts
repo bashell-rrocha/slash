@@ -12,11 +12,30 @@ export type StateCommand<S> =
   | { type: 'NO_CHANGE' }
   | { type: 'UPDATE', oldState: S, newState: S }
 
+const MAX_CLONE_DEPTH = 1000;
+
 /**
  * Clone profundo que preserva instâncias especiais (Error, Date, etc)
  * PURE FUNCTION - Não modifica input, retorna novo objeto
+ * Throws a clear error on circular references and beyond MAX_CLONE_DEPTH levels.
+ * Hot path (every state get/set): only a depth counter per node. A cycle always ends up
+ * hitting the depth limit, so one error covers both cases.
  */
 export function deepClone<T>(obj: T): T {
+  if (obj === null || typeof obj !== 'object') return obj;
+  try {
+    return cloneNode(obj, 0);
+  } catch (e) {
+    if (e instanceof DepthLimit) {
+      throw new Error(`[slash] State is circular or nested deeper than ${MAX_CLONE_DEPTH} levels and cannot be cloned`);
+    }
+    throw e;
+  }
+}
+
+class DepthLimit extends Error {}
+
+function cloneNode<T>(obj: T, depth: number): T {
   // Primitivos e null
   if (obj === null || typeof obj !== 'object') {
     return obj;
@@ -32,9 +51,14 @@ export function deepClone<T>(obj: T): T {
     return new Date(obj.getTime()) as T;
   }
 
+  if (depth >= MAX_CLONE_DEPTH) throw new DepthLimit();
+
   // Arrays
   if (Array.isArray(obj)) {
-    return obj.map(item => deepClone(item)) as T;
+    const n = obj.length;
+    const out = new Array(n);
+    for (let i = 0; i < n; i++) out[i] = cloneNode(obj[i], depth + 1);
+    return out as T;
   }
 
   // Objects (sem prototipo preservam o prototipo nulo)
@@ -42,7 +66,7 @@ export function deepClone<T>(obj: T): T {
   const keys = Object.keys(obj as object);
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i];
-    const value = deepClone((obj as any)[key]);
+    const value = cloneNode((obj as any)[key], depth + 1);
     if (key === '__proto__') {
       // Copia como propriedade propria: atribuir invocaria o setter do prototipo (SEC-12)
       Object.defineProperty(cloned, key, { value, enumerable: true, writable: true, configurable: true });

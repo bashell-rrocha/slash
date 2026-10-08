@@ -227,11 +227,11 @@ describe("S3 / SEC-14 cliente: on* só com função", () => {
     const b = h("div", { onmouseover: "alert(1)" }) as Element;
     expect(b.getAttribute("onmouseover")).toBeNull();
   });
-  test("handler reativo: aviso diz que não é suportado e pede uma função", () => {
+  test("handler reativo: warning says it is not supported and asks for a function", () => {
     h("button", { onClick: reactive(() => {}) });
     const msg = String(warn.mock.calls[0]?.[0]);
-    expect(msg).toMatch(/reativ/i);
-    expect(msg).toMatch(/função/i);
+    expect(msg).toMatch(/reactive/i);
+    expect(msg).toMatch(/function/i);
   });
 });
 

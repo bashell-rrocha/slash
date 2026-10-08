@@ -110,15 +110,20 @@ describe("script/style (regra de raw text)", () => {
     expect(html).toBe(`<script type="application/json">${json}</script>`);
   });
 
-  test("string simples e escapada com aviso apontando unsafeHtml(serializeStateForScript(x))", () => {
+  test("dynamic string is dropped with a warning pointing to unsafeHtml(serializeStateForScript(x))", () => {
     const { html } = renderToString(() => htmlString`<script>${"</script><img src=x>"}</script>`);
-    expect(html).toBe("<script>&lt;/script&gt;&lt;img src=x&gt;</script>");
+    expect(html).toBe("<script></script>");
     expect(warnings.some((m) => m.includes("unsafeHtml(serializeStateForScript"))).toBe(true);
   });
 
-  test("style com string tambem e escapada", () => {
-    const { html } = renderToString(() => htmlString`<style>${"</style><b>"}</style>`);
-    expect(html).toBe("<style>&lt;/style&gt;&lt;b&gt;</style>");
+  test("dynamic string in style is dropped too; static text is kept", () => {
+    const { html } = renderToString(() => htmlString`<style>a{}${"</style><b>"}</style>`);
+    expect(html).toBe("<style>a{}</style>");
+  });
+
+  test("dynamic code-looking string is dropped (escaping would not neutralise it)", () => {
+    const { html } = renderToString(() => htmlString`<script>${"alert(1)"}</script>`);
+    expect(html).toBe("<script></script>");
   });
 });
 
@@ -305,10 +310,10 @@ describe("texto estatico vs dinamico (marcador interno)", () => {
     );
   });
 
-  test("string dinamica em <style> e escapada com aviso", () => {
+  test("dynamic string in <style> is dropped with a warning; static text is kept", () => {
     const userCss = "</style><img onerror=1>";
     const { html } = renderToString(() => htmlString`<style>a > b {}${userCss}</style>`);
-    expect(html).toBe("<style>a > b {}&lt;/style&gt;&lt;img onerror=1&gt;</style>");
+    expect(html).toBe("<style>a > b {}</style>");
     expect(warnings.some((m) => m.includes("unsafeHtml"))).toBe(true);
   });
 
@@ -318,13 +323,13 @@ describe("texto estatico vs dinamico (marcador interno)", () => {
 
   test("array de strings vindo de .map e dinamico (escapado), tambem em <style>", () => {
     expect(renderToString(() => htmlString`<p>${["<a>", "<b>"].map((s) => s)}</p>`).html).toBe("<p>&lt;a&gt;&lt;b&gt;</p>");
-    expect(renderToString(() => htmlString`<style>${["</style>"]}</style>`).html).toBe("<style>&lt;/style&gt;</style>");
+    expect(renderToString(() => htmlString`<style>${["</style>"]}</style>`).html).toBe("<style></style>");
   });
 
-  test("funcao e reativo devolvendo string em <script> sao dinamicos", () => {
+  test("function and reactive returning a string in <script> are dynamic (dropped)", () => {
     const rx = { get: () => "</script>", subscribe: () => () => {} };
-    expect(renderToString(() => htmlString`<script>${() => "</script>"}</script>`).html).toBe("<script>&lt;/script&gt;</script>");
-    expect(renderToString(() => htmlString`<script>${rx as never}</script>`).html).toContain("&lt;/script&gt;");
+    expect(renderToString(() => htmlString`<script>${() => "</script>"}</script>`).html).toBe("<script></script>");
+    expect(renderToString(() => htmlString`<script>${rx as never}</script>`).html).not.toContain("</script></script>");
   });
 
   test("templates aninhados e componentes compõem; SafeHtml em <script> segue cru", () => {

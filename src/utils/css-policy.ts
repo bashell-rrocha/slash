@@ -21,7 +21,13 @@
  * sem regex com backtracking sobre a entrada do usuário.
  */
 
-import { isAllowedCssUrl } from "./url-policy";
+import { evaluateUrl } from "./url-policy";
+
+// url() is an image context: it follows exactly the <img src> policy (evaluateUrl is the pure
+// decision behind sanitizeUrl, without the duplicate warning; the declaration is rejected).
+function isAllowedCssUrl(url: string): boolean {
+  return !evaluateUrl("src", url, "img").blocked;
+}
 
 
 // Chaves de CSSStyleDeclaration que não são propriedades CSS: cssText injeta CSS arbitrário e
