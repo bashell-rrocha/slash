@@ -1,4 +1,4 @@
-// Fiação SSR -> política de URLs, com a política REAL (sem mock.module: no Bun ele é
+// Fiação SSR -> política de URLs, com a política REAL (sem mock de módulo: no Bun ele é
 // global ao processo e vaza para outros arquivos). A política em si é testada em
 // utils/url-policy.test.ts; aqui prova-se, por comportamento, quais atributos a usam.
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
