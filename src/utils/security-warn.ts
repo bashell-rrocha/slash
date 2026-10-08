@@ -20,11 +20,14 @@ const seen = new Set<string>();
  * @param key - identifica o tipo de problema (padrão: a própria mensagem)
  */
 export function securityWarn(message: string, key: string = message): void {
-  if (!isDevMode() || !isWarningsEnabled()) return;
-  if (seen.has(key)) return;
-  if (seen.size >= MAX_KEYS) seen.clear();
-  seen.add(key);
-  console.warn(`[slash] ${message}`);
+  // Inline on purpose: Bun does not fold indirections, so the whole body is removed from production builds
+  if (process.env.NODE_ENV !== "production") {
+    if (!isDevMode() || !isWarningsEnabled()) return;
+    if (seen.has(key)) return;
+    if (seen.size >= MAX_KEYS) seen.clear();
+    seen.add(key);
+    console.warn(`[slash] ${message}`);
+  }
 }
 
 /** Zera a deduplicação (uso em testes) */

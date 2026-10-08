@@ -20,6 +20,9 @@ const DEV_WARNING_TEXTS = ['unsafeHtml()', 'unsafeUrl()', 'data-reactive-*', 'on
 // Erros de runtime: console.error NUNCA pode ser removido de nenhum build.
 const CONSOLE_ERROR = 'console.error';
 
+// console.warn emitted by securityWarn: `[slash] ${message}` (the SSR warning has "SSR:" after the prefix)
+const SECURITY_WARN_PATTERN = /console\.warn\(`\[slash\] \$\{/;
+
 const failures = [];
 
 // Todos os arquivos .mjs/.cjs de um diretório de build (sem descer em dev/ nem types/)
@@ -109,6 +112,11 @@ for (const { label, pick, dir } of builds) {
     if (label === 'prod' && present) failures.push(`prod: contains dev warning "${text}"`);
     if (label === 'dev' && !present) failures.push(`dev: does not contain dev warning "${text}"`);
   }
+  // securityWarn: console.warn(`[slash] ${message}`) must exist only in dev. The pattern is
+  // specific to that call, so it never matches the console.error runtime errors or SSR warnings.
+  const securityWarnPresent = SECURITY_WARN_PATTERN.test(code);
+  if (label === 'prod' && securityWarnPresent) failures.push('prod: contains securityWarn console.warn output');
+  if (label === 'dev' && !securityWarnPresent) failures.push('dev: does not contain securityWarn console.warn output');
   if (!code.includes(CONSOLE_ERROR)) {
     failures.push(`${label}: no ${CONSOLE_ERROR} in the build (console.* must not be removed)`);
   }
