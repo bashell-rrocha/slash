@@ -114,6 +114,17 @@ export function Link({
 
   const handleClick = (e: Event) => {
     if (appPath) {
+      // Modifier keys, non-left buttons, target != _self and download stay native
+      const m = e as Partial<MouseEvent>
+      const t = (props as { target?: unknown }).target
+      if (
+        m.ctrlKey || m.metaKey || m.shiftKey || m.altKey ||
+        (typeof m.button === "number" && m.button !== 0) ||
+        (typeof t === "string" && t !== "" && t !== "_self") ||
+        (props as { download?: unknown }).download != null && (props as { download?: unknown }).download !== false
+      ) {
+        return
+      }
       e.preventDefault()
       router.push(target as string).catch((err) => {
         console.error("Navigation error:", err)

@@ -52,7 +52,7 @@ export function createBrowserAdapter(): EnvironmentAdapter {
       }
 
       try {
-        const stateEl = document.getElementById("__SLASH_STATE__")
+        const stateEl = document.querySelector('script#__SLASH_STATE__[type="application/json"]')
         if (stateEl && stateEl.textContent) {
           return JSON.parse(stateEl.textContent)
         }

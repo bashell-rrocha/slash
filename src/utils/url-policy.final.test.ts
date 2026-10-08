@@ -10,31 +10,51 @@ beforeEach(() => {
 });
 afterEach(() => warn.mockRestore());
 
-function timed(fn: () => unknown): number {
-  const start = performance.now();
-  fn();
-  return performance.now() - start;
+// Timing probes run in a killable subprocess: a quadratic regression FAILS fast instead of hanging the suite.
+const POLICY = `${import.meta.dir}/url-policy.ts`;
+async function probe(body: string): Promise<{ ms: number; out: string }> {
+  const code = `import * as p from ${JSON.stringify(POLICY)};
+const MB = 1024 * 1024;
+const t = performance.now();
+const out = (() => { ${body} })();
+console.log(JSON.stringify({ ms: performance.now() - t, out }));`;
+  const proc = Bun.spawn(["bun", "-e", code], { stdout: "pipe", stderr: "pipe", timeout: 8000, killSignal: "SIGKILL" });
+  const text = await new Response(proc.stdout).text();
+  await proc.exited;
+  if (proc.signalCode) throw new Error(`probe killed (${proc.signalCode}): quadratic behaviour`);
+  return JSON.parse(text.trim().split("\n").pop() as string);
 }
 
-describe("ReDoS bounds", () => {
-  test("200k spaces in a URL attribute: < 50 ms", () => {
-    const value = `x${" ".repeat(200_000)}x`;
-    expect(timed(() => sanitizeUrl("href", value, "a"))).toBeLessThan(50);
-  });
+describe("ReDoS bounds (1 MB inputs, subprocess)", () => {
+  test("1 MB of spaces in a URL attribute", async () => {
+    const r = await probe(`return p.sanitizeUrl("href", "x" + " ".repeat(MB) + "x", "a").length > 0`);
+    expect(r.ms).toBeLessThan(500);
+  }, 15000);
+  test("srcset payloads", async () => {
+    const r = await probe(`
+      const vals = ["a" + " (".repeat(MB / 2), "a (b ".repeat(MB / 5), "a " + " ".repeat(MB) + "b", "a" + ",".repeat(MB) + "x,"];
+      return vals.map((v) => p.evaluateUrl("srcset", v, "img").blocked);`);
+    expect(r.out).toEqual([true, true, true, true]);
+    expect(r.ms).toBeLessThan(500);
+  }, 15000);
+  test("meta refresh payloads", async () => {
+    const r = await probe(`
+      const vals = ["0;url=a" + " ".repeat(MB) + "b", "0;url=" + "a ".repeat(MB / 2), " ".repeat(MB) + "1"];
+      return vals.map((v) => p.evaluateMetaRefresh(v).blocked);`);
+    expect(r.ms).toBeLessThan(500);
+  }, 15000);
+  test("16 KB boundary payloads stay fast too", async () => {
+    const r = await probe(`
+      const v = "a" + " (".repeat(8000);
+      return [p.evaluateUrl("srcset", v, "img").blocked, p.evaluateMetaRefresh("0;url=a" + " ".repeat(16000) + "b").blocked];`);
+    expect(r.ms).toBeLessThan(200);
+  }, 15000);
+});
+
+describe("ReDoS semantics", () => {
   test("leading/trailing whitespace is still ignored for the scheme check", () => {
     expect(sanitizeUrl("href", "   javascript:alert(1)   ", "a")).toBe(BLOCKED_URL);
-    expect(sanitizeUrl("href", " javascript:alert(1)", "a")).toBe(BLOCKED_URL);
-  });
-  test("srcset payloads: < 50 ms and fail closed", () => {
-    for (const value of [`a${" (".repeat(20_000)}`, "a (b ".repeat(10_000), `a ${" ".repeat(100_000)}b`]) {
-      let result = { value: "", blocked: false };
-      expect(timed(() => { result = evaluateUrl("srcset", value, "img"); })).toBeLessThan(50);
-      expect(result.blocked).toBe(true);
-    }
-  });
-  test("srcset with long comma runs: < 50 ms", () => {
-    const v = `a${",".repeat(15_000)}x,`;
-    expect(timed(() => evaluateUrl("srcset", v, "img"))).toBeLessThan(50);
+    expect(sanitizeUrl("href", "\u00a0javascript:alert(1)", "a")).toBe(BLOCKED_URL);
   });
   test("srcset above 16 KB fails closed", () => {
     const r = evaluateUrl("srcset", `/a.png 1x, ${"/b.png 2x, ".repeat(3000)}`, "img");
@@ -45,11 +65,6 @@ describe("ReDoS bounds", () => {
     const v = "/a.png 1x, /b.png 2x, /c.png 100w";
     expect(evaluateUrl("srcset", v, "img")).toEqual({ value: v, blocked: false });
     expect(evaluateUrl("srcset", "javascript:x 1x, /b.png 2x", "img").blocked).toBe(true);
-  });
-  test("meta refresh payloads: < 50 ms", () => {
-    for (const value of [`0;url=a${" ".repeat(20_000)}b`, `0;url=${"a ".repeat(50_000)}`]) {
-      expect(timed(() => evaluateMetaRefresh(value))).toBeLessThan(50);
-    }
   });
   test("meta refresh above 16 KB fails closed", () => {
     expect(evaluateMetaRefresh(`0;url=/${"a".repeat(20_000)}`).blocked).toBe(true);
@@ -67,6 +82,11 @@ describe("D3 blob: on media src", () => {
       expect(sanitizeUrl("src", "blob:https://a.com/1-2", tag)).toBe("blob:https://a.com/1-2");
     });
   }
+  test("blob: blocked on embed, area, input, link and other tags", () => {
+    for (const [attr, tag] of [["src", "embed"], ["href", "area"], ["src", "input"], ["href", "link"], ["poster", "video"], ["srcset", "img"]] as const) {
+      expect(sanitizeUrl(attr, "blob:https://a.com/1", tag)).toBe(BLOCKED_URL);
+    }
+  });
   test("blob: blocked in href, iframe src, script src, object data", () => {
     expect(sanitizeUrl("href", "blob:https://a.com/1", "a")).toBe(BLOCKED_URL);
     expect(sanitizeUrl("src", "blob:https://a.com/1", "iframe")).toBe(BLOCKED_URL);
@@ -102,6 +122,15 @@ describe("D4 data:image/svg+xml in image context", () => {
 describe("D5 scheme allowlist", () => {
   test("sms: allowed", () => {
     expect(sanitizeUrl("href", "sms:+5511999999999", "a")).toBe("sms:+5511999999999");
+  });
+  test("sms: obfuscations are classified like the browser would", () => {
+    expect(sanitizeUrl("href", "s\tm\ns:+55119", "a")).toBe("s\tm\ns:+55119");
+    expect(sanitizeUrl("href", "  SMS:+55119", "a")).toBe("  SMS:+55119");
+    expect(sanitizeUrl("href", "sms\u00a0:+55119", "a")).toBe("sms\u00a0:+55119"); // not a scheme: relative path
+    expect(sanitizeUrl("href", "smss:+55119", "a")).toBe(BLOCKED_URL);
+    expect(sanitizeUrl("href", "xsms:+55119", "a")).toBe(BLOCKED_URL);
+    expect(sanitizeUrl("href", "sms:\u0000javascript:alert(1)", "a")).toBe("sms:\u0000javascript:alert(1)"); // sms body is inert
+    expect(sanitizeUrl("href", "&#115;ms:+55119", "a")).toBe("&#115;ms:+55119"); // inert relative path
   });
   for (const url of ["whatsapp://send?text=x", "ftp://a.com/x", "data:text/csv,a,b", "intent://x", "sip:a@b"]) {
     test(`${url} blocked`, () => {

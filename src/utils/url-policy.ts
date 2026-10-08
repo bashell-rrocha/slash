@@ -6,6 +6,11 @@
  * só em atributos de imagem (`img src`, `srcset`, `poster`). Todo o resto
  * (javascript:, vbscript:, data:text/html, blob:, file:...) vira BLOCKED_URL.
  *
+ * Size caps: srcset values and meta-refresh `content` larger than 16 KB (16384 UTF-16 units) are not
+ * analysed and fail closed: the whole value is replaced by BLOCKED_URL (with a dev warning). Legitimate
+ * values this large are not expected; use unsafeUrl() for a trusted one. The caps also keep the
+ * linear parsers cheap on hostile input.
+ *
  * Observações de projeto:
  * - URL protocol-relative (`//host/x`) é PERMITIDA: herda http(s) da página,
  *   portanto não executa script. Quem precisa restringir origem deve validar

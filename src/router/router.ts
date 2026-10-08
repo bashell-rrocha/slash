@@ -130,6 +130,7 @@ export function createRouter(config: RouterConfig): RouterInstance {
 
     // Eventos de histórico e a verificação inicial registram o caminho resolvido,
     // mesmo quando bloqueado: reentrar para a mesma URL repetiria guards com efeitos
+    const previousLastPath = lastPath
     if (fromHistory || initial || decision.shouldNavigate) {
       lastPath = pathKey(path)
     }
@@ -168,15 +169,8 @@ export function createRouter(config: RouterConfig): RouterInstance {
 
     // Handle successful navigation
     if (decision.newRoute) {
-      state.set({
-        currentRoute: decision.newRoute,
-        params: decision.newRoute.params,
-        query: decision.newRoute.query,
-        meta: decision.newRoute.meta,
-        isNavigating: false,
-      })
-
-      // Update browser history (skip in SSR and history-triggered navigations)
+      // Update browser history FIRST (skip in SSR and history-triggered navigations): if the
+      // browser refuses the URL, state stays untouched and the push rejects with a clear error.
       if (!adapter.isSSR() && !fromHistory) {
         const input = parseNavigationPath(path)
         const [, search] = splitPath(stripHash(path))
@@ -184,17 +178,32 @@ export function createRouter(config: RouterConfig): RouterInstance {
         const hash = hashIndex === -1 ? "" : path.slice(hashIndex)
         const fullPath = (search ? `${input.pathname}${search}` : input.pathname) + hash
 
-        if (replace) {
-          replacingInitial = initial
-          try {
-            history.replace(fullPath)
-          } finally {
-            replacingInitial = false
+        try {
+          if (replace) {
+            replacingInitial = initial
+            try {
+              history.replace(fullPath)
+            } finally {
+              replacingInitial = false
+            }
+          } else {
+            history.push(fullPath)
           }
-        } else {
-          history.push(fullPath)
+        } catch (err) {
+          lastPath = previousLastPath
+          state.set({ ...currentState, isNavigating: false })
+          const reason = err instanceof Error ? err.message : String(err)
+          throw new Error(`Navigation failed: the browser rejected ${JSON.stringify(fullPath)} (${reason})`)
         }
       }
+
+      state.set({
+        currentRoute: decision.newRoute,
+        params: decision.newRoute.params,
+        query: decision.newRoute.query,
+        meta: decision.newRoute.meta,
+        isNavigating: false,
+      })
     }
   }
 

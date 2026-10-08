@@ -10,8 +10,8 @@ import type { RouteQuery } from "./types"
  * @returns Sanitized path
  */
 export function sanitizePath(path: string): string {
-  // Remove duplicate slashes
-  let sanitized = path.replace(/\/+/g, "/")
+  // Browsers treat "\" as "/" in http(s) URLs: normalize first, then remove duplicate slashes
+  let sanitized = path.replace(/[\\/]+/g, "/")
 
   // Remove trailing slash (except for root path)
   if (sanitized.length > 1 && sanitized.endsWith("/")) {
