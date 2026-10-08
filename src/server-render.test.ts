@@ -569,6 +569,19 @@ describe("SSR usa a regra de reativo do cliente", () => {
 });
 
 describe("serializeStateForScript", () => {
+  test("valores não serializáveis no topo viram null", () => {
+    for (const v of [undefined, () => 1, Symbol("x")]) {
+      expect(serializeStateForScript(v)).toBe("null");
+    }
+  });
+
+  test("barra invertida literal, surrogate solitário e < em chave são inertes e idênticos", () => {
+    const x = { "</script>": ["\\u003c", "\ud800"] };
+    const out = serializeStateForScript(x);
+    expect(out).not.toContain("<");
+    expect(JSON.parse(out)).toEqual(x);
+  });
+
   test("neutraliza </script> e <!--", () => {
     const out = serializeStateForScript({ a: "</script><!-- x -->" });
     expect(out).not.toContain("</script");

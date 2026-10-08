@@ -474,3 +474,31 @@ describe("serializeLoaderData em <script>", () => {
     expect(deserializeLoaderData(serializeLoaderData(nocivo))).toEqual(nocivo);
   });
 });
+
+describe("serializeLoaderData casos extremos", () => {
+  test("valores não serializáveis no topo viram null", () => {
+    for (const v of [undefined, () => 1, Symbol("x")]) {
+      expect(serializeLoaderData(v as any)).toBe("null");
+    }
+  });
+
+  test("barra invertida literal seguida de u003c continua inerte e idêntica", () => {
+    const x = { k: "\\u003c/script>" };
+    const out = serializeLoaderData(x);
+    expect(out).not.toContain("<");
+    expect(out).not.toContain(">");
+    expect(deserializeLoaderData(out)).toEqual(x);
+  });
+
+  test("surrogate solitário faz round-trip", () => {
+    const x = { k: "\ud800" };
+    expect(deserializeLoaderData(serializeLoaderData(x))).toEqual(x);
+  });
+
+  test("< em chave de objeto fica escapado e faz round-trip", () => {
+    const x = { "</script><!--": 1 };
+    const out = serializeLoaderData(x);
+    expect(out).not.toContain("<");
+    expect(deserializeLoaderData(out)).toEqual(x);
+  });
+});
