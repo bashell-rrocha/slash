@@ -113,6 +113,7 @@ Renderiza um `<a href="/about">` cujo clique é interceptado e chama `router.pus
 - Segmentos que começam com `:` viram `state.params`.
 - A query string vira `state.query`: `/search?q=slash&page=2` gera `{ q: "slash", page: "2" }`.
 - As rotas são testadas na ordem em que foram declaradas e vence a primeira que casar; declare as mais específicas antes.
+- `state.query` é um objeto sem protótipo (`Object.create(null)`): não chame `state.query.hasOwnProperty(...)`; use `Object.hasOwn(state.query, "q")` ou `"q" in state.query`. Percent-encoding malformado é mantido como texto cru, sem lançar erro.
 - Não existe curinga (`*`). Use `fallback` para o 404.
 
 ## Guards
@@ -194,5 +195,7 @@ const { html: markup } = renderToString(
 Veja o [README](./README.md) para o fluxo completo de SSR e hidratação.
 
 ## Limitações conhecidas
+
+**Interceptação global de links.** Com um roteador criado, o clique esquerdo (sem modificadores, `target` ou `download`) em qualquer `<a>` com `href` que não seja `#...` nem `http(s)` de outra origem recebe `preventDefault()` e `history.pushState` com o `href` cru. Links `javascript:` não executam no clique simples (o `pushState` lança), e links protocolo-relativos como `//outro.com` ficam sem efeito em vez de navegar; para links externos use URL absoluta `https://...` ou `target="_blank"`. Não há open redirect: a navegação só ocorre para rotas casadas.
 
 O roteador não oferece lazy loading, data loaders, pré-carregamento, transições, `<Route>` declarativo nem curingas. Para carregar dados use `createLoader` do subpath `@_bashell/slash/ssr`.
