@@ -18,7 +18,7 @@ function batch(fn: () => void): void
 ### Uso Básico
 
 ```typescript
-import { createState, batch } from '@_bashell/slash'
+import { createState, batch } from '@_bashell/slash/core'
 
 const count = createState(0)
 const name = createState('Alice')
@@ -64,13 +64,22 @@ batch(() => {
 // Log: "State changed: { count: 3, name: 'Jane' }" (apenas uma vez)
 ```
 
+### Comportamento atual
+
+Pontos que valem conhecer (verificados contra a implementação):
+
+- Ao terminar, o batch notifica os watchers de **todos** os states existentes uma vez, inclusive states que não foram alterados dentro do batch. Mantenha os watchers idempotentes.
+- Se nenhum `set` mudou valor dentro do batch, ninguém é notificado.
+- Se a função lançar um erro, as notificações ainda acontecem (o `finally` do batch roda) e o erro é propagado.
+- Batches aninhados não são contabilizados: o fim do batch interno encerra o modo batch, e os `set` seguintes do batch externo notificam imediatamente.
+
 ### Estado Interno
 
 Batch mantém um contador de updates pendentes:
 
 ```typescript
 interface BatchContext {
-  status: 'IDLE' | { type: 'BATCHING', pendingUpdates: number }
+  status: { type: 'IDLE' } | { type: 'BATCHING', pendingUpdates: number }
 }
 ```
 
@@ -108,7 +117,7 @@ const loadUser = async (id: number) => {
   }
 }
 
-// ✅ Com batch: 1 ou 2 notificações (início + fim/erro)
+// ✅ Com batch: as atualizações de cada etapa são notificadas juntas
 const loadUser = async (id: number) => {
   batch(() => {
     isLoading.set(true)
@@ -233,23 +242,16 @@ batch(() => {
 console.timeEnd('with-batch')
 ```
 
-### Benchmarks Típicos
+### Resultados
 
-| Operação | Sem Batch | Com Batch | Ganho |
-|----------|-----------|-----------|-------|
-| 100 updates | 100ms | 1ms | 100x |
-| 1000 updates | 1000ms | 1ms | 1000x |
-| 10 states, 10 updates cada | 100ms | 10ms | 10x |
-
-**Nota:** Ganhos reais dependem da complexidade dos watchers e do DOM.
+Os ganhos dependem do custo dos watchers (e do DOM que eles tocam): meça no seu caso com o código acima.
 
 ### Otimizações Automáticas
 
 Slash já otimiza internamente:
 
-1. **Deep Equality**: Não notifica se valor não mudou
-2. **Lazy Evaluation**: Props reativas são avaliadas apenas quando necessário
-3. **Granular Updates**: Apenas elementos afetados são atualizados
+1. **Deep Equality**: não notifica se o valor não mudou
+2. **Re-render por componente**: só componentes que leram o state alterado executam de novo
 
 Batch adiciona uma camada extra de otimização para cenários específicos.
 
@@ -258,7 +260,7 @@ Batch adiciona uma camada extra de otimização para cenários específicos.
 ### Exemplo 1: Form com Múltiplos Campos
 
 ```typescript
-import { createState, batch, html, render } from '@_bashell/slash'
+import { createState, batch, html, render } from '@_bashell/slash/core'
 
 interface FormData {
   name: string
@@ -293,7 +295,7 @@ const FormComponent = () => html`
       type="text"
       placeholder="Name"
       value=${form.get().name}
-      oninput=${(e: Event) =>
+      onChange=${(e: Event) =>
         form.set({ ...form.get(), name: (e.target as HTMLInputElement).value })
       }
     />
@@ -301,7 +303,7 @@ const FormComponent = () => html`
       type="email"
       placeholder="Email"
       value=${form.get().email}
-      oninput=${(e: Event) =>
+      onChange=${(e: Event) =>
         form.set({ ...form.get(), email: (e.target as HTMLInputElement).value })
       }
     />
@@ -309,22 +311,23 @@ const FormComponent = () => html`
       type="number"
       placeholder="Age"
       value=${form.get().age}
-      oninput=${(e: Event) =>
+      onChange=${(e: Event) =>
         form.set({ ...form.get(), age: Number((e.target as HTMLInputElement).value) })
       }
     />
-    <button type="button" onclick=${resetForm}>Reset</button>
-    <button type="button" onclick=${() => loadUserData(1)}>Load User</button>
+    <button type="button" onClick=${resetForm}>Reset</button>
+    <button type="button" onClick=${() => loadUserData(1)}>Load User</button>
   </form>
 `
 
-render(FormComponent(), '#app')
+// O form lê `form` no render, então re-renderiza a cada set (por isso onChange, não onInput)
+render(html`<${FormComponent} />`, '#app')
 ```
 
 ### Exemplo 2: Lista com Filtros
 
 ```typescript
-import { createState, batch, html, render } from '@_bashell/slash'
+import { createState, batch, html, render } from '@_bashell/slash/core'
 
 interface Todo {
   id: number
@@ -391,12 +394,12 @@ const TodoApp = () => html`
     <input
       type="text"
       placeholder="Search..."
-      oninput=${(e: Event) => searchQuery.set((e.target as HTMLInputElement).value)}
+      onInput=${(e: Event) => searchQuery.set((e.target as HTMLInputElement).value)}
     />
     <div>
-      <button onclick=${() => setFilter('all')}>All</button>
-      <button onclick=${() => setFilter('active')}>Active</button>
-      <button onclick=${() => setFilter('completed')}>Completed</button>
+      <button onClick=${() => setFilter('all')}>All</button>
+      <button onClick=${() => setFilter('active')}>Active</button>
+      <button onClick=${() => setFilter('completed')}>Completed</button>
     </div>
     <ul>
       ${filteredTodos.get().map(todo => html`
@@ -406,13 +409,13 @@ const TodoApp = () => html`
   </div>
 `
 
-render(TodoApp(), '#app')
+render(html`<${TodoApp} />`, '#app')
 ```
 
 ### Exemplo 3: Data Fetching com Loading States
 
 ```typescript
-import { createState, batch, html, render } from '@_bashell/slash'
+import { createState, batch, html, render } from '@_bashell/slash/core'
 
 interface User {
   id: number
@@ -475,8 +478,8 @@ const UserProfile = () => {
 
 render(html`
   <div>
-    ${UserProfile()}
-    <button onclick=${() => fetchUser(1)}>Load User 1</button>
+    <${UserProfile} />
+    <button onClick=${() => fetchUser(1)}>Load User 1</button>
   </div>
 `, '#app')
 ```
@@ -484,7 +487,7 @@ render(html`
 ### Exemplo 4: Animações com Múltiplos Estados
 
 ```typescript
-import { createState, batch, html, render } from '@_bashell/slash'
+import { createState, batch, html, render } from '@_bashell/slash/core'
 
 const position = createState({ x: 0, y: 0 })
 const rotation = createState(0)
@@ -529,15 +532,15 @@ const AnimatedElement = () => html`
   ></div>
 `
 
-render(AnimatedElement(), '#app')
+render(html`<${AnimatedElement} />`, '#app')
 animateElement()
 ```
 
 ## Integração com State Management
 
-### Batch é Automático em Alguns Casos
+### `set()` respeita o batch
 
-Slash integra batch automaticamente no sistema de estado:
+`set()` consulta o contexto de batch interno, então você não precisa passar nada para `createState`:
 
 ```typescript
 // state.ts (interno)
@@ -556,18 +559,12 @@ const set = (payload: S) => {
 
 ### Verificar se Está em Batch
 
-```typescript
-import { isInBatch } from '@_bashell/slash'
-
-if (isInBatch()) {
-  console.log('Currently batching updates')
-}
-```
+`isInBatch()` existe em `src/batch.ts`, mas é de uso interno e **não** é exportado pelos subpaths públicos (`core`, `router`, `forms`, `ssr`) nem pelo bundle principal. Os subpaths exportam apenas `batch`.
 
 ## Próximos Passos
 
 Agora que você domina batch updates, explore:
 
-1. [Componentes](../06-components/README.md) - Criar componentes reutilizáveis
-2. [Performance e Best Practices](../14-performance/README.md) - Otimizações avançadas
-3. [Router](../07-router/README.md) - Roteamento com state management
+1. Componentes (capítulo ainda não escrito) - Criar componentes reutilizáveis
+2. Performance e Best Practices (capítulo ainda não escrito) - Otimizações avançadas
+3. Router (capítulo ainda não escrito) - Roteamento com state management
