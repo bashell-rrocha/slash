@@ -70,16 +70,14 @@ hydrate(() => App(), "#app", { state: window.__SLASH_STATE__ });
 **After:**
 
 ```typescript
-// server.ts (unchanged)
-import { htmlString, renderToString } from "@_bashell/slash/ssr";
+// server.ts
+import { renderToString, serializeStateForScript } from "@_bashell/slash/ssr";
 
 const { html, state } = renderToString(() => App());
 
 res.send(`
   <div id="app">${html}</div>
-  <script id="__SLASH_STATE__" type="application/json">
-    ${JSON.stringify(state)}
-  </script>
+  <script id="__SLASH_STATE__" type="application/json">${serializeStateForScript(state)}</script>
   <script src="/client.js"></script>
 `);
 
@@ -178,12 +176,12 @@ The state must now be in a `<script>` tag with `id="__SLASH_STATE__"`:
 - No global pollution
 - Proper JSON parsing (no eval)
 - Auto-cleanup (script is removed after hydration)
-- Better security
+- Better security (`serializeStateForScript` escapes `<`, `>`, `&`, U+2028 and U+2029, so a value like `</script>` cannot close the tag; never use raw `JSON.stringify` inside `<script>`)
 
 ### Server-Side Template Example
 
 ```typescript
-import { renderToString } from "@_bashell/slash/ssr";
+import { renderToString, serializeStateForScript } from "@_bashell/slash/ssr";
 
 export function renderPage(App: () => any) {
   const { html, state } = renderToString(App);
@@ -200,7 +198,7 @@ export function renderPage(App: () => any) {
 
         <!-- State for hydration -->
         <script id="__SLASH_STATE__" type="application/json">
-          ${JSON.stringify(state)}
+          ${serializeStateForScript(state)}
         </script>
 
         <!-- Your client bundle -->
@@ -303,6 +301,32 @@ render(() => App(), "#app");
 console.log(document.getElementById("__SLASH_STATE__")); // Should be null
 ```
 
+## Migrating to 0.0.3 (secure by default)
+
+0.0.3 changes what is trusted. Plain strings are always text, URLs and handlers are checked, and markup needs an explicit type. Find each case with the searches below.
+
+| If your code... | What happens now | How to migrate |
+| --- | --- | --- |
+| uses ``htmlString`...` `` as a `string` (`.length`, `+`, `.startsWith`, `res.send(x)`) | it returns a `SafeHtml` | use `String(x)`, or `renderToString(() => x).html` |
+| returns hand-built HTML strings from a component or helper (`return "<div>...</div>"`, Markdown, icons) | the string renders as visible text | return an `htmlString`/`html` template; for trusted markup use `unsafeHtml(str)` |
+| used the old workaround of prefixing a space to user strings | not needed | remove it; strings are always escaped |
+| passes `innerHTML=${...}`, `outerHTML=...` or `srcdoc=${...}` as a prop | the prop is ignored (dev warning) | use `unsafeHtml(...)` as a child; `srcdoc=${unsafeHtml(...)}` |
+| uses `javascript:`, `data:text/html`, `blob:` or custom schemes in `href`/`src`/`action` | the value becomes `about:blank#blocked` | use a real URL, or `unsafeUrl(url)` for a trusted one |
+| uses `<${Link} to="./x">`, `to="../x"`, `to="about"` or an absolute URL | no navigation, `href` blocked | use an app path (`/x`, `?q`, `#h`); for an external site add `external` |
+| uses string handlers (`onclick="..."`) or a plain attribute starting with `on` | any `on*` prop that is not a function, handler object or `[fn, options]` is dropped (client and SSR) | pass a function: `onClick=${fn}`; use `data-` for plain attributes |
+| writes `<script>${json}</script>` or `<style>${css}</style>` with dynamic values in `htmlString` | dynamic strings are escaped (dev warning) | `unsafeHtml(serializeStateForScript(data))` for JSON; keep CSS/JS static |
+| puts a literal `<` in a static `<script>` inside `htmlString` (`if (a < b)`) | htm reads it as a tag | move that code into `unsafeHtml(...)` |
+| interpolates a `State` directly in SSR (`${state}`) | a `State` is not reactive on the server | interpolate `state.get()` |
+| embeds state with `JSON.stringify(state)` in a `<script>` | breaks out on `</script>` | `serializeStateForScript(state)` |
+| calls `__addBatchEndCallback`, `__removeBatchEndCallback` or `__recordBatchUpdate` | removed | use `batch()` and `state.watch()` |
+| builds a `RouterInstance` mock by hand | `ready` is required | add `ready: Promise.resolve()` |
+| calls `data.hasOwnProperty(...)` on `formToObject()` or `router.query` | those objects have no prototype | `Object.hasOwn(data, "field")` |
+| relied on client `style="..."` strings being applied verbatim | unsafe declarations are dropped | keep to plain CSS values (see [docs/19-security](./docs/19-security/README.md)) |
+
+Quick searches: `grep -rnE "htmlString|innerHTML=|srcdoc=|href=\$\{|onclick=|JSON.stringify\(state" src`.
+
+Full explanation: [docs/19-security](./docs/19-security/README.md).
+
 ## Need Help?
 
 If you encounter issues during migration:
@@ -321,6 +345,8 @@ For more examples, see the [README](./README.md).
 - [ ] Remove state passing from client code
 - [ ] Remove `window.__SLASH_STATE__` global variable
 - [ ] Test hydration in browser (no flash, events work)
+- [ ] Use `serializeStateForScript(state)` (not `JSON.stringify`) inside `<script>`
+- [ ] Review the 0.0.3 table above: `htmlString` is a `SafeHtml`, strings are text, `Link` takes app paths
 
 ---
 
