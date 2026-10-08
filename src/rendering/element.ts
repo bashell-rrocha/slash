@@ -42,6 +42,8 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
 
     // Destrói e remove tudo entre anchor e end
     const clearRange = () => {
+      // Marcadores separados: não tocar em irmãos alheios
+      if (anchor.parentNode !== end.parentNode) return;
       let n = anchor.nextSibling;
       while (n && n !== end) {
         const next = n.nextSibling;
@@ -51,9 +53,6 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
       }
     };
 
-    // Lista de nodes renderizados (para cleanup)
-    let renderedNodes: Node[] = [];
-
     // Lista de unwatchers (para cleanup)
     let unwatchers: Array<() => void> = [];
 
@@ -61,8 +60,6 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
     const render = () => {
       // Limpar nodes anteriores
       clearRange();
-      renderedNodes = [];
-
       // Resetar tracking para nova renderização
       tracker = clearTrackedStates(tracker);
       tracker = startTracking(tracker);
@@ -85,10 +82,6 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
           appendChildSmart(frag, out as Child);
         }
 
-        // Capturar nodes renderizados
-        const newNodes = Array.from(frag.childNodes);
-        renderedNodes = newNodes;
-
         // Inserir antes do marcador final
         const parent = end.parentNode;
         if (parent) {
@@ -108,6 +101,11 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
 
     // Se não há states acessados, retornar node diretamente (retrocompatibilidade)
     if (!hasTrackedStates(tracker)) {
+      // Nodes do intervalo anchor..end (primeira e única renderização)
+      const renderedNodes: Node[] = [];
+      for (let n = anchor.nextSibling; n && n !== end; n = n.nextSibling) {
+        renderedNodes.push(n);
+      }
       // Componente estático - retornar resultado direto se for Element
       if (
         renderedNodes.length === 1 &&
@@ -148,13 +146,13 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
       }
       unwatchers = [];
       // Destruir nodes do intervalo (sem removê-los do DOM)
+      if (anchor.parentNode !== end.parentNode) return;
       let n = anchor.nextSibling;
       while (n && n !== end) {
         const next = n.nextSibling;
         destroyNode(n);
         n = next;
       }
-      renderedNodes = [];
     });
 
     // Retornar wrapper (fragment com anchor + conteúdo)

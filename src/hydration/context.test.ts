@@ -1,8 +1,10 @@
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { setHydrateContext, getHydrateContext } from "./context";
 import type { HydrateContext } from "./context";
 
 describe("HydrateContext", () => {
+  afterEach(() => setHydrateContext(null));
+
   beforeEach(() => {
     setHydrateContext(null);
   });
