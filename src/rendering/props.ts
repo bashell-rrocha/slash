@@ -8,6 +8,7 @@ import {
   applyPropUpdate,
   getElementType,
   hasNativeProperty,
+  isEventProperty,
 } from "./props-core";
 
 export function applyClass(element: Element, val: unknown): void {
@@ -27,7 +28,7 @@ export function setPropReactive(element: Element, key: string, sig: Reactive<unk
     // Functional Core: decide o que fazer (sem side effects)
     const elementType = getElementType(element as Elementish);
     const hasProp = hasNativeProperty(element as Elementish, key);
-    const update = computePropUpdate(elementType, key, val, hasProp);
+    const update = computePropUpdate(elementType, key, val, hasProp, isEventProperty(element as Elementish, key));
 
     // Imperative Shell: executa o comando (com side effects)
     applyPropUpdate(element as Elementish, update);
@@ -48,22 +49,24 @@ export function setProp(element: Elementish, key: string, val: unknown): void {
     return;
   }
 
-  // 3) Eventos: onClick / onInput / onChange / ...
-  if (key.startsWith("on") && key[2] === key[2]?.toUpperCase()) {
-    const type = key.slice(2).toLowerCase();
+  // 3) Eventos: onClick / onclick / onInput / ... (case-insensitive, mesma regra do SSR).
+  // Só função / objeto handleEvent / tupla viram listener; qualquer outro valor
+  // cai no Functional Core, que bloqueia on* com aviso (nunca vira atributo).
+  if (key.length > 2 && /^on/i.test(key)) {
     const parsed = parseEventProp(val);
     if (parsed) {
+      const type = key.slice(2).toLowerCase();
       element.addEventListener(type, parsed.handler, parsed.options);
       addCleanup(element, () => element.removeEventListener(type, parsed.handler, parsed.options));
+      return;
     }
-    return;
   }
 
   // 4) FCIS Pattern: Functional Core + Imperative Shell
   // Functional Core: decide o que fazer (sem side effects)
   const elementType = getElementType(element);
   const hasProp = hasNativeProperty(element, key);
-  const update = computePropUpdate(elementType, key, val, hasProp);
+  const update = computePropUpdate(elementType, key, val, hasProp, isEventProperty(element, key));
 
   // Imperative Shell: executa o comando (com side effects)
   applyPropUpdate(element, update);

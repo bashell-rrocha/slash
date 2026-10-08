@@ -6,8 +6,54 @@
  * Não contém side effects ou mutação de DOM.
  */
 
+import { isSafeUrl } from "../safe-url";
 import type { Elementish } from "../types";
+import { isEventHandler, isEventTuple } from "../utils/guards";
 import { processClassValue } from "../utils/helpers";
+import { securityWarn } from "../utils/security-warn";
+import { blockedUrlMessage, evaluateUrl, isUrlAttribute } from "../utils/url-policy";
+
+/**
+ * Nomes de atributo válidos (subconjunto seguro do HTML/SVG/XML): impede que uma
+ * chave vinda de dados (spread) injete `x onmouseover=...` ou faça setAttribute lançar.
+ */
+const ATTRIBUTE_NAME = /^[A-Za-z_:][A-Za-z0-9_:.-]*$/;
+/** Nomes de tag válidos: letras, dígitos, `-` e `:` (custom elements e SVG com prefixo) */
+const TAG_NAME = /^[A-Za-z][A-Za-z0-9:-]*$/;
+
+export function isValidAttributeName(name: string): boolean {
+  return ATTRIBUTE_NAME.test(name);
+}
+
+export function isValidTagName(name: string): boolean {
+  return TAG_NAME.test(name);
+}
+
+// Props que viram HTML/markup: bloqueadas (use unsafeHtml() como filho)
+const HTML_SINK_PROPS = new Set(["innerhtml", "outerhtml", "insertadjacenthtml", "srcdoc"]);
+// Nomes que alterariam o protótipo/identidade do elemento
+const PROTOTYPE_PROPS = new Set(["__proto__", "constructor", "prototype"]);
+// Avisos só existem em dev: toda mensagem é montada atrás de
+// `process.env.NODE_ENV !== "production"` escrito por extenso (o bundler só elimina
+// os textos quando a expressão aparece inline, não via constante intermediária).
+
+// Style por allowlist: nome CSS válido (custom property, dashed ou camelCase) e
+// que não seja chave de CSSStyleDeclaration que não é propriedade CSS
+// (cssText injeta CSS arbitrário; métodos não podem ser sobrescritos).
+const STYLE_KEY = /^(?:--[A-Za-z0-9_-]+|-?[A-Za-z][A-Za-z0-9-]*)$/;
+const STYLE_FORBIDDEN_KEYS = new Set([
+  "cssText",
+  "length",
+  "parentRule",
+  "__proto__",
+  "constructor",
+  "prototype",
+  "setProperty",
+  "getPropertyValue",
+  "getPropertyPriority",
+  "removeProperty",
+  "item",
+]);
 
 /**
  * Tipos de operações de props (Functional Core)
@@ -21,6 +67,7 @@ export type PropUpdateType =
   | "SET_CLASS"
   | "SET_STYLE"
   | "SET_SELECT_OPTIONS"
+  | "BLOCKED"
   | "NO_OP";
 
 /**
@@ -38,6 +85,8 @@ export interface PropUpdate {
     useFallbackToAttribute?: boolean;
     // Para SET_CLASS
     processedClassName?: string;
+    // Aviso de dev a ser emitido pelo shell (BLOCKED ou valor sanitizado)
+    warning?: string;
   };
 }
 
@@ -48,17 +97,62 @@ export interface PropUpdate {
  * @param key - Nome da prop
  * @param value - Valor da prop
  * @param hasProperty - Se o elemento tem a propriedade nativa
+ * @param isEventProp - Se `key.toLowerCase()` é propriedade de evento do elemento
+ *   (padrão true: sem informação, um on* é tratado como evento, falhando fechado)
  * @returns Comando de atualização (imutável)
  */
 export function computePropUpdate(
   elementType: string,
   key: string,
   value: unknown,
-  hasProperty: boolean
+  hasProperty: boolean,
+  isEventProp = true
 ): PropUpdate {
   // 1) NO_OP: ignora 'children'
   if (key === "children") {
     return { type: "NO_OP", key, value };
+  }
+
+  // 1.1) Nome de atributo inválido (S5): descarta, nunca chega ao DOM
+  if (!isValidAttributeName(key)) {
+    return blocked(key, value, process.env.NODE_ENV !== "production" ? `atributo inválido: ${JSON.stringify(key)}` : "");
+  }
+
+  // 1.2) Event handlers (S3/SEC-14): setProp registra funções via addEventListener
+  // antes de chegar aqui. Um on* é evento se o valor parece handler OU se o nome é
+  // propriedade de evento do elemento; os demais (one, online, once) são atributos.
+  if (key.length > 2 && /^on/i.test(key)) {
+    const handlerLike = isEventHandler(value) || isEventTuple(value);
+    if (handlerLike) {
+      // Só chega aqui por prop reativa / hidratação: handlers não são reativos
+      return blocked(
+        key,
+        value,
+        process.env.NODE_ENV !== "production" ? `${key}: handlers reativos não são suportados; passe uma função` : "",
+      );
+    }
+    if (isEventProp) {
+      if (value == null || value === false) return { type: "NO_OP", key, value };
+      return blocked(
+        key,
+        value,
+        process.env.NODE_ENV !== "production" ? `${key} só aceita função, objeto handleEvent ou tupla [fn, opções]` : "",
+      );
+    }
+  }
+
+  // 1.3) Props que viram HTML ou alteram o protótipo (S4/SEC-05)
+  const lowerKey = key.toLowerCase();
+  if (HTML_SINK_PROPS.has(lowerKey)) {
+    if (value == null || value === false) return { type: "NO_OP", key, value };
+    return blocked(
+      key,
+      value,
+      process.env.NODE_ENV !== "production" ? `${key} bloqueada (injeta HTML). Para HTML confiável use um filho unsafeHtml()` : "",
+    );
+  }
+  if (PROTOTYPE_PROPS.has(lowerKey)) {
+    return blocked(key, value, process.env.NODE_ENV !== "production" ? `${key} não pode ser prop` : "");
   }
 
   // 2) SET_CLASS: class ou className
@@ -82,7 +176,21 @@ export function computePropUpdate(
 
   // 3) SET_STYLE: style object
   if (key === "style" && value && typeof value === "object") {
-    return { type: "SET_STYLE", key, value };
+    const safe: Record<string, unknown> = {};
+    const dropped: string[] = [];
+    for (const k of Object.keys(value)) {
+      if (STYLE_KEY.test(k) && !STYLE_FORBIDDEN_KEYS.has(k)) {
+        safe[k] = (value as Record<string, unknown>)[k];
+      } else {
+        dropped.push(k);
+      }
+    }
+    return {
+      type: "SET_STYLE",
+      key,
+      value: safe,
+      ...(process.env.NODE_ENV !== "production" && dropped.length ? { metadata: { warning: `style ignora ${dropped.join(", ")}` } } : {}),
+    };
   }
 
   // 4) SET_VALUE: input/textarea/select controlados
@@ -111,18 +219,48 @@ export function computePropUpdate(
     return { type: "REMOVE_ATTRIBUTE", key, value };
   }
 
+  // 6.1) Atributos de URL (S2/SEC-04): SafeUrl passa; o resto segue a política
+  let finalValue: unknown = value;
+  let warning: string | undefined;
+  if (isSafeUrl(value)) {
+    finalValue = value.value;
+  } else if (isUrlAttribute(key, elementType)) {
+    const result = evaluateUrl(key, String(value), elementType);
+    finalValue = result.value;
+    if (result.blocked) {
+      warning = process.env.NODE_ENV !== "production" ? blockedUrlMessage(key, String(value)) : undefined;
+    }
+  }
+
   // 7) SET_PROPERTY: propriedade nativa do elemento
   if (hasProperty) {
     return {
       type: "SET_PROPERTY",
       key,
-      value,
-      metadata: { useFallbackToAttribute: true },
+      value: finalValue,
+      metadata: { useFallbackToAttribute: true, ...(warning ? { warning } : {}) },
     };
   }
 
   // 8) SET_ATTRIBUTE: atributo HTML padrão
-  return { type: "SET_ATTRIBUTE", key, value: String(value) };
+  return {
+    type: "SET_ATTRIBUTE",
+    key,
+    value: String(finalValue),
+    ...(warning ? { metadata: { warning } } : {}),
+  };
+}
+
+// Comando BLOCKED: não toca o DOM; o shell emite o aviso de dev
+function blocked(key: string, value: unknown, reason: string): PropUpdate {
+  return { type: "BLOCKED", key, value, metadata: { warning: reason } };
+}
+
+// Shell: aviso de dev (silencioso em produção)
+function emitPropWarning(update: PropUpdate): void {
+  const warning = update.metadata?.warning;
+  // Uma vez por tipo de problema e nome de prop (não por valor)
+  if (warning) securityWarn(warning, `${update.type}:${update.key.toLowerCase()}`);
 }
 
 /**
@@ -134,6 +272,14 @@ export function computePropUpdate(
  */
 export function hasNativeProperty(element: Elementish, key: string): boolean {
   return key in element;
+}
+
+/**
+ * Função pura auxiliar: o nome (em minúsculas) é uma propriedade de evento do elemento?
+ * (onclick, onerror... existem em HTMLElement/SVGElement; one, online, once não)
+ */
+export function isEventProperty(element: Elementish, key: string): boolean {
+  return key.toLowerCase() in element;
 }
 
 /**
@@ -156,9 +302,13 @@ export function getElementType(element: Elementish): string {
  * @param update - Comando de atualização (vindo de computePropUpdate)
  */
 export function applyPropUpdate(element: Elementish, update: PropUpdate): void {
+  // Qualquer comando pode carregar um aviso de dev (valor sanitizado/bloqueado)
+  emitPropWarning(update);
+
   switch (update.type) {
     case "NO_OP":
-      // Nenhuma operação
+    case "BLOCKED":
+      // Nenhuma operação (BLOCKED já avisou acima)
       return;
 
     case "SET_CLASS": {
@@ -170,7 +320,17 @@ export function applyPropUpdate(element: Elementish, update: PropUpdate): void {
 
     case "SET_STYLE": {
       if (element instanceof HTMLElement && update.value && typeof update.value === "object") {
-        Object.assign(element.style, update.value as Record<string, unknown>);
+        // Os nomes já foram filtrados no core; aqui só aplica o que existe de fato
+        const st = element.style as unknown as Record<string, unknown> & CSSStyleDeclaration;
+        for (const [k, v] of Object.entries(update.value as Record<string, unknown>)) {
+          const empty = v == null || v === false;
+          if (k.includes("-")) {
+            if (empty) st.removeProperty(k);
+            else st.setProperty(k, String(v));
+          } else if (k in st && typeof st[k] !== "function") {
+            st[k] = empty ? "" : v;
+          }
+        }
       }
       return;
     }

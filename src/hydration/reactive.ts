@@ -1,7 +1,8 @@
 import { addCleanup } from "../lifecycle/cleanup";
 import { safeHtmlToFragment } from "../rendering/children";
+import { applyPropUpdate, computePropUpdate, getElementType, isEventProperty } from "../rendering/props-core";
 import { isSafeHtml } from "../safe-html";
-import type { Reactive } from "../types";
+import type { Elementish, Reactive } from "../types";
 import { processClassValue } from "../utils/helpers";
 
 /**
@@ -30,7 +31,10 @@ export function hydrateReactiveAttributes(
       } else if (prop === "class") {
         element.className = processClassValue(value);
       } else {
-        element.setAttribute(prop, String(value ?? ""));
+        // SEC-13: o nome vem do DOM (data-reactive-*); passa pela mesma política das
+        // props (nome válido, sem on*/innerHTML/srcdoc, URLs sanitizadas)
+        const el = element as Elementish;
+        applyPropUpdate(el, computePropUpdate(getElementType(el), prop, String(value ?? ""), false, isEventProperty(el, prop)));
       }
     });
 

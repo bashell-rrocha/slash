@@ -20,3 +20,8 @@ export type {
   StreamChunk,
   UniversalRenderOptions,
 } from "./types";
+
+// --- SEC-B: política de URLs (início do bloco; manter no fim do arquivo) ---
+export { isSafeUrl, unsafeUrl } from "./safe-url";
+export type { SafeUrl } from "./safe-url";
+// --- SEC-B (fim do bloco) ---
