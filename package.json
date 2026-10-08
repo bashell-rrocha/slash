@@ -1,7 +1,7 @@
 {
   "name": "@_bashell/slash",
   "version": "0.0.1",
-  "description": "htm + hyper + reactive signals (no VDOM) — tiny, fast, DX-first",
+  "description": "htm + hyper + observable state (no VDOM) — tiny, fast, DX-first",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/bashell-rrocha/slash.git"
