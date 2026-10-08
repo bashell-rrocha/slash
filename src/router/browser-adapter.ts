@@ -13,6 +13,8 @@ export interface EnvironmentAdapter {
   isBrowser(): boolean
   /** Get current location */
   getCurrentLocation(): string
+  /** Caminho vindo de location.hash (sem o "#"), usado no modo hash */
+  getHashLocation?(): string
   /** Get serialized server state (for hydration) */
   getServerState(): any | null
 }
@@ -35,6 +37,13 @@ export function createBrowserAdapter(): EnvironmentAdapter {
         return "/"
       }
       return window.location.pathname + window.location.search
+    },
+
+    getHashLocation(): string {
+      if (typeof window === "undefined") {
+        return ""
+      }
+      return window.location.hash.slice(1)
     },
 
     getServerState(): any | null {
@@ -79,7 +88,8 @@ export function createMockAdapter(config: {
  */
 export function detectInitialPath(
   adapter: EnvironmentAdapter,
-  configuredInitialPath?: string
+  configuredInitialPath?: string,
+  mode: "history" | "hash" = "history"
 ): string | undefined {
   // If explicitly configured, use it
   if (configuredInitialPath) {
@@ -99,6 +109,10 @@ export function detectInitialPath(
 
   // Fallback to current browser location
   if (adapter.isBrowser()) {
+    // Modo hash: a rota vem de location.hash (inclusive query), como em history.ts
+    if (mode === "hash" && adapter.getHashLocation) {
+      return adapter.getHashLocation() || "/"
+    }
     return adapter.getCurrentLocation()
   }
 

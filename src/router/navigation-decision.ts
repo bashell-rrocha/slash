@@ -78,6 +78,14 @@ export function findRouteMatch(
 }
 
 /**
+ * Indica se há algum guard aplicável (globais ou da rota casada)
+ * Pure function - no side effects
+ */
+export function hasApplicableGuards(match: RouteMatch, globalGuards: NavigationGuard[]): boolean {
+  return globalGuards.length > 0 || (match.route.guards?.length ?? 0) > 0
+}
+
+/**
  * Compute navigation decision
  * Pure function (except for guard execution which is async)
  *

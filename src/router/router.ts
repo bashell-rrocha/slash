@@ -10,7 +10,12 @@ import type {
   RouteMatch,
 } from "./types"
 import { createHistory, type History } from "./history"
-import { findRouteMatch, parseNavigationPath, computeNavigation } from "./navigation-decision"
+import {
+  findRouteMatch,
+  parseNavigationPath,
+  computeNavigation,
+  hasApplicableGuards,
+} from "./navigation-decision"
 import { createBrowserAdapter, detectInitialPath } from "./browser-adapter"
 import { splitPath } from "./utils"
 
@@ -115,14 +120,43 @@ export function createRouter(config: RouterConfig): RouterInstance {
   }
 
   // Initialize router using adapter for environment detection
-  const initialPath = detectInitialPath(adapter, config.initialPath)
+  const initialPath = detectInitialPath(adapter, config.initialPath, config.mode || "history")
+
+  // Só a URL lida do browser passa pelos guards; initialPath explícito e estado
+  // do servidor (hidratação) mantêm o casamento síncrono
+  const fromBrowserLocation =
+    !config.initialPath && !adapter.getServerState()?.currentRoute?.path
+
+  // Resolve quando a navegação inicial termina
+  let ready: Promise<void> = Promise.resolve()
+  // Durante a navegação inicial, o replace dela não deve reentrar via history.listen
+  let initialPending = false
 
   if (initialPath) {
-    // Parse and match initial path synchronously (SSR or hydration)
     const input = parseNavigationPath(initialPath)
     const match = findRouteMatch(input.pathname, input.query, config.routes, config.fallback)
 
-    if (match) {
+    if (match && fromBrowserLocation && !adapter.isSSR() && hasApplicableGuards(match, allGuards)) {
+      // Browser com guard aplicável: passa pelo mesmo caminho de navigate (replace),
+      // sem expor a rota protegida antes da decisão
+      state.set({
+        currentRoute: null,
+        params: {},
+        query: input.query,
+        meta: {},
+        isNavigating: true,
+      })
+      initialPending = true
+      ready = navigate(initialPath, true)
+        .catch((err) => {
+          console.error("Navigation error:", err)
+          state.set({ ...state.get(), isNavigating: false })
+        })
+        .finally(() => {
+          initialPending = false
+        })
+    } else if (match) {
+      // SSR (autorização é responsabilidade do servidor) ou rota sem guard: síncrono
       state.set({
         currentRoute: match,
         params: match.params,
@@ -136,6 +170,7 @@ export function createRouter(config: RouterConfig): RouterInstance {
   // Listen to history changes (browser only)
   if (!adapter.isSSR()) {
     history.listen((location) => {
+      if (initialPending) return
       navigate(location, true, true).catch((err) => {
         console.error("Navigation error:", err)
       })
@@ -169,5 +204,7 @@ export function createRouter(config: RouterConfig): RouterInstance {
     currentRoute(): RouteMatch | null {
       return state.get().currentRoute
     },
+
+    ready,
   }
 }
