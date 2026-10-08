@@ -105,7 +105,7 @@ Slash is secure by default. You write templates the normal way and the library d
 - **Event handlers must be functions.** Any prop starting with `on` (any case) is an event, and only a function, a handler object or a `[fn, options]` tuple is attached. Anything else (`onclick="alert(1)"`, booleans, objects) is dropped with a dev warning, on the client and on the server. A plain attribute that starts with "on" must use a `data-` prefix.
 - **`Link` only navigates to app paths** (`/x`, `?q`, `#h`). Anything else is blocked unless you opt in with `external`.
 - **State and loader data go into `<script>` safely** (`serializeStateForScript`, `serializeLoaderData`), so a value like `</script>` cannot break out.
-- `innerHTML`, `outerHTML`, `insertAdjacentHTML` and `srcdoc` props are blocked on the client (on the server they are emitted as inert, escaped attributes), `style` is checked against a CSS policy (a backslash outside a quoted string drops the declaration), and the URL in `<meta http-equiv="refresh" content="N;url=...">` follows the same URL rules (other meta content is untouched).
+- `innerHTML`, `outerHTML`, `insertAdjacentHTML` and `srcdoc` props are blocked on the client (on the server they are emitted as inert, escaped attributes), `style` is checked against a strict CSS policy (a declaration is dropped for any `/*` comment, a backslash outside quotes, a malformed string, an unquoted `url()` with characters outside a safe set — use `url("a b.png")` — or `-moz-binding`/`behavior`; styles over 8 KB are dropped), and the URL in `<meta http-equiv="refresh" content="N;url=...">` follows the same URL rules (other meta content is untouched).
 
 ```typescript
 import { html } from "@_bashell/slash/core";

@@ -18,7 +18,7 @@ Tudo abaixo vale no cliente e no SSR, sem configuração. Referência completa: 
 - **SEC-06, vazamento entre requisições:** o estado do SSR deixou de ser global; `renderToStream` simultâneos não misturam dados entre usuários.
 - **SEC-07, `Link`:** só navega para caminhos do app (`/x`, `?q`, `#h`); `to="javascript:..."` ou `//outro.com` não navegam mais. Link externo exige `external`.
 - **SEC-08, nomes de tag:** nome de tag dinâmico inválido lança erro em vez de gerar HTML quebrado.
-- **SEC-09, `style`:** declarações CSS inseguras são descartadas, em strings e objetos, e qualquer barra invertida fora de aspas invalida a declaração (escapes dentro de strings entre aspas continuam válidos; string sem fechamento é descartada). `url()` segue a mesma lista de permissão de `href`/`src` (relativos e `data:image/png|jpeg|gif|webp|avif` passam; `svg+xml` e `javascript:` não); `image()`, `image-set()`, `cross-fade()`, `element()`, `paint()`, `src()` e `expression()` são fiscalizadas; um `style` que fica vazio é omitido.
+- **SEC-09, `style`:** política de CSS estrita e fail-closed, em strings e objetos. Uma declaração é descartada (com aviso em dev) quando contém `/*` em qualquer lugar, tem uma string com quebra de linha crua, CR, FF ou NUL, barra invertida seguida de quebra de linha ou sem fechamento, tem barra invertida fora de aspas (escapes dentro de aspas continuam válidos), tem `url(` sem aspas com caracteres fora de `[A-Za-z0-9-._~:/?#@!$&+,;=%]`, ou usa `-moz-binding`, `behavior` ou `behaviour` como propriedade. `url()`, com ou sem aspas, segue a mesma lista de permissão de `href`/`src` (relativos e `data:image/png|jpeg|gif|webp|avif` passam; `svg+xml` e `javascript:` não); `image()`, `image-set()`, `cross-fade()`, `element()`, `paint()`, `src()` e `expression()` são fiscalizadas. Um `style` com mais de 8 KB é descartado por inteiro e um `style` vazio é omitido. Quebras de linha entre declarações são válidas.
 - **SEC-10, `formToObject`:** nomes de campo como `__proto__` ou `constructor` não colidem mais com `Object.prototype`.
 - **SEC-11, `parseQuery`:** percent-encoding malformado (`?q=%E0%A4%A`) não derruba mais a navegação; valores com `=` não são truncados.
 - **SEC-12, `deepClone`:** um `__proto__` vindo de JSON não altera o protótipo do clone, e uma chave `hasOwnProperty` não lança.
@@ -42,6 +42,9 @@ Tudo abaixo vale no cliente e no SSR, sem configuração. Referência completa: 
 - **Internos removidos:** `__addBatchEndCallback`, `__removeBatchEndCallback` e `__recordBatchUpdate`. Migre: use `batch()` para agrupar e `state.watch()` para observar.
 - **Query e `formToObject()` sem protótipo** (`Object.create(null)`). Migre: `Object.hasOwn(obj, "campo")` no lugar de `obj.hasOwnProperty(...)`.
 - **Escapes CSS fora de aspas não são aceitos** (`\6c`, `\2022` soltos no valor ou no nome da propriedade). Migre: coloque o valor entre aspas (`content:"\2022"`).
+- **Comentários `/* */` não são permitidos em `style`** (a declaração com `/*` é descartada, até dentro de aspas). Migre: remova o comentário do `style` (comente no código ou no CSS).
+- **`url()` sem aspas só aceita `[A-Za-z0-9-._~:/?#@!$&+,;=%]`.** Migre: use aspas, `url("a b.png")`.
+- **`style` com mais de 8 KB é descartado por inteiro.** Migre: mova o excesso para uma folha de estilos ou classes.
 - **Strings de `style` são sanitizadas no cliente** (antes eram aplicadas como vieram); declarações inseguras são removidas. Migre: mantenha só valores CSS seguros; para uma URL fora da política (em `url()` ou no `content` de um `meta refresh`), use `unsafeUrl()` no atributo ou no `content`, não dentro da string de `style`.
 - **`unsafeUrl()` só vale em atributos de URL e no `content` de `<meta http-equiv="refresh">`**, e `SafeHtml`/`SafeUrl` guardados em estado reativo perdem a marca ao serializar para hidratação (falham fechado: viram texto ou a URL é sanitizada). Reembrulhe no cliente se precisar.
 
@@ -71,7 +74,7 @@ Tudo abaixo vale no cliente e no SSR, sem configuração. Referência completa: 
 
 ### Tamanho do bundle
 
-Bundle de produção do core (app com `createState`, `html` e `render`, minificado): **7,87 KB gzip / 6,98 KB brotli**, contra 5,02 KB / 4,39 KB antes do ciclo de segurança. O aumento é o custo da camada de segurança: política de URLs, política de CSS com decodificação de escapes, `SafeHtml`/`SafeUrl` e tratamento de `meta refresh` (além da validação de atributos e do `srcdoc`); as mensagens de aviso de dev são removidas do build de produção. Limites do teste de tamanho: 8,2 KB gzip / 7,25 KB brotli.
+Bundle de produção do core (app com `createState`, `html` e `render`, minificado): **7,94 KB gzip / 7,03 KB brotli**, contra 5,02 KB / 4,39 KB antes do ciclo de segurança. O aumento é o custo da camada de segurança: política de URLs, política de CSS estrita, `SafeHtml`/`SafeUrl` e tratamento de `meta refresh` (além da validação de atributos e do `srcdoc`); as mensagens de aviso de dev são removidas do build de produção. Limites do teste de tamanho: 8,2 KB gzip / 7,25 KB brotli.
 
 ## [0.0.2] — 2026-10-08
 

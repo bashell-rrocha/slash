@@ -79,15 +79,24 @@ Nomes de atributo inválidos (por exemplo com espaço ou `>`) são descartados, 
 
 ## `style`
 
-`style` aceita string ou objeto, e cada declaração passa por uma política de CSS no cliente e no servidor. Qualquer barra invertida (`\`) **fora de uma string entre aspas** invalida a declaração (ela é descartada, com aviso em dev), tanto no nome quanto no valor: `background:ur\6c(javascript:...)` e `c\6flor:red` não passam. Escapes **dentro de aspas** continuam funcionando (`content:"\2022"`, `font-family:"Fira \43ode"`). Uma string sem fechamento falha fechado (declaração descartada) e comentários `/* */` só são reconhecidos fora de strings.
+`style` aceita string ou objeto, e cada declaração passa por uma política de CSS estrita no cliente e no servidor. Uma declaração é descartada (com aviso em dev) quando:
+
+- contém `/*` em qualquer lugar: comentários não são permitidos em `style` inline (`color:red/**/` e `content:"/*"` são descartados);
+- tem uma barra invertida (`\`) **fora de aspas**, no nome ou no valor: `background:ur\6c(javascript:...)` e `c\6flor:red` não passam. Escapes **dentro de aspas** continuam funcionando (`content:"\2022"`, `font-family:"Fira \43ode"`);
+- tem uma string com quebra de linha crua, CR, FF ou NUL, com barra invertida seguida de quebra de linha, ou sem fechamento;
+- tem um `url(` **sem aspas** cujo argumento usa caracteres fora de `[A-Za-z0-9-._~:/?#@!$&+,;=%]`. Qualquer outro caractere exige aspas: `url(a b.png)` é descartado, `url("a b.png")` passa.
+
+Quebras de linha **entre** declarações são válidas, então um template literal em várias linhas funciona. Um `style` com mais de **8 KB** (string, ou chaves mais valores de um objeto) é descartado por inteiro, e um que fica vazio é omitido.
+
+Regras por nome e valor:
 
 - o nome precisa ser um identificador CSS válido (propriedades `--custom` são mantidas como estão);
-- o nome não pode ser `-moz-binding`, `behavior` nem `behaviour` (`scroll-behavior` é permitido);
+- a propriedade não pode ser `-moz-binding`, `behavior` nem `behaviour` (`scroll-behavior` é permitido);
 - o valor não pode conter `;` (fora de strings e de `url()`), `{`, `}`, `<`, `expression(`, `javascript:`, `vbscript:`, `behavior:`, `-moz-binding` nem `@import`;
-- `url()` segue a mesma lista de permissão de `href`/`src`: caminhos relativos e `http(s)` passam, assim como `data:image/png|jpeg|gif|webp|avif`; `data:image/svg+xml`, `javascript:` e semelhantes são bloqueados;
+- `url()` (com ou sem aspas) segue a mesma lista de permissão de `href`/`src`: caminhos relativos e `http(s)` passam, assim como `data:image/png|jpeg|gif|webp|avif`; `data:image/svg+xml`, `javascript:` e semelhantes são bloqueados;
 - `image()`, `image-set()`, `cross-fade()`, `element()`, `paint()`, `src()` e `expression()` são fiscalizadas.
 
-Uma declaração insegura é descartada e as demais são mantidas: `color:red;background:url(javascript:alert(1))` vira `color:red`. Um `style` que fica vazio é omitido. No SSR, chaves de objeto em camelCase viram propriedades CSS e prefixos de fornecedor saem como `-ms-`, `-webkit-` e `-moz-`. Em objetos, chaves como `cssText`, `setProperty` ou `__proto__` são ignoradas.
+Uma declaração insegura é descartada e as demais são mantidas: `color:red;background:url(javascript:alert(1))` vira `color:red`. No SSR, chaves de objeto em camelCase viram propriedades CSS e prefixos de fornecedor saem como `-ms-`, `-webkit-` e `-moz-`. Em objetos, chaves como `cssText`, `setProperty` ou `__proto__` são ignoradas.
 
 ## `Link`
 
