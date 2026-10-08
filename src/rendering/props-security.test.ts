@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { h, html } from "../hyper";
 import { unsafeUrl } from "../safe-url";
+import { resetSecurityWarnings } from "../utils/security-warn";
 import { BLOCKED_URL } from "../utils/url-policy";
 import { computePropUpdate, isValidAttributeName, isValidTagName } from "./props-core";
 import { setProp } from "./props";
@@ -12,6 +13,7 @@ import { setProp } from "./props";
 const U = "javascript:alert(1)";
 let warn: ReturnType<typeof spyOn>;
 beforeEach(() => {
+  resetSecurityWarnings();
   warn = spyOn(console, "warn").mockImplementation(() => {});
 });
 afterEach(() => warn.mockRestore());
@@ -150,9 +152,10 @@ describe("S3 / SEC-14 cliente: on* só com função", () => {
     expect(i.getAttribute("onerror")).toBeNull();
     expect(i.getAttribute("src")).toBe("x");
   });
-  test("onfoo desconhecido com string também é ignorado", () => {
+  test("onfoo (não é propriedade de evento) com string é atributo inerte, não handler", () => {
     const d = h("div", { onfoo: "alert(1)" }) as Element;
-    expect(d.getAttribute("onfoo")).toBeNull();
+    expect(d.getAttribute("onfoo")).toBe("alert(1)");
+    expect((d as any).onfoo).toBeUndefined();
   });
   test("onClick com string é ignorado", () => {
     const b = h("button", { onClick: "alert(1)" }) as Element;
@@ -178,10 +181,36 @@ describe("S3 / SEC-14 cliente: on* só com função", () => {
     expect(b.getAttribute("onClick")).toBeNull();
     expect(b.getAttribute("onclick")).toBeNull();
   });
-  test("computePropUpdate bloqueia qualquer on*", () => {
+  test("computePropUpdate: on* de evento bloqueia; sem informação falha fechado", () => {
+    expect(computePropUpdate("div", "onclick", "x", true, true).type).toBe("BLOCKED");
+    expect(computePropUpdate("div", "ONCLICK", "x", true, true).type).toBe("BLOCKED");
     expect(computePropUpdate("div", "onclick", "x", true).type).toBe("BLOCKED");
-    expect(computePropUpdate("div", "ONCLICK", "x", false).type).toBe("BLOCKED");
     expect(computePropUpdate("div", "onfoo", "x", false).type).toBe("BLOCKED");
+  });
+  test("on* que não é propriedade de evento do elemento é atributo normal", () => {
+    const d = h("div", { one: "1", online: "x", once: "y" }) as Element;
+    expect(d.getAttribute("one")).toBe("1");
+    expect(d.getAttribute("online")).toBe("x");
+    expect(d.getAttribute("once")).toBe("y");
+    expect(computePropUpdate("div", "online", "x", false, false).type).toBe("SET_ATTRIBUTE");
+  });
+  test("handler com nome fora da lista nativa vira listener de evento custom", () => {
+    let n = 0;
+    const d = h("div", { onfoo: () => n++ }) as Element;
+    d.dispatchEvent(new Event("foo"));
+    expect(n).toBe(1);
+  });
+  test("nome de evento nativo com string é descartado (onerror em img, onload em body)", () => {
+    const i = h("img", { onerror: "alert(1)" }) as Element;
+    expect(i.getAttribute("onerror")).toBeNull();
+    const b = h("div", { onmouseover: "alert(1)" }) as Element;
+    expect(b.getAttribute("onmouseover")).toBeNull();
+  });
+  test("handler reativo: aviso diz que não é suportado e pede uma função", () => {
+    h("button", { onClick: reactive(() => {}) });
+    const msg = String(warn.mock.calls[0]?.[0]);
+    expect(msg).toMatch(/reativ/i);
+    expect(msg).toMatch(/função/i);
   });
 });
 
@@ -222,6 +251,57 @@ describe("SEC-09 cliente: style", () => {
   test("computePropUpdate SET_STYLE sem as chaves perigosas", () => {
     const u = computePropUpdate("div", "style", { cssText: "x", length: 1, parentRule: 1, color: "red" }, true);
     expect(u.value).toEqual({ color: "red" });
+  });
+  test("allowlist: __proto__, constructor, métodos, chaves numéricas e inválidas são ignorados sem lançar", () => {
+    const evil = JSON.parse(
+      '{"__proto__":{"x":1},"constructor":"x","setProperty":"x","getPropertyValue":"x","item":"x","0":"x","color":"red","a;b":"x","":"x"}',
+    );
+    const d = h("div", { style: evil }) as HTMLElement;
+    expect(d.style.color).toBe("red");
+    expect(typeof d.style.setProperty).toBe("function");
+    expect(typeof d.style.item).toBe("function");
+    expect(d.style.constructor).not.toBe("x");
+    const u = computePropUpdate("div", "style", evil, true);
+    expect(Object.keys(u.value as object)).toEqual(["color"]);
+  });
+  test("custom properties e nomes com hífen usam setProperty", () => {
+    const d = h("div", { style: { "--tema": "azul", "background-color": "red", "-webkit-line-clamp": "2" } }) as HTMLElement;
+    expect(d.style.getPropertyValue("--tema")).toBe("azul");
+    expect(d.style.backgroundColor).toBe("red");
+  });
+  test("camelCase que não é propriedade de style é ignorado", () => {
+    const d = h("div", { style: { notAProp: "x", color: "red" } }) as HTMLElement;
+    expect((d.style as any).notAProp).toBeUndefined();
+    expect(d.style.color).toBe("red");
+  });
+  test("valor null remove a propriedade", () => {
+    const d = h("div", { style: { color: "red" } }) as HTMLElement;
+    setProp(d, "style", { color: null, "--x": null });
+    expect(d.style.color).toBe("");
+  });
+});
+
+describe("avisos deduplicados (cliente)", () => {
+  test("a mesma prop bloqueada avisa uma vez", () => {
+    h("div", { innerHTML: "a" });
+    h("div", { innerHTML: "b" });
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("atributos de URL extras no cliente", () => {
+  test("SMIL animate to/values e imagesrcset", () => {
+    const a = h("animate", { to: U, values: `a;${U}` }) as Element;
+    expect(a.getAttribute("to")).toBe(BLOCKED_URL);
+    expect(a.getAttribute("values")).toBe(`a;${BLOCKED_URL}`);
+    const l = h("link", { imagesrcset: `/a.png 1x, ${U} 2x` }) as Element;
+    expect(l.getAttribute("imagesrcset")).toBe(`/a.png 1x, ${BLOCKED_URL} 2x`);
+    const i = h("img", { longdesc: U, lowsrc: U }) as Element;
+    expect(i.getAttribute("longdesc")).toBe(BLOCKED_URL);
+    expect(i.getAttribute("lowsrc")).toBe(BLOCKED_URL);
+  });
+  test("to em div não é tratado como URL", () => {
+    expect((h("div", { to: U }) as Element).getAttribute("to")).toBe(U);
   });
 });
 

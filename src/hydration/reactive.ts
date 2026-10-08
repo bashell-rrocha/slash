@@ -1,6 +1,6 @@
 import { addCleanup } from "../lifecycle/cleanup";
 import type { Elementish, Reactive } from "../types";
-import { applyPropUpdate, computePropUpdate, getElementType } from "../rendering/props-core";
+import { applyPropUpdate, computePropUpdate, getElementType, isEventProperty } from "../rendering/props-core";
 import { processClassValue } from "../utils/helpers";
 
 /**
@@ -32,7 +32,7 @@ export function hydrateReactiveAttributes(
         // SEC-13: o nome vem do DOM (data-reactive-*); passa pela mesma política das
         // props (nome válido, sem on*/innerHTML/srcdoc, URLs sanitizadas)
         const el = element as Elementish;
-        applyPropUpdate(el, computePropUpdate(getElementType(el), prop, String(value ?? ""), false));
+        applyPropUpdate(el, computePropUpdate(getElementType(el), prop, String(value ?? ""), false, isEventProperty(el, prop)));
       }
     });
 
