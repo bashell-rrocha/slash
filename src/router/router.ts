@@ -15,6 +15,8 @@ import {
   parseNavigationPath,
   computeNavigation,
   hasApplicableGuards,
+  isRedirectLimitExceeded,
+  MAX_REDIRECTS,
 } from "./navigation-decision"
 import { createBrowserAdapter, detectInitialPath } from "./browser-adapter"
 import { splitPath } from "./utils"
@@ -41,14 +43,44 @@ export function createRouter(config: RouterConfig): RouterInstance {
   // Global guards
   const allGuards = config.guards || []
 
+  // Token de sequência: cada navegação captura o seu e descarta o resultado
+  // se uma navegação mais nova começou durante algum await
+  let navSeq = 0
+
   /**
    * Navigate to a path using pure decision logic
+   * `initial`: verificação de guards da rota inicial (bloqueio zera a rota)
    */
-  async function navigate(
+  function navigate(
     path: string,
     replace: boolean = false,
-    fromHistory: boolean = false
+    fromHistory: boolean = false,
+    initial: boolean = false
   ): Promise<void> {
+    return run(path, replace, fromHistory, initial, ++navSeq, 0)
+  }
+
+  async function run(
+    path: string,
+    replace: boolean,
+    fromHistory: boolean,
+    initial: boolean,
+    seq: number,
+    depth: number
+  ): Promise<void> {
+    // Redirects em cadeia demais: provável loop entre guards
+    if (isRedirectLimitExceeded(depth)) {
+      console.error(`Navigation aborted: more than ${MAX_REDIRECTS} redirects (${path})`)
+      state.set({
+        currentRoute: null,
+        params: {},
+        query: {},
+        meta: {},
+        isNavigating: false,
+      })
+      return
+    }
+
     // Set navigating flag
     const currentState = state.get()
     state.set({
@@ -65,9 +97,12 @@ export function createRouter(config: RouterConfig): RouterInstance {
       config.fallback
     )
 
+    // Navegação mais nova começou: descarta este resultado
+    if (seq !== navSeq) return
+
     // Handle redirect
     if (decision.redirect) {
-      await navigate(decision.redirect, replace, fromHistory)
+      await run(decision.redirect, replace, fromHistory, initial, seq, depth + 1)
       return
     }
 
@@ -81,6 +116,15 @@ export function createRouter(config: RouterConfig): RouterInstance {
           currentRoute: null,
           params: {},
           query: input.query,
+          meta: {},
+          isNavigating: false,
+        })
+      } else if (initial) {
+        // Rota inicial bloqueada: não mantém a rota aplicada de forma síncrona
+        state.set({
+          currentRoute: null,
+          params: {},
+          query: {},
           meta: {},
           isNavigating: false,
         })
@@ -122,8 +166,8 @@ export function createRouter(config: RouterConfig): RouterInstance {
   // Initialize router using adapter for environment detection
   const initialPath = detectInitialPath(adapter, config.initialPath, config.mode || "history")
 
-  // Só a URL lida do browser passa pelos guards; initialPath explícito e estado
-  // do servidor (hidratação) mantêm o casamento síncrono
+  // initialPath explícito ou estado do servidor: a rota é aplicada de forma síncrona
+  // (sem flash, markup do SSR preservado) e os guards rodam em seguida
   const fromBrowserLocation =
     !config.initialPath && !adapter.getServerState()?.currentRoute?.path
 
@@ -136,34 +180,39 @@ export function createRouter(config: RouterConfig): RouterInstance {
     const input = parseNavigationPath(initialPath)
     const match = findRouteMatch(input.pathname, input.query, config.routes, config.fallback)
 
-    if (match && fromBrowserLocation && !adapter.isSSR() && hasApplicableGuards(match, allGuards)) {
-      // Browser com guard aplicável: passa pelo mesmo caminho de navigate (replace),
-      // sem expor a rota protegida antes da decisão
-      state.set({
-        currentRoute: null,
-        params: {},
-        query: input.query,
-        meta: {},
-        isNavigating: true,
-      })
-      initialPending = true
-      ready = navigate(initialPath, true)
-        .catch((err) => {
-          console.error("Navigation error:", err)
-          state.set({ ...state.get(), isNavigating: false })
+    if (match) {
+      const guarded = !adapter.isSSR() && hasApplicableGuards(match, allGuards)
+
+      if (guarded && fromBrowserLocation) {
+        // Sem expor a rota protegida antes da decisão
+        state.set({
+          currentRoute: null,
+          params: {},
+          query: input.query,
+          meta: {},
+          isNavigating: true,
         })
-        .finally(() => {
-          initialPending = false
+      } else {
+        state.set({
+          currentRoute: match,
+          params: match.params,
+          query: match.query,
+          meta: match.meta,
+          isNavigating: guarded,
         })
-    } else if (match) {
-      // SSR (autorização é responsabilidade do servidor) ou rota sem guard: síncrono
-      state.set({
-        currentRoute: match,
-        params: match.params,
-        query: match.query,
-        meta: match.meta,
-        isNavigating: false,
-      })
+      }
+
+      if (guarded) {
+        initialPending = true
+        ready = navigate(initialPath, true, false, true)
+          .catch((err) => {
+            console.error("Navigation error:", err)
+            state.set({ ...state.get(), isNavigating: false })
+          })
+          .finally(() => {
+            initialPending = false
+          })
+      }
     }
   }
 

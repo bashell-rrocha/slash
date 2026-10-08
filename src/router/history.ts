@@ -202,6 +202,17 @@ function shouldInterceptLink(anchor: HTMLAnchorElement, event: MouseEvent): bool
 }
 
 /**
+ * pushState só atualiza a location em origens http(s); em about:blank ou file: não
+ */
+function canPushState(): boolean {
+  if (typeof window.history?.pushState !== "function") {
+    return false
+  }
+  const protocol = window.location.protocol
+  return protocol === "http:" || protocol === "https:"
+}
+
+/**
  * Create history mode implementation (HTML5 pushState)
  */
 export function createHistoryMode(): History {
@@ -213,16 +224,11 @@ export function createHistoryMode(): History {
 
   // Setup instance-specific listeners in browser
   if (isBrowser()) {
-    // Check if pushState actually updates location (not all test environments do)
+    // Detecta (sem mexer no histórico) se pushState atualiza a location: em
+    // ambientes de teste (about:blank) ele não atualiza, então usamos um caminho interno
     const testPath = window.location.pathname
 
-    // Use original methods if already patched
-    const pushMethod = originalPushState || window.history.pushState.bind(window.history)
-    const replaceMethod = originalReplaceState || window.history.replaceState.bind(window.history)
-
-    pushMethod({}, "", "/test-path-check")
-    useInternalPath = window.location.pathname !== "/test-path-check"
-    replaceMethod({}, "", testPath)
+    useInternalPath = !canPushState()
 
     if (useInternalPath) {
       internalPath = testPath === "blank" ? "/" : testPath

@@ -77,6 +77,17 @@ export function findRouteMatch(
   return match
 }
 
+/** Limite de redirects encadeados por navegação (evita loops de guards) */
+export const MAX_REDIRECTS = 10
+
+/**
+ * Indica se a cadeia de redirects passou do limite
+ * Pure function - no side effects
+ */
+export function isRedirectLimitExceeded(depth: number): boolean {
+  return depth > MAX_REDIRECTS
+}
+
 /**
  * Indica se há algum guard aplicável (globais ou da rota casada)
  * Pure function - no side effects
