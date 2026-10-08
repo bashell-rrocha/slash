@@ -252,7 +252,6 @@ describe("paridade: style", () => {
       "background:url(data:image/png;base64,AAAA)",
       'content:"\\2022"',
       "content:'a;b'; color:red",
-      "color:red /* nota */",
     ]) both("div", { style }, "style", style);
   });
   test("escapes CSS e comentarios no meio de tokens nao driblam a politica (string e objeto)", () => {
@@ -310,9 +309,41 @@ describe("paridade: style", () => {
     ]) expect(out ?? "").not.toMatch(/havior|\\/);
   });
   test("escapes DENTRO de string continuam funcionando nos dois lados", () => {
-    for (const d of ['content:"\\2022"', 'content:"\\201C"', 'font-family:"\\5FAE\\8F6F"', 'content:"a\\"b"', "content:'\\'/*'"]) {
+    for (const d of ['content:"\\2022"', 'content:"\\201C"', 'font-family:"\\5FAE\\8F6F"', 'content:"a\\"b"', "content:'\\'/'"]) {
       both("div", { style: `color:red;${d}` }, "style", `color:red; ${d}`);
     }
+  });
+  test("estrito: comentario em qualquer lugar, newline em string, url() fora do charset (string e objeto)", () => {
+    const bad = [
+      'url(/*) , image-set("a.png" 1x), var(--x) /* */ x)',
+      "url(/*) , url(data:image/svg+xml,<svg/>), var(--x) /* */ x)",
+      "url(/*) , src(x), var(--x) /* */ x)",
+      "\"\n'\"/*';background-image:image-set(\"x\" 1x);x:*/",
+      "red /* c */",
+      "url(a b.png)",
+      "url(data:image/svg+xml,<svg/>)",
+    ];
+    for (const v of bad) {
+      both("div", { style: `color:red;background:${v}` }, "style", "color:red");
+      for (const out of [
+        clientAttr("div", { style: { color: "red", background: v } }, "style"),
+        ssrAttr("div", { style: { color: "red", background: v } }, "style"),
+      ]) {
+        expect(out ?? "").toContain("red");
+        expect(out ?? "").not.toMatch(/image|src|svg|\/\*|url/i);
+      }
+    }
+  });
+  test("estrito: newlines entre declaracoes e CSS comum passam nos dois lados", () => {
+    const style = `color: red;\n  background: url(a/b.png);\n  content: "\\2022"`;
+    both("div", { style }, "style", "color: red; background: url(a/b.png); content: \"\\2022\"");
+  });
+  test("estrito: style com mais de 8 KB e descartado por inteiro nos dois lados", () => {
+    const style = `color:red;${"width:1px;".repeat(900)}`;
+    both("div", { style }, "style", null);
+    const obj = { color: "red", "--big": "a".repeat(8200) };
+    expect(ssrAttr("div", { style: obj }, "style")).toBeNull();
+    expect(clientAttr("div", { style: obj }, "style") ?? "").toBe("");
   });
   test("string sem fechar falha fechado nos dois lados", () => {
     both("div", { style: 'color:red;content:"abc' }, "style", "color:red");
