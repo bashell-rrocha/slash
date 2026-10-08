@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { h } from "./element";
+import { createTrackedState } from "./component-watch";
 import { createState } from "../state";
 import type { Component } from "../types";
 
@@ -335,5 +336,17 @@ describe("rendering/component-watch.ts - Re-renderização baseada em watch", ()
       expect(container.textContent).toBe("Sum: 15");
       expect(renderCount).toBe(3);
     });
+  });
+});
+
+describe("createTrackedState - __proto__ no payload (SEC-12)", () => {
+  test("set com chave propria __proto__ nao altera o prototipo do estado interno", () => {
+    const st = createTrackedState<any>({ a: 1 });
+    st.set(JSON.parse('{"__proto__":{"isAdmin":true},"b":2}'));
+    const inner: any = (st as any)._state;
+    expect(Object.getPrototypeOf(inner)).toBe(Object.prototype);
+    expect(inner.isAdmin).toBeUndefined();
+    expect(inner.b).toBe(2);
+    expect(Object.getOwnPropertyDescriptor(inner, "__proto__")?.value).toEqual({ isAdmin: true });
   });
 });

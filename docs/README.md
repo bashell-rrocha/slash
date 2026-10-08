@@ -22,3 +22,4 @@ Biblioteca sem VDOM — htm + hyper + state observável (`createState`)
 16. API Reference (ainda não escrito)
 17. Comparação com Outras Libs (ainda não escrito)
 18. Migração e Integração: veja [MIGRATION.md](../MIGRATION.md) (migração de `hydrate()` para `render()`)
+19. [Segurança](./19-security/README.md): escape por padrão, `unsafeHtml`/`unsafeUrl`, política de URLs, `Link`, `style`

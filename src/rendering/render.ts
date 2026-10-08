@@ -1,15 +1,14 @@
 import { destroyNode } from "../lifecycle/cleanup";
 import type { Child } from "../types";
+import { securityWarn } from "../utils/security-warn";
 import { appendChildSmart } from "./children";
 
 export type RootView = Child | (() => Child);
 export type RenderContainer = Element | string | null | undefined;
 
-const isDev = typeof process !== "undefined" && process?.env?.NODE_ENV !== "production";
-
 function callerInfo(): string | undefined {
   try {
-    const stack = new Error().stack?.split("\n").slice(3);
+    const stack = new Error().stack?.split("\n").slice(4);
     if (!stack?.length) return undefined;
     const frame = stack.find((line) => /\.(ts|tsx|js)/.test(line));
     if (!frame) return undefined;
@@ -21,12 +20,16 @@ function callerInfo(): string | undefined {
   }
 }
 
+function callerSuffix(): string {
+  const hint = callerInfo();
+  return hint ? ` (called from ${hint})` : "";
+}
+
 function resolveContainer(target: RenderContainer): Element {
   if (typeof target === "string") {
     const el = document.querySelector(target);
     if (!el) {
-      const hint = isDev ? callerInfo() : undefined;
-      const extra = hint ? ` (called from ${hint})` : "";
+      const extra = process.env.NODE_ENV !== "production" ? callerSuffix() : "";
       throw new Error(
         `[slash] render(): selector "${target}" not found — ensure the element exists before calling render()${extra}`,
       );
@@ -34,8 +37,7 @@ function resolveContainer(target: RenderContainer): Element {
     return el;
   }
   if (target instanceof Element) return target;
-  const hint = isDev ? callerInfo() : undefined;
-  const extra = hint ? ` (called from ${hint})` : "";
+  const extra = process.env.NODE_ENV !== "production" ? callerSuffix() : "";
   throw new Error(
     `[slash] render(): container Element is required (received null/undefined)${extra}`,
   );
@@ -63,7 +65,14 @@ export function render(view: RootView, container: RenderContainer): Node | Node[
   const resolved = resolveContainer(container);
 
   const stateScript =
-    typeof document !== "undefined" ? document.getElementById("__SLASH_STATE__") : null;
+    typeof document !== "undefined" ? document.querySelector('script#__SLASH_STATE__[type="application/json"]') : null;
+
+  if (typeof document !== "undefined" && !stateScript && process.env.NODE_ENV !== "production") {
+    // Presence check only, drives the dev warning; the real read uses script#__SLASH_STATE__[type="application/json"]
+    if (document.getElementById("__SLASH_STATE__")) {
+      securityWarn('#__SLASH_STATE__ was ignored: it must be a <script type="application/json"> element');
+    }
+  }
 
   if (resolved.childNodes.length > 0 && stateScript) {
     const state = JSON.parse(stateScript.textContent || "{}");

@@ -6,8 +6,44 @@
  * Não contém side effects ou mutação de DOM.
  */
 
+import { isSafeHtml } from "../safe-html";
+import { isSafeUrl } from "../safe-url";
 import type { Elementish } from "../types";
+import { isForbiddenCssName, isForbiddenStyleKey, isSafeCssValue, isVendorStyleKey, sanitizeStyleString, styleKeyToCssName, styleObjectTooLong } from "../utils/css-policy";
+import { isEventHandler, isEventTuple } from "../utils/guards";
 import { processClassValue } from "../utils/helpers";
+import { securityWarn } from "../utils/security-warn";
+import { blockedUrlMessage, evaluateMetaRefresh, evaluateUrl, isRefreshHttpEquiv, isUrlAttribute } from "../utils/url-policy";
+
+/**
+ * Nomes de atributo válidos (subconjunto seguro do HTML/SVG/XML): impede que uma
+ * chave vinda de dados (spread) injete `x onmouseover=...` ou faça setAttribute lançar.
+ */
+const ATTRIBUTE_NAME = /^[A-Za-z_:][A-Za-z0-9_:.-]*$/;
+/** Nomes de tag válidos: letras, dígitos, `-` e `:` (custom elements e SVG com prefixo) */
+const TAG_NAME = /^[A-Za-z][A-Za-z0-9:-]*$/;
+
+export function isValidAttributeName(name: string): boolean {
+  return ATTRIBUTE_NAME.test(name);
+}
+
+export function isValidTagName(name: string): boolean {
+  return TAG_NAME.test(name);
+}
+
+// Props que viram HTML/markup: bloqueadas (use unsafeHtml() como filho)
+const HTML_SINK_PROPS = new Set(["innerhtml", "outerhtml", "insertadjacenthtml", "srcdoc"]);
+// Nomes que alterariam o protótipo/identidade do elemento
+const RAW_TEXT_PROPS = new Set(["text", "textcontent", "innertext"]);
+const PROTOTYPE_PROPS = new Set(["__proto__", "constructor", "prototype"]);
+// Avisos só existem em dev: toda mensagem é montada atrás de
+// `process.env.NODE_ENV !== "production"` escrito por extenso (o bundler só elimina
+// os textos quando a expressão aparece inline, não via constante intermediária).
+
+// Style por allowlist: nome CSS válido (custom property, dashed ou camelCase) e
+// que não seja chave de CSSStyleDeclaration que não é propriedade CSS
+// (cssText injeta CSS arbitrário; métodos não podem ser sobrescritos).
+const STYLE_KEY = /^(?:--[A-Za-z0-9_-]+|-?[A-Za-z][A-Za-z0-9-]*)$/;
 
 /**
  * Tipos de operações de props (Functional Core)
@@ -21,6 +57,7 @@ export type PropUpdateType =
   | "SET_CLASS"
   | "SET_STYLE"
   | "SET_SELECT_OPTIONS"
+  | "BLOCKED"
   | "NO_OP";
 
 /**
@@ -38,6 +75,8 @@ export interface PropUpdate {
     useFallbackToAttribute?: boolean;
     // Para SET_CLASS
     processedClassName?: string;
+    // Aviso de dev a ser emitido pelo shell (BLOCKED ou valor sanitizado)
+    warning?: string;
   };
 }
 
@@ -48,21 +87,96 @@ export interface PropUpdate {
  * @param key - Nome da prop
  * @param value - Valor da prop
  * @param hasProperty - Se o elemento tem a propriedade nativa
+ * @param isMetaRefresh - O elemento é <meta http-equiv="refresh">: só então `content` é
+ *   tratado como "atraso; url=..." e a URL passa pela política
  * @returns Comando de atualização (imutável)
  */
 export function computePropUpdate(
   elementType: string,
   key: string,
   value: unknown,
-  hasProperty: boolean
+  hasProperty: boolean,
+  isMetaRefresh = false
 ): PropUpdate {
+  // Toda decisão de política usa o nome em minúsculas: setAttribute minusculiza o nome em HTML,
+  // então `STYLE`/`Style`/`HREF`/`SrcDoc` não podem escapar da política por diferença de caixa.
+  const lowerKey = key.toLowerCase();
+
   // 1) NO_OP: ignora 'children'
-  if (key === "children") {
+  if (lowerKey === "children") {
     return { type: "NO_OP", key, value };
   }
 
+  // 1.0) unsafeUrl()/SafeUrl só isenta atributos de URL (e o content de um meta refresh).
+  // Em qualquer outro lugar vale como a string, que segue as regras do atributo.
+  if (isSafeUrl(value) && !(isUrlAttribute(key, elementType) || (isMetaRefresh && lowerKey === "content"))) {
+    const update = computePropUpdate(elementType, key, value.value, hasProperty, isMetaRefresh);
+    if (process.env.NODE_ENV === "production") return update;
+    const warning = update.metadata?.warning ?? `${key}: unsafeUrl() only applies to URL attributes; treated as the plain string`;
+    return { ...update, metadata: { ...update.metadata, warning } };
+  }
+
+  // 1.1) Nome de atributo inválido (S5): descarta, nunca chega ao DOM
+  if (!isValidAttributeName(key)) {
+    return blocked(key, value, process.env.NODE_ENV !== "production" ? `invalid attribute name: ${JSON.stringify(key)}` : "");
+  }
+
+  // 1.15) <script>/<style>: text, textContent and innerText are code sinks. Only SafeHtml
+  // (unsafeHtml) is accepted, mirroring the SSR rule for dynamic children.
+  if ((elementType === "script" || elementType === "style") && RAW_TEXT_PROPS.has(lowerKey)) {
+    if (isSafeHtml(value)) {
+      value = value.value;
+    } else {
+      if (value == null || value === false) return { type: "NO_OP", key, value };
+      return blocked(
+        key,
+        value,
+        process.env.NODE_ENV !== "production" ? `${key} on <${elementType}> only accepts unsafeHtml() (a string would run as code)` : "",
+      );
+    }
+  }
+
+  // 1.2) Eventos (S3/SEC-14, regra única com o SSR): TODO /^on/i é evento. Só função, objeto
+  // handleEvent e tupla [fn, opções] viram listener (setProp registra antes de chegar aqui).
+  // Qualquer outro valor (string, true, objeto) é descartado com aviso; atributo simples que
+  // começa com "on" precisa do prefixo data-.
+  if (key.length > 2 && /^on/i.test(key)) {
+    if (isEventHandler(value) || isEventTuple(value)) {
+      // Só chega aqui por prop reativa / hidratação: handlers não são reativos
+      return blocked(
+        key,
+        value,
+        process.env.NODE_ENV !== "production" ? `${key}: reactive handlers are not supported; pass a function` : "",
+      );
+    }
+    if (value == null || value === false) return { type: "NO_OP", key, value };
+    return blocked(
+      key,
+      value,
+      process.env.NODE_ENV !== "production"
+        ? `${key} only accepts a function, a handleEvent object or a [fn, options] tuple; a plain attribute starting with "on" needs the data- prefix (e.g. data-${key})`
+        : "",
+    );
+  }
+
+  // 1.3) Props que viram HTML ou alteram o protótipo (S4/SEC-05)
+  if (lowerKey === "srcdoc" && isSafeHtml(value)) {
+    // srcdoc só é aceito como SafeHtml (unsafeHtml): grava o markup confiável como texto do atributo
+    value = value.value;
+  } else if (HTML_SINK_PROPS.has(lowerKey)) {
+    if (value == null || value === false) return { type: "NO_OP", key, value };
+    return blocked(
+      key,
+      value,
+      process.env.NODE_ENV !== "production" ? `${key} blocked (injects HTML). For trusted HTML use an unsafeHtml() child` : "",
+    );
+  }
+  if (PROTOTYPE_PROPS.has(lowerKey)) {
+    return blocked(key, value, process.env.NODE_ENV !== "production" ? `${key} cannot be a prop` : "");
+  }
+
   // 2) SET_CLASS: class ou className
-  if (key === "class" || key === "className") {
+  if (lowerKey === "class" || lowerKey === "classname") {
     const processedClassName = processClassValue(value);
     if (value == null || value === false) {
       return {
@@ -81,12 +195,62 @@ export function computePropUpdate(
   }
 
   // 3) SET_STYLE: style object
-  if (key === "style" && value && typeof value === "object") {
-    return { type: "SET_STYLE", key, value };
+  if (lowerKey === "style" && value && typeof value === "object") {
+    // Mais de 8 KB no total: descarta o style inteiro
+    if (styleObjectTooLong(value as Record<string, unknown>)) {
+      return {
+        type: "SET_STYLE",
+        key,
+        value: {},
+        ...(process.env.NODE_ENV !== "production" ? { metadata: { warning: "style ignored: more than 8 KB" } } : {}),
+      };
+    }
+    const safe: Record<string, unknown> = {};
+    const dropped: string[] = [];
+    for (const k of Object.keys(value)) {
+      const v = (value as Record<string, unknown>)[k];
+      // Mesma política de valores do SSR (url/expression/javascript, funções de URL...)
+      const emptyValue = v == null || v === false;
+      if (STYLE_KEY.test(k) && !isForbiddenStyleKey(k) && !isForbiddenCssName(styleKeyToCssName(k)) && (emptyValue || isSafeCssValue(String(v).trim()))) {
+        safe[k] = v;
+      } else {
+        dropped.push(k);
+      }
+    }
+    return {
+      type: "SET_STYLE",
+      key,
+      value: safe,
+      ...(process.env.NODE_ENV !== "production" && dropped.length ? { metadata: { warning: `style ignores ${dropped.join(", ")}` } } : {}),
+    };
+  }
+
+  // 3.1) style como string: só as declarações seguras (mesma política do SSR)
+  if (lowerKey === "style" && typeof value === "string") {
+    const { value: safeStyle, rejected } = sanitizeStyleString(value);
+    // Nada seguro sobrou: o atributo style é omitido (mesma regra do SSR)
+    if (safeStyle === "") {
+      return {
+        type: "REMOVE_ATTRIBUTE",
+        key,
+        value: "",
+        ...(process.env.NODE_ENV !== "production" && rejected
+          ? { metadata: { warning: "style: declaration rejected (unsafe CSS name or value)" } }
+          : {}),
+      };
+    }
+    return {
+      type: "SET_ATTRIBUTE",
+      key,
+      value: safeStyle,
+      ...(process.env.NODE_ENV !== "production" && rejected
+        ? { metadata: { warning: "style: declaration rejected (unsafe CSS name or value)" } }
+        : {}),
+    };
   }
 
   // 4) SET_VALUE: input/textarea/select controlados
-  if (key === "value") {
+  if (lowerKey === "value") {
     const normalizedValue = value == null ? "" : String(value);
 
     if (elementType === "select") {
@@ -102,7 +266,7 @@ export function computePropUpdate(
   }
 
   // 5) SET_CHECKED: checkboxes
-  if (key === "checked") {
+  if (lowerKey === "checked") {
     return { type: "SET_CHECKED", key, value: Boolean(value) };
   }
 
@@ -111,18 +275,54 @@ export function computePropUpdate(
     return { type: "REMOVE_ATTRIBUTE", key, value };
   }
 
+  // 6.1) Atributos de URL (S2/SEC-04): SafeUrl passa; o resto segue a política
+  let finalValue: unknown = value;
+  let warning: string | undefined;
+  if (isSafeUrl(value)) {
+    finalValue = value.value;
+  } else if (isMetaRefresh && lowerKey === "content") {
+    const result = evaluateMetaRefresh(String(value));
+    finalValue = result.value;
+    if (result.blocked) {
+      warning = process.env.NODE_ENV !== "production" ? blockedUrlMessage(key, String(value)) : undefined;
+    }
+  } else if (isUrlAttribute(key, elementType)) {
+    const result = evaluateUrl(key, String(value), elementType);
+    finalValue = result.value;
+    if (result.blocked) {
+      warning = process.env.NODE_ENV !== "production" ? blockedUrlMessage(key, String(value)) : undefined;
+    }
+  }
+
   // 7) SET_PROPERTY: propriedade nativa do elemento
   if (hasProperty) {
     return {
       type: "SET_PROPERTY",
       key,
-      value,
-      metadata: { useFallbackToAttribute: true },
+      value: finalValue,
+      metadata: { useFallbackToAttribute: true, ...(warning ? { warning } : {}) },
     };
   }
 
   // 8) SET_ATTRIBUTE: atributo HTML padrão
-  return { type: "SET_ATTRIBUTE", key, value: String(value) };
+  return {
+    type: "SET_ATTRIBUTE",
+    key,
+    value: String(finalValue),
+    ...(warning ? { metadata: { warning } } : {}),
+  };
+}
+
+// Comando BLOCKED: não toca o DOM; o shell emite o aviso de dev
+function blocked(key: string, value: unknown, reason: string): PropUpdate {
+  return { type: "BLOCKED", key, value, metadata: { warning: reason } };
+}
+
+// Shell: aviso de dev (silencioso em produção)
+function emitPropWarning(update: PropUpdate): void {
+  const warning = update.metadata?.warning;
+  // Uma vez por tipo de problema e nome de prop (não por valor)
+  if (warning) securityWarn(warning, `${update.type}:${update.key.toLowerCase()}`);
 }
 
 /**
@@ -133,7 +333,30 @@ export function computePropUpdate(
  * @returns true se a propriedade existe no elemento
  */
 export function hasNativeProperty(element: Elementish, key: string): boolean {
-  return key in element;
+  // A key that names a DOM method (appendChild, setAttribute...) is never a property:
+  // assigning it would shadow the method on this element. It falls back to an attribute.
+  return key in element && typeof (element as unknown as Record<string, unknown>)[key] !== "function";
+}
+
+/** Shell: o elemento é <meta http-equiv="refresh"> (lê o atributo já gravado)? */
+export function isMetaRefreshElement(element: Elementish): boolean {
+  return getElementType(element) === "meta" && isRefreshHttpEquiv((element as Element).getAttribute("http-equiv"));
+}
+
+/**
+ * Shell: http-equiv pode ser definido DEPOIS de content (ordem das props). Quando o elemento
+ * vira meta refresh, o content já gravado passa pela política.
+ */
+export function resanitizeMetaContent(element: Elementish, key: string): void {
+  const lower = key.toLowerCase();
+  if ((lower !== "http-equiv" && lower !== "httpequiv") || !isMetaRefreshElement(element)) return;
+  const content = (element as Element).getAttribute("content");
+  if (content === null) return;
+  const result = evaluateMetaRefresh(content);
+  if (result.blocked) {
+    (element as Element).setAttribute("content", result.value);
+    if (process.env.NODE_ENV !== "production") securityWarn(blockedUrlMessage("content", content), "url:meta-refresh");
+  }
 }
 
 /**
@@ -156,9 +379,13 @@ export function getElementType(element: Elementish): string {
  * @param update - Comando de atualização (vindo de computePropUpdate)
  */
 export function applyPropUpdate(element: Elementish, update: PropUpdate): void {
+  // Qualquer comando pode carregar um aviso de dev (valor sanitizado/bloqueado)
+  emitPropWarning(update);
+
   switch (update.type) {
     case "NO_OP":
-      // Nenhuma operação
+    case "BLOCKED":
+      // Nenhuma operação (BLOCKED já avisou acima)
       return;
 
     case "SET_CLASS": {
@@ -170,7 +397,19 @@ export function applyPropUpdate(element: Elementish, update: PropUpdate): void {
 
     case "SET_STYLE": {
       if (element instanceof HTMLElement && update.value && typeof update.value === "object") {
-        Object.assign(element.style, update.value as Record<string, unknown>);
+        // Os nomes já foram filtrados no core; aqui só aplica o que existe de fato
+        const st = element.style as unknown as Record<string, unknown> & CSSStyleDeclaration;
+        for (const [k, v] of Object.entries(update.value as Record<string, unknown>)) {
+          const empty = v == null || v === false;
+          if (k.includes("-") || isVendorStyleKey(k)) {
+            // dashed, custom property (--x verbatim) e vendor camelCase (WebkitX -> -webkit-x)
+            const name = styleKeyToCssName(k);
+            if (empty) st.removeProperty(name);
+            else st.setProperty(name, String(v));
+          } else if (k in st && typeof st[k] !== "function") {
+            st[k] = empty ? "" : v;
+          }
+        }
       }
       return;
     }
@@ -234,7 +473,7 @@ export function applyPropUpdate(element: Elementish, update: PropUpdate): void {
     default: {
       // Tipo desconhecido - TypeScript garantirá que isso nunca acontece
       const exhaustive: never = update.type;
-      throw new Error(`Tipo de PropUpdate desconhecido: ${exhaustive}`);
+      throw new Error(`Unknown PropUpdate type: ${exhaustive}`);
     }
   }
 }

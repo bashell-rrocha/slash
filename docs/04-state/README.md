@@ -170,6 +170,10 @@ watch(callback: (newValue: T) => void): () => void
 - Múltiplos watchers podem ser registrados
 - Watchers são notificados na ordem de registro
 - Não há notificação se valor não mudou (deep equal)
+- **O último valor vence:** se um watcher chamar `set()` no mesmo estado durante a notificação, a notificação aninhada entrega o valor atual a todos os watchers e a notificação antiga é interrompida.
+  - Nenhum watcher recebe um valor velho depois do novo: o último valor recebido por qualquer watcher é sempre igual a `get()` ao fim do `set` mais externo.
+  - Watchers anteriores ao que fez o `set` veem o valor antigo e depois o novo.
+  - `set` segue síncrono, e um erro lançado na notificação aninhada chega a quem chamou `set`.
 
 ## Reatividade Automática
 
@@ -222,8 +226,11 @@ const Profile = () => html`
 
 - `name.set('Bob')` ou `age.set(31)` re-renderizam `Profile`, porque ele leu os dois
 - Um componente que leu só `name` não re-renderiza quando `age` muda
+- As dependências são recalculadas a cada renderização: um state lido só em certos ramos (`if`) passa a ser acompanhado quando é lido e deixa de ser quando não é mais
+- Um componente que não lê nenhum state na primeira renderização é estático e não se inscreve depois
+- Se uma re-renderização não lê nenhum state, o componente também fica estático: ele perde todas as dependências e só volta a reagir se for remontado
 
-**Implementação:** [src/rendering/element-core.ts](../../src/rendering/element-core.ts:1)
+**Implementação:** o rastreamento de states fica em [src/rendering/element.ts](../../src/rendering/element.ts:1); o helper de diff está em [src/rendering/element-core.ts](../../src/rendering/element-core.ts:1)
 
 ### State em Props
 
@@ -319,6 +326,10 @@ function deepClone<T>(value: T): T {
   return cloned
 }
 ```
+
+> **Chaves especiais:** o clone preserva todas as chaves próprias (inclusive `constructor`, `prototype` e um `__proto__` vindo de `JSON.parse`) como dados, sem alterar o protótipo. Ao copiar o resultado de `state.get()`, prefira o spread `{ ...x }`: `Object.assign({}, x)` com uma chave própria `__proto__` troca o protótipo do alvo.
+>
+> Os helpers de formulário seguem a mesma linha: `formToObject()` devolve um objeto sem protótipo (`Object.create(null)`), então `data.hasOwnProperty(...)` não existe; use `Object.hasOwn(data, "campo")`.
 
 **Otimizações:**
 - Tratamento especial para `Error` (preservado) e `Date` (nova instância)

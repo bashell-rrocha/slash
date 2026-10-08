@@ -1,6 +1,8 @@
 // src/ssr.ts - Server-Side Rendering exports
 
-export { htmlString, renderToStream, renderToString } from "./server-render";
+export { htmlString, renderToStream, renderToString, serializeStateForScript } from "./server-render";
+export { isSafeHtml, unsafeHtml } from "./safe-html";
+export type { SafeHtml } from "./safe-html";
 export {
   createLoader,
   deserializeLoaderData,
@@ -18,3 +20,9 @@ export type {
   StreamChunk,
   UniversalRenderOptions,
 } from "./types";
+
+// --- SEC-B: política de URLs (início do bloco; manter no fim do arquivo) ---
+export { isSafeUrl, unsafeUrl } from "./safe-url";
+export type { SafeUrl } from "./safe-url";
+export { BLOCKED_URL, sanitizeUrl } from "./utils/url-policy";
+// --- SEC-B (fim do bloco) ---

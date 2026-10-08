@@ -136,4 +136,6 @@ export interface RouterInstance extends State<RouterState> {
   go(delta: number): void
   /** Get current route */
   currentRoute(): RouteMatch | null
+  /** Resolve quando a navegação inicial termina (já resolvida se não houve guard) */
+  ready: Promise<void>
 }

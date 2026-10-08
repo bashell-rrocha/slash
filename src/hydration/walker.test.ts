@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { skipReactiveMarkers, hydrateChild, hHydrate } from "./walker";
 import { setHydrateContext, getHydrateContext } from "./context";
 import type { HydrateContext } from "./context";
@@ -6,6 +6,8 @@ import type { Reactive } from "../types";
 
 describe("Hydration Walker", () => {
   let container: HTMLDivElement;
+
+  afterEach(() => setHydrateContext(null));
 
   beforeEach(() => {
     container = document.createElement("div");

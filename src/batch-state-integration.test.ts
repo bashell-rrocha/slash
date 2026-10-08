@@ -7,7 +7,7 @@
 
 import { describe, test, expect, beforeEach } from 'bun:test'
 import { createState } from './state'
-import { batch, __resetBatchContext } from './batch'
+import { batch, isInBatch, __pendingBatchNotifyCount, __resetBatchContext } from './batch'
 
 describe('batch + state integration', () => {
   beforeEach(() => {
@@ -310,6 +310,209 @@ describe('batch + state integration', () => {
       // Assert: Apenas 1 render (ao invés de 10)
       expect(renderCount).toBe(1)
       expect(listState.get().items).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    })
+  })
+
+  describe('semântica de estados alterados', () => {
+    test('estado não alterado no lote não é notificado', () => {
+      const a = createState({ n: 0 })
+      const b = createState({ n: 0 })
+      let na = 0
+      let nb = 0
+      a.watch(() => na++)
+      b.watch(() => nb++)
+
+      batch(() => {
+        a.set({ n: 1 })
+      })
+
+      expect(na).toBe(1)
+      expect(nb).toBe(0)
+    })
+
+    test('lotes aninhados notificam uma única vez no fim do externo', () => {
+      const a = createState(0)
+      const log: unknown[] = []
+      a.watch((v) => log.push(v))
+
+      batch(() => {
+        batch(() => {
+          a.set(1)
+        })
+        log.push('after inner')
+        a.set(2)
+        a.set(3)
+        log.push('end outer body')
+      })
+
+      expect(log).toEqual(['after inner', 'end outer body', 3])
+    })
+
+    test('fim do lote interno não encerra o lote externo', () => {
+      batch(() => {
+        batch(() => {})
+        expect(isInBatch()).toBe(true)
+      })
+      expect(isInBatch()).toBe(false)
+    })
+
+    test('valor final é entregue uma vez por estado', () => {
+      const a = createState(0)
+      const b = createState('x')
+      const seenA: number[] = []
+      const seenB: string[] = []
+      a.watch((v) => seenA.push(v))
+      b.watch((v) => seenB.push(v))
+
+      batch(() => {
+        a.set(1)
+        b.set('y')
+        a.set(2)
+        b.set('z')
+        a.set(3)
+      })
+
+      expect(seenA).toEqual([3])
+      expect(seenB).toEqual(['z'])
+    })
+
+    test('exceção em fn: estados alterados ainda são notificados e a exceção sobe', () => {
+      const a = createState(0)
+      const seen: number[] = []
+      a.watch((v) => seen.push(v))
+
+      expect(() => {
+        batch(() => {
+          a.set(5)
+          throw new Error('boom')
+        })
+      }).toThrow('boom')
+
+      expect(seen).toEqual([5])
+      expect(isInBatch()).toBe(false)
+    })
+
+    test('observador que altera outro estado durante o flush não perde a notificação', () => {
+      const a = createState(0)
+      const b = createState(0)
+      const seenB: number[] = []
+      a.watch((v) => b.set(v * 10))
+      b.watch((v) => seenB.push(v))
+
+      batch(() => {
+        a.set(1)
+      })
+
+      expect(seenB).toEqual([10])
+      expect(b.get()).toBe(10)
+    })
+
+    test('observador que lança não impede os demais e o erro é relançado (flush)', () => {
+      const a = createState(0)
+      const b = createState(0)
+      let nb = 0
+      a.watch(() => {
+        throw new Error('w')
+      })
+      b.watch(() => nb++)
+
+      expect(() => {
+        batch(() => {
+          a.set(1)
+          b.set(1)
+        })
+      }).toThrow('w')
+
+      expect(nb).toBe(1)
+      expect(isInBatch()).toBe(false)
+    })
+
+    test('observador que lança não impede os demais fora de lote', () => {
+      const a = createState(0)
+      const order: string[] = []
+      a.watch(() => {
+        order.push('first')
+        throw new Error('w1')
+      })
+      a.watch(() => order.push('second'))
+
+      expect(() => a.set(1)).toThrow('w1')
+      expect(order).toEqual(['first', 'second'])
+    })
+
+    test('createState não mantém registro global', () => {
+      let calls = 0
+      const first = createState(0)
+      first.watch(() => calls++)
+      for (let i = 0; i < 10_000; i++) createState(i)
+
+      batch(() => {})
+
+      expect(__pendingBatchNotifyCount()).toBe(0)
+      expect(calls).toBe(0)
+    })
+
+    test('observador que altera estado ainda pendente no flush não duplica a notificação', () => {
+      const a = createState(0)
+      const b = createState(0)
+      const seenB: number[] = []
+      a.watch((v) => b.set(v + 100))
+      b.watch((v) => seenB.push(v))
+
+      batch(() => {
+        a.set(1)
+        b.set(5)
+      })
+
+      expect(seenB).toEqual([101])
+    })
+
+    test('batch dentro de watcher com notificador de B ainda pendente notifica B uma vez com o valor novo', () => {
+      const a = createState(0)
+      const b = createState(0)
+      const seenB: number[] = []
+      a.watch(() => {
+        batch(() => b.set(7))
+      })
+      b.watch((v) => seenB.push(v))
+
+      batch(() => {
+        a.set(1)
+        b.set(5)
+      })
+
+      expect(seenB).toEqual([7])
+    })
+
+    test('batch dentro de watcher durante o flush notifica uma vez', () => {
+      const a = createState(0)
+      const b = createState(0)
+      const seenB: number[] = []
+      a.watch(() => {
+        batch(() => {
+          b.set(1)
+          b.set(2)
+        })
+      })
+      b.watch((v) => seenB.push(v))
+
+      batch(() => {
+        a.set(1)
+      })
+
+      expect(seenB).toEqual([2])
+      expect(isInBatch()).toBe(false)
+    })
+
+    test('isInBatch é false após batch normal e sem pendências após flush com erro', () => {
+      const a = createState(0)
+      a.watch(() => {
+        throw new Error('w')
+      })
+      expect(() => batch(() => a.set(1))).toThrow('w')
+      expect(__pendingBatchNotifyCount()).toBe(0)
+      batch(() => {})
+      expect(isInBatch()).toBe(false)
     })
   })
 })

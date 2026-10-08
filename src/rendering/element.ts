@@ -4,56 +4,80 @@ import type { Child, Elementish, Props } from "../types";
 import { SVG_NS, SVG_TAGS } from "../utils/constants";
 import { appendChildSmart } from "./children";
 import { setProp } from "./props";
-import {
-  createStateTracker,
-  startTracking,
-  stopTracking,
-  trackState,
-  clearTrackedStates,
-  hasTrackedStates,
-  getTrackedStates,
-  type StateTracker,
-} from "./element-core";
+import { isValidTagName } from "./props-core";
+import { diffTrackedStates } from "./element-core";
 
 export function h(tag: unknown, props: Props, ...children: Child[]): Node {
   // Componente (função) — pode retornar qualquer Child; empacotar se não for Node
   if (typeof tag === "function") {
-    // Rastrear states acessados durante renderização usando Functional Core
-    let tracker = createStateTracker();
-
-    // Registrar função de rastreamento global
-    const originalTracker = (globalThis as any).__SLASH_TRACK_STATE__;
-    (globalThis as any).__SLASH_TRACK_STATE__ = (state: State<any>) => {
-      tracker = trackState(tracker, state);
-    };
-
     // Criar anchor para marcar posição do componente
     const anchor = document.createComment("component");
 
-    // Container que vai segurar anchor + conteúdo renderizado
+    // Marcador final: o intervalo anchor..end é o conteúdo do componente.
+    // Acompanhar pelos marcadores (e não por um retrato dos nós) cobre nós
+    // que filhos reativos inserem ou removem depois da renderização.
+    const end = document.createComment("component:end");
+
+    // Container que vai segurar anchor + conteúdo renderizado + end
     const wrapper = document.createDocumentFragment();
     wrapper.appendChild(anchor);
+    wrapper.appendChild(end);
 
-    // Lista de nodes renderizados (para cleanup)
-    let renderedNodes: Node[] = [];
+    // Destrói e remove tudo entre anchor e end
+    const clearRange = () => {
+      // Marcadores separados: não tocar em irmãos alheios
+      if (anchor.parentNode !== end.parentNode) return;
+      let n = anchor.nextSibling;
+      while (n && n !== end) {
+        const next = n.nextSibling;
+        destroyNode(n);
+        n.parentNode?.removeChild(n);
+        n = next;
+      }
+    };
 
-    // Lista de unwatchers (para cleanup)
-    let unwatchers: Array<() => void> = [];
+    // Watchers ativos por state (reconciliados a cada renderização)
+    const unwatchers = new Map<State<any>, () => void>();
+    // Componente estático (sem states na 1ª renderização) nunca observa nada
+    let reactive = false;
+
+    // Reconcilia watchers: remove os de states não lidos mais, adiciona os novos
+    const reconcileWatchers = (reads: ReadonlySet<State<any>>) => {
+      const { add, remove } = diffTrackedStates(unwatchers, reads);
+      for (const state of remove) {
+        unwatchers.get(state)?.();
+        unwatchers.delete(state);
+      }
+      for (const state of add) {
+        unwatchers.set(
+          state,
+          state.watch(() => {
+            // Apenas re-renderizar se ainda estiver no DOM
+            if (anchor.parentNode) render();
+          })
+        );
+      }
+    };
+
+    // Geração da renderização mais recente (o último valor vence)
+    let renderGen = 0;
+    // States lidos na renderização que definiu os watchers atuais
+    let lastReads: ReadonlySet<State<any>> = new Set();
 
     // Função de renderização
     const render = () => {
+      const gen = ++renderGen;
       // Limpar nodes anteriores
-      for (const node of renderedNodes) {
-        destroyNode(node);
-        if (node.parentNode) {
-          node.parentNode.removeChild(node);
-        }
-      }
-      renderedNodes = [];
+      clearRange();
+      // Conjunto local: render aninhado do mesmo componente não o compartilha
+      const reads = new Set<State<any>>();
 
-      // Resetar tracking para nova renderização
-      tracker = clearTrackedStates(tracker);
-      tracker = startTracking(tracker);
+      // Rastreador instalado só durante a execução deste componente
+      // (restaura o anterior, ex.: o do pai, mesmo em caso de erro)
+      const originalTracker = (globalThis as any).__SLASH_TRACK_STATE__;
+      (globalThis as any).__SLASH_TRACK_STATE__ = (state: State<any>) => {
+        reads.add(state);
+      };
 
       try {
         // Executar componente
@@ -62,8 +86,13 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
           children,
         });
 
-        // Parar tracking após execução
-        tracker = stopTracking(tracker);
+        // Montagem da saída (ex.: reativos que leem states): ninguém rastreia,
+        // nem este componente nem o pai que o envolve
+        (globalThis as any).__SLASH_TRACK_STATE__ = () => {};
+
+        // Uma renderização mais nova começou durante esta: ela já entregou o resultado
+        if (gen !== renderGen) return;
+        lastReads = reads;
 
         // Renderizar resultado
         const frag = document.createDocumentFragment();
@@ -73,29 +102,29 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
           appendChildSmart(frag, out as Child);
         }
 
-        // Capturar nodes renderizados
-        const newNodes = Array.from(frag.childNodes);
-        renderedNodes = newNodes;
-
-        // Inserir após anchor
-        const parent = anchor.parentNode;
+        // Inserir antes do marcador final
+        const parent = end.parentNode;
         if (parent) {
-          parent.insertBefore(frag, anchor.nextSibling);
+          parent.insertBefore(frag, end);
         }
       } finally {
-        // Parar tracking em caso de erro
-        tracker = stopTracking(tracker);
+        (globalThis as any).__SLASH_TRACK_STATE__ = originalTracker;
       }
+
+      // Só reconcilia em sucesso: em erro, os watchers anteriores permanecem
+      if (reactive) reconcileWatchers(reads);
     };
 
     // Primeira renderização
     render();
 
-    // Restaurar tracker original
-    (globalThis as any).__SLASH_TRACK_STATE__ = originalTracker;
-
     // Se não há states acessados, retornar node diretamente (retrocompatibilidade)
-    if (!hasTrackedStates(tracker)) {
+    if (lastReads.size === 0) {
+      // Nodes do intervalo anchor..end (primeira e única renderização)
+      const renderedNodes: Node[] = [];
+      for (let n = anchor.nextSibling; n && n !== end; n = n.nextSibling) {
+        renderedNodes.push(n);
+      }
       // Componente estático - retornar resultado direto se for Element
       if (
         renderedNodes.length === 1 &&
@@ -112,37 +141,28 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
     }
 
     // Componente reativo - configurar sistema de re-renderização
-    // Inserir nodes renderizados no wrapper para retorno
-    for (const node of renderedNodes) {
-      wrapper.appendChild(node);
-    }
+    // (anchor, conteúdo e end já estão no wrapper)
 
-    // Registrar watchers nos states acessados
-    const trackedStates = getTrackedStates(tracker);
-    for (const state of trackedStates) {
-      const unwatch = state.watch(() => {
-        if (anchor.parentNode) {
-          // Apenas re-renderizar se ainda estiver no DOM
-          render();
-        }
-      });
-      unwatchers.push(unwatch);
-    }
+    // Registrar watchers nos states lidos na primeira renderização
+    reactive = true;
+    reconcileWatchers(lastReads);
 
     // Cleanup ao remover do DOM
     addCleanup(anchor, () => {
-      tracker = stopTracking(tracker);
-      tracker = clearTrackedStates(tracker);
       // Chamar unwatchers
-      for (const unwatch of unwatchers) {
+      for (const unwatch of unwatchers.values()) {
         unwatch();
       }
-      unwatchers = [];
-      // Limpar nodes renderizados
-      for (const node of renderedNodes) {
-        destroyNode(node);
+      unwatchers.clear();
+      reactive = false;
+      // Destruir nodes do intervalo (sem removê-los do DOM)
+      if (anchor.parentNode !== end.parentNode) return;
+      let n = anchor.nextSibling;
+      while (n && n !== end) {
+        const next = n.nextSibling;
+        destroyNode(n);
+        n = next;
       }
-      renderedNodes = [];
     });
 
     // Retornar wrapper (fragment com anchor + conteúdo)
@@ -151,6 +171,10 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
 
   // Tag nativa
   const tagName = String(tag || "div");
+  // S5: tag inválida é erro de programação (nunca dado): falha cedo e com mensagem clara
+  if (!isValidTagName(tagName)) {
+    throw new Error(`[slash] Invalid tag name: ${JSON.stringify(tagName)}`);
+  }
   const el = (
     SVG_TAGS.has(tagName)
       ? document.createElementNS(SVG_NS, tagName)
@@ -163,7 +187,7 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
 
   if (props) {
     for (const [k, v] of Object.entries(props)) {
-      if (isSelect && k === "value") {
+      if (isSelect && k.toLowerCase() === "value") {
         selectValue = v;
       } else {
         setProp(el, k, v);

@@ -1,5 +1,8 @@
 import { addCleanup } from "../lifecycle/cleanup";
-import type { Reactive } from "../types";
+import { safeHtmlToFragment } from "../rendering/children";
+import { applyPropUpdate, computePropUpdate, getElementType, isMetaRefreshElement, resanitizeMetaContent } from "../rendering/props-core";
+import { isSafeHtml } from "../safe-html";
+import type { Elementish, Reactive } from "../types";
 import { processClassValue } from "../utils/helpers";
 
 /**
@@ -21,14 +24,19 @@ export function hydrateReactiveAttributes(
     if (!reactive) continue;
 
     const unsub = reactive.subscribe((value) => {
-      if (prop === "value") {
+      const lower = prop.toLowerCase();
+      if (lower === "value") {
         (element as HTMLInputElement).value = String(value ?? "");
-      } else if (prop === "checked") {
+      } else if (lower === "checked") {
         (element as HTMLInputElement).checked = Boolean(value);
-      } else if (prop === "class") {
+      } else if (lower === "class") {
         element.className = processClassValue(value);
       } else {
-        element.setAttribute(prop, String(value ?? ""));
+        // SEC-13: o nome vem do DOM (data-reactive-*); passa pela mesma política das
+        // props (nome válido, sem on*/innerHTML/srcdoc, URLs sanitizadas)
+        const el = element as Elementish;
+        applyPropUpdate(el, computePropUpdate(getElementType(el), prop, String(value ?? ""), false, isMetaRefreshElement(el)));
+        resanitizeMetaContent(el, prop);
       }
     });
 
@@ -89,13 +97,17 @@ export function hydrateReactiveNodes(container: Node, reactives: Map<string, Rea
       } else if (Array.isArray(value)) {
         const frag = document.createDocumentFragment();
         for (const item of value) {
-          if (item instanceof Node) {
+          if (isSafeHtml(item)) {
+            frag.appendChild(safeHtmlToFragment(item));
+          } else if (item instanceof Node) {
             frag.appendChild(item.cloneNode(true));
           } else {
             frag.appendChild(document.createTextNode(String(item ?? "")));
           }
         }
         parent.insertBefore(frag, end);
+      } else if (isSafeHtml(value)) {
+        parent.insertBefore(safeHtmlToFragment(value), end);
       } else if (value instanceof Node) {
         parent.insertBefore(value.cloneNode(true), end);
       } else {

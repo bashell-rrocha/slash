@@ -1,4 +1,5 @@
 import { describe, test, expect } from 'bun:test'
+import { createState } from './state'
 import {
   deepClone,
   deepEqual,
@@ -355,6 +356,65 @@ describe('State Core - FCIS Pattern', () => {
       // Assert
       expect(deepEqual(original, cloned)).toBe(true)
       expect(cloned).not.toBe(original)
+    })
+  })
+
+  describe('deepClone - chaves hostis (SEC-12)', () => {
+    test('__proto__ vindo de JSON vira propriedade propria sem alterar o prototipo', () => {
+      const evil = JSON.parse('{"__proto__":{"isAdmin":true},"a":{"__proto__":{"x":1}}}')
+      const cloned: any = deepClone(evil)
+      expect(cloned.isAdmin).toBeUndefined()
+      expect(cloned.a.x).toBeUndefined()
+      expect(Object.getPrototypeOf(cloned)).toBe(Object.prototype)
+      expect(Object.getPrototypeOf(cloned.a)).toBe(Object.prototype)
+      expect(Object.keys(cloned).sort()).toEqual(['__proto__', 'a'])
+      expect(Object.getOwnPropertyDescriptor(cloned, '__proto__')?.value).toEqual({ isAdmin: true })
+      expect(({} as any).isAdmin).toBeUndefined()
+    })
+
+    test('constructor e prototype proprios sao preservados', () => {
+      const cloned: any = deepClone(JSON.parse('{"constructor":{"prototype":{"p":1}},"prototype":1,"ok":2}'))
+      expect(Object.keys(cloned).sort()).toEqual(['constructor', 'ok', 'prototype'])
+      expect(cloned.constructor).toEqual({ prototype: { p: 1 } })
+      expect(cloned.prototype).toBe(1)
+    })
+
+    test('estado com constructor, prototype e __proto__ faz round-trip em set/get', () => {
+      const st = createState<any>({})
+      st.set(JSON.parse('{"constructor":1,"prototype":2,"__proto__":{"x":1}}'))
+      const got: any = st.get()
+      expect(Object.keys(got).sort()).toEqual(['__proto__', 'constructor', 'prototype'])
+      expect(got.constructor).toBe(1)
+      expect(got.prototype).toBe(2)
+      expect(Object.getOwnPropertyDescriptor(got, '__proto__')?.value).toEqual({ x: 1 })
+      expect(Object.getPrototypeOf(got)).toBe(Object.prototype)
+      expect(got.x).toBeUndefined()
+      expect(({} as any).x).toBeUndefined()
+    })
+
+    test('__proto__ dentro de elemento de array vira propriedade propria', () => {
+      const cloned: any = deepClone(JSON.parse('{"list":[{"__proto__":{"x":1}},2]}'))
+      const item = cloned.list[0]
+      expect(Object.getPrototypeOf(item)).toBe(Object.prototype)
+      expect(item.x).toBeUndefined()
+      expect(Object.getOwnPropertyDescriptor(item, '__proto__')?.value).toEqual({ x: 1 })
+      expect(cloned.list[1]).toBe(2)
+    })
+
+    test('hasOwnProperty como chave de dados nao lanca', () => {
+      expect(() => deepClone({ hasOwnProperty: 1, b: 2 })).not.toThrow()
+      expect(deepClone({ hasOwnProperty: 1, b: 2 })).toEqual({ hasOwnProperty: 1, b: 2 })
+    })
+
+    test('objetos sem prototipo sao clonados e mantem o prototipo nulo', () => {
+      const src = Object.create(null)
+      src.a = 1
+      src.n = Object.create(null, { b: { value: 2, enumerable: true } })
+      const cloned: any = deepClone(src)
+      expect(cloned).not.toBe(src)
+      expect(cloned.a).toBe(1)
+      expect(cloned.n.b).toBe(2)
+      expect(Object.getPrototypeOf(cloned)).toBe(null)
     })
   })
 })

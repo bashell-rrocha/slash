@@ -1,6 +1,6 @@
 # Slash
 
-**htm + hyper + observable state** — a tiny, fast, DX-first framework with no virtual DOM.
+**htm + hyper + observable state** — a small, fast, DX-first framework with no virtual DOM.
 
 Slash renders [htm](https://github.com/developit/htm) tagged templates straight to DOM nodes, re-renders components when the state they read changes, and ships SSR with automatic hydration.
 
@@ -9,6 +9,7 @@ Slash renders [htm](https://github.com/developit/htm) tagged templates straight 
 - **Tagged templates** via [htm](https://github.com/developit/htm), no build step required
 - **No virtual DOM**, templates create real DOM nodes
 - **`createState`**: `get` / `set` / `watch` state with automatic tracking in components, observer pattern and `batch()` updates
+- **Secure by default**: text and attributes are escaped, dangerous URLs and string handlers are blocked (see [Security](#security))
 - **Router** with dynamic params, guards and history/hash modes
 - **Form helpers** for two-way bindings and submit handling
 - **SSR** (`renderToString`, `renderToStream`) with automatic hydration in `render()`
@@ -53,7 +54,7 @@ Server:
 
 ```typescript
 import { createState } from "@_bashell/slash/core";
-import { htmlString, renderToString } from "@_bashell/slash/ssr";
+import { htmlString, renderToString, serializeStateForScript } from "@_bashell/slash/ssr";
 
 const counter = createState({ count: 0 });
 
@@ -65,11 +66,12 @@ function App() {
 
 const { html, state } = renderToString(() => App());
 
+// htmlString returns SafeHtml; renderToString(...).html is a plain string
 const page = `<!DOCTYPE html>
 <html>
   <body>
     <div id="app">${html}</div>
-    <script id="__SLASH_STATE__" type="application/json">${JSON.stringify(state)}</script>
+    <script id="__SLASH_STATE__" type="application/json">${serializeStateForScript(state)}</script>
     <script type="module" src="/client.js"></script>
   </body>
 </html>`;
@@ -93,6 +95,57 @@ function App() {
 // Finds the pre-rendered markup and the __SLASH_STATE__ script and hydrates
 render(html`<${App} />`, "#app");
 ```
+
+## Security
+
+Slash is secure by default. You write templates the normal way and the library does the safe thing:
+
+- **All text and attribute values are escaped**, on the client and on the server. A string is always data, never markup, whatever it contains.
+- **Dangerous URLs are blocked.** Links accept `http:`, `https:`, `mailto:`, `tel:`, `sms:` and relative URLs; `javascript:`, `data:text/html`, `file:` and any other scheme become `about:blank#blocked`. Images also accept `data:image/*` and media (img, audio, video) accepts `blob:`. `sanitizeUrl` checks the URL scheme only, not where it points.
+- **Event handlers must be functions.** `onclick="alert(1)"` and other non-function `on*` values are dropped, on the client and on the server.
+- **`Link` and the router only navigate inside your app** (`/x`, `?q`, `#h`) unless you opt in with `external`.
+- **`<script>` and `<style>` never take dynamic values.** Only the static template text and `unsafeHtml(...)` are kept.
+- **`innerHTML`, `outerHTML` and `srcdoc` props are blocked**, and `style` follows a strict CSS policy.
+
+State in `<script>` (`serializeStateForScript`), dev and production builds and every rule above in detail: [docs/19-security](./docs/19-security/README.md).
+
+```typescript
+import { html } from "@_bashell/slash/core";
+
+const comment = '<img src=x onerror="alert(1)">';
+const link = "javascript:alert(1)";
+
+html`<p>${comment}</p>`;            // shows the text literally, nothing runs
+html`<a href=${link}>Open</a>`;     // href becomes "about:blank#blocked"
+```
+
+### The two explicit escape hatches
+
+Sometimes you really do have trusted markup or a trusted URL. There are exactly two ways to say so. Both have long names on purpose: they are easy to spot in a code review and a `grep unsafe` finds every one of them.
+
+```typescript
+import { html, unsafeHtml, unsafeUrl } from "@_bashell/slash/core";
+
+// Trusted markup you produced (an icon, Markdown you rendered and sanitized, ...)
+const icon = unsafeHtml('<svg viewBox="0 0 8 8"><circle cx="4" cy="4" r="3"/></svg>');
+html`<button>${icon} Save</button>`;
+
+// A URL with a scheme the policy blocks (a custom app scheme, for example)
+html`<a href=${unsafeUrl("myapp://open/42")}>Open in app</a>`;
+```
+
+- `unsafeHtml(html)` returns a `SafeHtml`: the string is emitted as markup, as is. It works in `html` (client) and `htmlString` (server). `isSafeHtml(x)` tells them apart.
+- `unsafeUrl(url)` returns a `SafeUrl` that skips the URL policy for that one value. It only has effect on URL attributes and on the `content` of `<meta http-equiv="refresh">`.
+- **Neither sanitizes anything.** The name is a warning: they tell Slash "I vouch for this value". Never pass user input through them, not even "cleaned" with a regex. If the content comes from users (comments, Markdown, CMS), run it through a real sanitizer first, then wrap the result.
+- `htmlString` templates produce `SafeHtml` already, so nested templates and components compose without any wrapper.
+
+Things to know:
+
+- **Strings that look like markup are text.** A component that returns `"<div>hi</div>"` renders the literal characters (dev mode logs a hint). Return an `html`/`htmlString` template, or `unsafeHtml(...)` if the string is trusted.
+- **Client-side guards (router guards, hidden buttons) are UX, not security.** The server must authorize every request.
+- Dynamic values inside `<script>`/`<style>` are dropped; for JSON use `unsafeHtml(serializeStateForScript(data))`.
+
+Full reference, URL policy, `Link`, `style`, and the small differences between client and server rendering: [docs/19-security](./docs/19-security/README.md) (also: `Link` and router rules, literal `<` in a static `<script>`, `SafeHtml` in reactive state).
 
 ## State
 
@@ -129,6 +182,8 @@ batch(() => {
   form.set({ first: "Ada", last: "Lovelace" });
 }); // logs once: { first: "Ada", last: "Lovelace" }
 ```
+
+Watcher errors during the flush are isolated (every watcher runs) and the first one is rethrown to the caller. If the batch function itself also throws, its error wins and the watcher error is only reported with `console.error`; the production build strips `console` calls (`drop: ['console']`), so in that case the watcher error is silent in production.
 
 Pass `{ enableHistory: true }` as the second argument to `createState` to record changes and use `getHistory()` / `clearHistory()` (time-travel debugging).
 
@@ -169,7 +224,7 @@ Lifecycle:
 - **Cleanup:** removed nodes are destroyed (`destroyNode`), which releases their watchers.
 - **Side effects:** use `state.watch()` outside the template for logging, persistence and the like.
 
-Wrap risky children in `ErrorBoundary`:
+Wrap risky children in `ErrorBoundary`. Note: `html` evaluates children before the boundary runs, so errors thrown while *building* the children are not caught by it (they propagate to the caller). To protect a subtree, use `safeRender(() => view, fallback)` (`fallback` is required):
 
 ```typescript
 import { html, ErrorBoundary } from "@_bashell/slash/core";
@@ -179,6 +234,11 @@ html`
     <${Counter} />
   <//>
 `;
+
+// Protect a subtree whose construction may throw
+import { safeRender } from "@_bashell/slash/core";
+
+html`${safeRender(() => html`<${Counter} />`, (error) => html`<p>Failed: ${error.message}</p>`)}`;
 ```
 
 ## Router
@@ -204,7 +264,7 @@ function App() {
         <${Link} to="/" router=${router}>Home<//>
         <${Link} to="/users/42" router=${router}>User 42<//>
       </nav>
-      <main>${Router({ router })}</main>
+      <main><${Router} router=${router} /></main>
     </div>
   `;
 }
@@ -214,7 +274,9 @@ render(html`<${App} />`, "#app");
 await router.push("/users/7");
 ```
 
-The router is itself a state (`router.get()`, `router.watch()`) holding `currentRoute`, `params`, `query`, `meta` and `isNavigating`. It also exposes `push`, `replace`, `back`, `forward` and `go`. Guards (global or per route) return `false` to block or a path string to redirect. For SSR, pass `initialPath`. See [ROUTER.md](./ROUTER.md).
+The router is itself a state (`router.get()`, `router.watch()`) holding `currentRoute`, `params`, `query`, `meta` and `isNavigating`. It also exposes `push`, `replace`, `back`, `forward` and `go`. Guards (global or per route) return `false` to block or a path string to redirect. For SSR, pass `initialPath`. `await router.ready` resolves when the initial navigation (including guards) is done. Client-side guards are UX only: the server must always authorize access.
+
+`Link` only navigates to app paths (`/x`, `?q`, `#h`). Relative forms such as `./x`, `../x` or `about` and dangerous schemes are blocked (`href="about:blank#blocked"`, no navigation, dev warning). For a real external link opt in explicitly: `<${Link} to="https://example.com" external router=${router}>Docs<//>` renders a native link with `rel="noopener noreferrer"`. `state.query` has no prototype (use `Object.hasOwn`). See [ROUTER.md](./ROUTER.md). The router only intercepts same-origin `http(s)` links; with ctrl/meta/shift/alt, a non-left button, `target` other than `_self` or `download`, the browser acts normally. `?q` and `#h` are relative to the current page.
 
 ## Forms
 
@@ -238,22 +300,24 @@ function SignUp() {
 
 Available helpers: `textFieldControl`, `checkboxControl`, `radioControl`, `SelectControl`, `getText`, `getChecked`, `getSelectValue`, `delegate`, `formToObject`, `onSubmit`, `onReset`, `onButtonClick`, plus the form event types.
 
+`formToObject()` returns an object without a prototype (`Object.create(null)`): field names such as `__proto__` or `constructor` are plain own keys, but `data.hasOwnProperty(...)` does not exist; use `Object.hasOwn(data, "field")`.
+
 ## SSR and hydration
 
-- `htmlString` is the server twin of `html`: same syntax, returns a string.
-- `renderToString(view)` returns `{ html, state }`. Embed `state` as JSON in a `<script id="__SLASH_STATE__" type="application/json">` tag.
+- `htmlString` is the server twin of `html`: same syntax, but it returns a `SafeHtml` (not a `string`). Dynamic values are escaped; use `String(x)` or `x.value` if you need the text. Components can return `htmlString` templates, and plain strings they return are escaped as text.
+- `renderToString(view)` returns `{ html, state }` (`html` is a plain `string`). Build the page shell with a template literal, put `html` in the body and embed `state` with `serializeStateForScript(state)` (JSON with `<`, `>`, `&`, U+2028 and U+2029 escaped, so values cannot close the tag) in a `<script id="__SLASH_STATE__" type="application/json">` tag. Reactives (an object with `get` and `subscribe`, such as `Router`) are wrapped in `<!--reactive-start:id-->` markers and their value is not written to `state`. A `State` is not reactive on the server: interpolate `state.get()` to render its value. Strings are always escaped, including `state.get()` values and strings returned by components; there are no exceptions. For trusted markup use `unsafeHtml()` (see [Security](#security)). The shell is your own template literal: escape anything user-provided that you put in it yourself (a title, for example).
 - `renderToStream(view)` is an async generator that yields HTML chunks and ends with the `__SLASH_STATE__` script.
 - `render(view, container)` hydrates automatically when the container already has content and a `__SLASH_STATE__` script exists. Otherwise it renders from scratch. There is no separate `hydrate()` function.
-- Data loading helpers: `createLoader`, `invalidateLoader`, `serializeLoaderData`, `deserializeLoaderData`, `hydrateLoaderCache`, `isServer`.
+- Data loading helpers: `createLoader`, `invalidateLoader`, `serializeLoaderData` (safe for `<script type="application/json">`: escapes `<`, `>`, `&`, U+2028 and U+2029), `deserializeLoaderData`, `hydrateLoaderCache`, `isServer`.
 
 ## Subpath exports
 
 | Import | Contents |
 | --- | --- |
-| `@_bashell/slash/core` | `html`, `h`, `render`, `destroyNode`, `createState`, `batch`, `ErrorBoundary`, `safeRender`, `catchAsync`, `setupGlobalErrorHandler`, dev-mode helpers |
+| `@_bashell/slash/core` | `html`, `h`, `render`, `destroyNode`, `createState`, `batch`, `ErrorBoundary`, `safeRender`, `catchAsync`, `setupGlobalErrorHandler`, `unsafeHtml`, `isSafeHtml`, `unsafeUrl`, `isSafeUrl`, `sanitizeUrl`, `BLOCKED_URL` (types `SafeHtml`, `SafeUrl`), dev-mode helpers |
 | `@_bashell/slash/router` | `createRouter`, `Router`, `Link`, route utilities and types |
 | `@_bashell/slash/forms` | form controls, event helpers and form types |
-| `@_bashell/slash/ssr` | `htmlString`, `renderToString`, `renderToStream`, loader helpers |
+| `@_bashell/slash/ssr` | `htmlString`, `renderToString`, `renderToStream`, `serializeStateForScript`, `unsafeHtml`, `isSafeHtml`, `unsafeUrl`, `isSafeUrl`, `sanitizeUrl`, `BLOCKED_URL`, loader helpers |
 | `@_bashell/slash` | everything above in one bundle |
 
 Prefer the subpaths: they keep your bundle small.

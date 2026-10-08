@@ -179,12 +179,13 @@ export function formToObject(
   form: FormElement,
 ): Record<string, FormDataEntryValue | FormDataEntryValue[]> {
   const fd = new FormData(form);
-  const out: Record<string, FormDataEntryValue | FormDataEntryValue[]> = {};
+  // Sem prototipo: nomes como __proto__, constructor e toString viram chaves proprias (SEC-10)
+  const out: Record<string, FormDataEntryValue | FormDataEntryValue[]> = Object.create(null);
 
   fd.forEach((value, key) => {
-    const existing = out[key];
+    const existing = Object.hasOwn(out, key) ? out[key] : undefined;
     if (existing === undefined) {
-      out[key] = value;
+      Object.defineProperty(out, key, { value, writable: true, enumerable: true, configurable: true });
     } else if (Array.isArray(existing)) {
       (existing as FormDataEntryValue[]).push(value);
     } else {
