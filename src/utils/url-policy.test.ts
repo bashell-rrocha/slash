@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { resetSecurityWarnings } from "./security-warn";
 import { BLOCKED_URL, evaluateUrl, isUrlAttribute, sanitizeUrl } from "./url-policy";
 
 let warn: ReturnType<typeof spyOn>;
 beforeEach(() => {
+  resetSecurityWarnings();
   warn = spyOn(console, "warn").mockImplementation(() => {});
 });
 afterEach(() => warn.mockRestore());
@@ -123,9 +125,10 @@ describe("sanitizeUrl - data:image", () => {
     expect(sanitizeUrl("data", u, "object")).toBe(BLOCKED_URL);
     expect(sanitizeUrl("action", u, "form")).toBe(BLOCKED_URL);
   });
-  test("data:image sem tag informada (spread/hidratação) é aceito só em src/srcset/poster", () => {
-    expect(sanitizeUrl("src", "data:image/png;base64,AA")).toBe("data:image/png;base64,AA");
-    expect(sanitizeUrl("href", "data:image/png;base64,AA")).toBe(BLOCKED_URL);
+  test("sem tag informada (spread/hidratação sem contexto) data:image falha fechado", () => {
+    expect(sanitizeUrl("src", "data:image/png;base64,AA")).toBe(BLOCKED_URL);
+    expect(sanitizeUrl("srcset", "data:image/png;base64,AA 1x")).toBe(`${BLOCKED_URL} 1x`);
+    expect(sanitizeUrl("src", "/ok.png")).toBe("/ok.png");
   });
 });
 
@@ -207,5 +210,48 @@ describe("evaluateUrl (puro)", () => {
     expect(evaluateUrl("href", "javascript:x", "a")).toEqual({ value: BLOCKED_URL, blocked: true });
     expect(evaluateUrl("href", "/ok", "a")).toEqual({ value: "/ok", blocked: false });
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe("atributos de URL adicionais (SEC-04 menores)", () => {
+  test("longdesc e lowsrc", () => {
+    expect(sanitizeUrl("longdesc", "javascript:x", "img")).toBe(BLOCKED_URL);
+    expect(sanitizeUrl("lowsrc", "javascript:x", "img")).toBe(BLOCKED_URL);
+    expect(isUrlAttribute("longdesc")).toBe(true);
+  });
+  test("imagesrcset avalia cada candidato", () => {
+    expect(sanitizeUrl("imagesrcset", "/a.png 1x, javascript:x 2x", "link")).toBe(`/a.png 1x, ${BLOCKED_URL} 2x`);
+    expect(sanitizeUrl("imageSrcSet", "/a.png 1x", "link")).toBe("/a.png 1x");
+  });
+  test("SMIL values/to/from em animate, set e animateMotion", () => {
+    for (const tag of ["animate", "set", "animateMotion"]) {
+      expect(sanitizeUrl("to", "javascript:alert(1)", tag)).toBe(BLOCKED_URL);
+      expect(sanitizeUrl("from", "javascript:alert(1)", tag)).toBe(BLOCKED_URL);
+      expect(sanitizeUrl("values", "a;javascript:alert(1);b", tag)).toBe(`a;${BLOCKED_URL};b`);
+    }
+    expect(sanitizeUrl("values", "0;10;20", "animate")).toBe("0;10;20");
+    expect(sanitizeUrl("to", "red", "set")).toBe("red");
+  });
+  test("values/to/from em outras tags (ou sem tag) não são URL", () => {
+    expect(sanitizeUrl("to", "javascript:x", "div")).toBe("javascript:x");
+    expect(sanitizeUrl("values", "javascript:x")).toBe("javascript:x");
+    expect(isUrlAttribute("to")).toBe(false);
+    expect(isUrlAttribute("to", "animate")).toBe(true);
+  });
+});
+
+describe("avisos deduplicados", () => {
+  test("a mesma chave avisa uma vez só", () => {
+    sanitizeUrl("href", "javascript:a", "a");
+    sanitizeUrl("href", "javascript:b", "a");
+    expect(warn).toHaveBeenCalledTimes(1);
+    sanitizeUrl("src", "javascript:a", "img");
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+  test("resetSecurityWarnings reabilita o aviso", () => {
+    sanitizeUrl("href", "javascript:a", "a");
+    resetSecurityWarnings();
+    sanitizeUrl("href", "javascript:a", "a");
+    expect(warn).toHaveBeenCalledTimes(2);
   });
 });

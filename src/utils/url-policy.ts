@@ -34,20 +34,31 @@ const URL_ATTRIBUTES = new Set([
   "data",
   "manifest",
   "codebase",
+  "longdesc",
+  "lowsrc",
+  "imagesrcset",
 ]);
+
+// SMIL: values/to/from só são URL em elementos de animação (atributo alvo href)
+const SMIL_ATTRIBUTES = new Set(["values", "to", "from"]);
+const SMIL_TAGS = new Set(["animate", "set", "animatemotion"]);
+
+const isSmil = (name: string, tag?: string): boolean =>
+  SMIL_ATTRIBUTES.has(name) && tag !== undefined && SMIL_TAGS.has(tag.toLowerCase());
 
 const ALLOWED_SCHEMES = new Set(["http", "https", "mailto", "tel"]);
 
 // Atributos que carregam imagem (único lugar onde data:image/* é aceito)
-const IMAGE_ATTRIBUTES = new Set(["src", "srcset", "poster"]);
-const IMAGE_TAGS = new Set(["img", "source", "video", "image"]);
+const IMAGE_ATTRIBUTES = new Set(["src", "srcset", "poster", "imagesrcset"]);
+const IMAGE_TAGS = new Set(["img", "source", "video", "image", "link"]);
 
 const DATA_IMAGE = /^data:image\/(?:png|jpeg|gif|webp|avif)[;,]/i;
 const SCHEME = /^([a-z][a-z0-9+.-]*):/i;
 
 /** true se o atributo carrega uma URL (case-insensitive) */
-export function isUrlAttribute(attr: string): boolean {
-  return URL_ATTRIBUTES.has(attr.toLowerCase());
+export function isUrlAttribute(attr: string, tag?: string): boolean {
+  const name = attr.toLowerCase();
+  return URL_ATTRIBUTES.has(name) || isSmil(name, tag);
 }
 
 // Normalização equivalente ao parser de URL dos navegadores, só que mais
@@ -68,7 +79,8 @@ function isAllowedSingleUrl(attr: string, value: string, tag?: string): boolean 
 
   if (scheme === "data" && DATA_IMAGE.test(normalized)) {
     if (!IMAGE_ATTRIBUTES.has(attr)) return false;
-    return tag === undefined || IMAGE_TAGS.has(tag.toLowerCase());
+    // Sem tag informada: falha fechado (não dá para provar que é uma imagem)
+    return tag !== undefined && IMAGE_TAGS.has(tag.toLowerCase());
   }
   return false;
 }
@@ -91,6 +103,17 @@ function evaluateSrcset(value: string, tag?: string): { value: string; blocked: 
   return blocked ? { value: parts.join(", "), blocked } : { value, blocked };
 }
 
+// SMIL: `values` é uma lista separada por ";"; `to`/`from` são valores únicos
+function evaluateSmil(name: string, value: string, tag?: string): { value: string; blocked: boolean } {
+  let blocked = false;
+  const items = (name === "values" ? value.split(";") : [value]).map((item) => {
+    if (isAllowedSingleUrl(name, item, tag)) return item;
+    blocked = true;
+    return BLOCKED_URL;
+  });
+  return blocked ? { value: items.join(";"), blocked } : { value, blocked };
+}
+
 /**
  * PURO: aplica a política sem efeitos colaterais.
  * `blocked` indica que o valor (ou parte dele) foi substituído por BLOCKED_URL.
@@ -101,12 +124,13 @@ export function evaluateUrl(
   tag?: string,
 ): { value: string; blocked: boolean } {
   const name = attr.toLowerCase();
+  if (isSmil(name, tag)) return evaluateSmil(name, value, tag);
   if (!URL_ATTRIBUTES.has(name)) return { value, blocked: false };
   // `data` só é URL em <object>; em outras tags (ou data-*) é outro conceito
   if (name === "data" && tag !== undefined && tag.toLowerCase() !== "object") {
     return { value, blocked: false };
   }
-  if (name === "srcset") return evaluateSrcset(value, tag);
+  if (name === "srcset" || name === "imagesrcset") return evaluateSrcset(value, tag);
   if (isAllowedSingleUrl(name, value, tag)) return { value, blocked: false };
   return { value: BLOCKED_URL, blocked: true };
 }
@@ -126,6 +150,8 @@ export function blockedUrlMessage(attr: string, value: string): string {
  */
 export function sanitizeUrl(attr: string, value: string, tag?: string): string {
   const result = evaluateUrl(attr, value, tag);
-  if (result.blocked) securityWarn(blockedUrlMessage(attr, value));
+  if (result.blocked && process.env.NODE_ENV !== "production") {
+    securityWarn(blockedUrlMessage(attr, value), `url:${attr.toLowerCase()}`);
+  }
   return result.value;
 }
