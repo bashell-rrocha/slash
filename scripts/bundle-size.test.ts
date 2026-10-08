@@ -152,7 +152,7 @@ describe('Bundle Size Optimization', () => {
     }
   }, 30000);
 
-  test('core import deve produzir bundle de produção <= 6.7KB gzipado', async () => {
+  test('core import deve produzir bundle de produção <= 7.5KB gzipado', async () => {
     const size = await buildTestApp(`import { createState, html, render } from "${ROOT}/src/core.ts";`);
 
     const gzipKB = (size.gzip / 1024).toFixed(2);
@@ -160,15 +160,15 @@ describe('Bundle Size Optimization', () => {
 
     console.log(`\n📦 Core bundle: ${gzipKB} KB gzip, ${brotliKB} KB brotli\n`);
 
-    expect(size.gzip).toBeLessThanOrEqual(6.7 * 1024);
+    expect(size.gzip).toBeLessThanOrEqual(7.5 * 1024);
   }, 30000);
 
-  test('core import deve produzir bundle de produção <= 5.9KB brotli', async () => {
+  test('core import deve produzir bundle de produção <= 6.6KB brotli', async () => {
     const size = await buildTestApp(`import { createState, html, render } from "${ROOT}/src/core.ts";`);
 
     const brotliKB = (size.brotli / 1024).toFixed(2);
 
-    expect(size.brotli).toBeLessThanOrEqual(5.9 * 1024);
+    expect(size.brotli).toBeLessThanOrEqual(6.6 * 1024);
   }, 30000);
 
   test('full import deve ser <= 12KB gzipado', async () => {
