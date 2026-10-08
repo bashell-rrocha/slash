@@ -3,6 +3,7 @@ import htm from "htm";
 import { isDevMode, isWarningsEnabled } from "./dev-warnings";
 import { isSafeHtml, SafeHtml } from "./safe-html";
 import type { Child, Props, Reactive } from "./types";
+import { isSafeCssDeclaration, sanitizeStyleString } from "./utils/css-policy";
 import { isReactive } from "./utils/guards";
 import { escapeJsonForScript } from "./utils/script-json";
 import { isSafeUrl } from "./safe-url";
@@ -153,26 +154,7 @@ function processClass(val: unknown): string {
   return String(val);
 }
 
-// ---- style (SEC-09): valida nome e valor de cada declaração CSS ----
-const CSS_PROP_NAME = /^-{0,2}[a-z][a-z0-9-]*$/i;
-const CSS_FORBIDDEN_VALUE = /[;{}<\\]|expression\s*\(|javascript:|vbscript:|behaviou?r\s*:|-moz-binding|@import/i;
-const CSS_URL_ALLOWED = /^(https?:\/\/|\/(?!\/)|\.\.?\/|#)/i;
-
-// Funções que carregam URLs além de url(): rejeitadas por inteiro (inclusive strings dentro)
-const CSS_URL_FUNCTIONS = /image-set\s*\(|(?:^|[^a-z0-9_-])src\s*\(/i;
-
-function isSafeCssValue(value: string): boolean {
-  if (CSS_FORBIDDEN_VALUE.test(value) || CSS_URL_FUNCTIONS.test(value)) return false;
-  const opened = value.match(/url\(/gi)?.length ?? 0;
-  if (opened === 0) return true;
-  const urls = [...value.matchAll(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)"']*?))\s*\)/gi)];
-  if (urls.length !== opened) return false;
-  return urls.every((m) => CSS_URL_ALLOWED.test((m[1] ?? m[2] ?? m[3] ?? "").trim()));
-}
-
-function isSafeCssDeclaration(name: string, value: string): boolean {
-  return CSS_PROP_NAME.test(name) && value !== "" && isSafeCssValue(value);
-}
+// ---- style (SEC-09): política de nome e valor compartilhada com o cliente (utils/css-policy) ----
 
 function styleObjectToString(style: Record<string, unknown>): string {
   const decls: string[] = [];
@@ -190,20 +172,11 @@ function styleObjectToString(style: Record<string, unknown>): string {
 }
 
 function styleStringToString(style: string): string {
-  const decls: string[] = [];
-  for (const raw of style.split(";")) {
-    const decl = raw.trim();
-    if (!decl) continue;
-    const idx = decl.indexOf(":");
-    const name = idx > 0 ? decl.slice(0, idx).trim() : "";
-    const value = idx > 0 ? decl.slice(idx + 1).trim() : "";
-    if (!isSafeCssDeclaration(name, value)) {
-      if (process.env.NODE_ENV !== "production") warnOnce("declaração de style rejeitada (nome ou valor CSS inseguro)");
-      continue;
-    }
-    decls.push(decl);
+  const { value, rejected } = sanitizeStyleString(style);
+  if (rejected && process.env.NODE_ENV !== "production") {
+    warnOnce("declaração de style rejeitada (nome ou valor CSS inseguro)");
   }
-  return decls.join("; ");
+  return value;
 }
 
 // ---- atributos ----

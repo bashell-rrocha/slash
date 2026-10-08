@@ -99,7 +99,7 @@ async function buildEntry(entry: string): Promise<string> {
 
 // Textos de avisos de dev de TODAS as frentes (core/props, router/Link, SSR)
 const DEV_WARNING_TEXTS = {
-  core: ['URL bloqueada', 'unsafeHtml()', 'handlers reativos', 'atributo inválido', 'só aceita função', 'style ignora', 'bloqueada (injeta HTML)', 'não pode ser prop', 'meta refresh'],
+  core: ['URL bloqueada', 'unsafeHtml()', 'handlers reativos', 'atributo inválido', 'só aceita função', 'style ignora', 'bloqueada (injeta HTML)', 'não pode ser prop', 'style: declaração rejeitada'],
   router: ['deve ser um caminho do app'],
   ssr: [
     'declaração de style rejeitada',

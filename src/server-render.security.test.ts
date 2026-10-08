@@ -224,6 +224,17 @@ describe("SEC-09 (lado SSR): style", () => {
     expect(html).toBe('<div style="color:red; position:fixed"></div>');
   });
 
+  test("funcoes CSS que carregam URL sao rejeitadas (image, element, paint, cross-fade)", () => {
+    for (const v of ["image('https://evil/x.png')", "element(#a)", "paint(w)", "cross-fade(url(/a), url(/b), 50%)"]) {
+      expect(renderToString(() => htmlString`<div style=${{ background: v, color: "red" }}></div>`).html).toBe(
+        '<div style="color: red"></div>',
+      );
+      expect(renderToString(() => htmlString`<div style=${`color:red;background:${v}`}></div>`).html).toBe(
+        '<div style="color:red"></div>',
+      );
+    }
+  });
+
   test("style estatico simples nao muda", () => {
     expect(renderToString(() => htmlString`<div style="color: red"></div>`).html).toBe('<div style="color: red"></div>');
   });

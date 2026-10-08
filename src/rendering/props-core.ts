@@ -9,6 +9,7 @@
 import { isSafeHtml } from "../safe-html";
 import { isSafeUrl } from "../safe-url";
 import type { Elementish } from "../types";
+import { sanitizeStyleString, isSafeCssValue } from "../utils/css-policy";
 import { isEventHandler, isEventTuple } from "../utils/guards";
 import { processClassValue } from "../utils/helpers";
 import { securityWarn } from "../utils/security-warn";
@@ -183,8 +184,11 @@ export function computePropUpdate(
     const safe: Record<string, unknown> = {};
     const dropped: string[] = [];
     for (const k of Object.keys(value)) {
-      if (STYLE_KEY.test(k) && !STYLE_FORBIDDEN_KEYS.has(k)) {
-        safe[k] = (value as Record<string, unknown>)[k];
+      const v = (value as Record<string, unknown>)[k];
+      // Mesma política de valores do SSR (url/expression/javascript, funções de URL...)
+      const emptyValue = v == null || v === false;
+      if (STYLE_KEY.test(k) && !STYLE_FORBIDDEN_KEYS.has(k) && (emptyValue || isSafeCssValue(String(v).trim()))) {
+        safe[k] = v;
       } else {
         dropped.push(k);
       }
@@ -194,6 +198,19 @@ export function computePropUpdate(
       key,
       value: safe,
       ...(process.env.NODE_ENV !== "production" && dropped.length ? { metadata: { warning: `style ignora ${dropped.join(", ")}` } } : {}),
+    };
+  }
+
+  // 3.1) style como string: só as declarações seguras (mesma política do SSR)
+  if (key === "style" && typeof value === "string") {
+    const { value: safeStyle, rejected } = sanitizeStyleString(value);
+    return {
+      type: "SET_ATTRIBUTE",
+      key,
+      value: safeStyle,
+      ...(process.env.NODE_ENV !== "production" && rejected
+        ? { metadata: { warning: "style: declaração rejeitada (nome ou valor CSS inseguro)" } }
+        : {}),
     };
   }
 

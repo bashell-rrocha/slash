@@ -258,6 +258,50 @@ describe("S5 cliente: nomes de atributo e de tag", () => {
   });
 });
 
+describe("SEC-09 cliente: style como string e funcoes de URL (S9)", () => {
+  test("string: declaracao perigosa removida, boa mantida, com aviso", () => {
+    const d = h("div", { style: "color:red;background:url(javascript:alert(1));position:fixed" }) as HTMLElement;
+    expect(d.getAttribute("style")).toBe("color:red; position:fixed");
+    expect(warn).toHaveBeenCalled();
+  });
+  test("string segura nao muda e nao avisa", () => {
+    const d = h("div", { style: "color: red" }) as HTMLElement;
+    expect(d.getAttribute("style")).toBe("color: red");
+    expect(warn).not.toHaveBeenCalled();
+  });
+  test.each(["expression(alert(1))", "url(javascript:x)", "image('https://e/x.png')", "element(#a)", "paint(w)", "cross-fade(url(/a), url(/b), 50%)", "url(//evil/x)"])(
+    "string: %s e removido",
+    (v) => {
+      const d = h("div", { style: `color:red;background:${v}` }) as HTMLElement;
+      expect(d.getAttribute("style")).toBe("color:red");
+    },
+  );
+  test.each(["url(javascript:x)", "image('https://e/x.png')", "element(#a)", "paint(w)", "cross-fade(url(/a), url(/b), 50%)", "expression(1)"])(
+    "objeto: valor %s e descartado",
+    (v) => {
+      const d = h("div", { style: { backgroundImage: v, color: "red" } }) as HTMLElement;
+      expect(d.style.backgroundImage).toBe("");
+      expect(d.style.color).toBe("red");
+    },
+  );
+  test("computePropUpdate de style objeto remove valores perigosos do mapa", () => {
+    const u = computePropUpdate("div", "style", { backgroundImage: "image('x')", color: "red", width: 10 }, true);
+    expect(u.value).toEqual({ color: "red", width: 10 });
+  });
+  test("objeto: valor seguro e custom property seguros passam", () => {
+    const d = h("div", { style: { backgroundImage: "url(/a.png)", "--x": "1px" } }) as HTMLElement;
+    expect(d.style.getPropertyValue("--x")).toBe("1px");
+  });
+  test("string reativa tambem e sanitizada", () => {
+    const d = h("div", { style: reactive("background:url(javascript:x);color:blue") }) as HTMLElement;
+    expect(d.getAttribute("style")).toBe("color:blue");
+  });
+  test("computePropUpdate de style string devolve a string sanitizada", () => {
+    const u = computePropUpdate("div", "style", "a:b;background:url(javascript:x)", true);
+    expect(u.value).toBe("a:b");
+  });
+});
+
 describe("SEC-09 cliente: style", () => {
   test("cssText, length e parentRule são ignorados no objeto de style", () => {
     const d = h("div", { style: { cssText: "position:fixed;inset:0", color: "red" } }) as HTMLElement;
