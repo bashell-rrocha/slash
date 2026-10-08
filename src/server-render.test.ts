@@ -492,9 +492,8 @@ describe("Router no SSR", () => {
   test("Router no SSR emite o HTML da rota", () => {
     const router = mk();
     const { html } = renderToString(() => htmlString`<main>${Router({ router })}</main>`);
-    expect(html).toContain("<h1>home</h1>");
+    expect(html).toBe("<main><!--reactive-start:s0--><h1>home</h1><!--reactive-end:s0--></main>");
     expect(html).not.toContain("&lt;h1");
-    expect(html).toMatch(/<!--reactive-start:s0-->.*<!--reactive-end:s0-->/);
   });
 
   test("Router no SSR nao duplica a rota no estado", () => {
@@ -599,5 +598,28 @@ describe("serializeStateForScript", () => {
     const script = out.slice(out.indexOf('<script id="__SLASH_STATE__"'));
     expect(script.indexOf("</script>")).toBe(script.length - "</script>".length);
     expect(script).not.toContain("<img");
+  });
+});
+
+describe("regra de confianca e State em atributo no SSR", () => {
+  test("State como atributo nao e reativo (cai no fluxo comum, igual ao cliente)", () => {
+    const { html, state } = renderToString(
+      () => htmlString`<p title=${createState(1) as never}>a</p>`,
+    );
+    expect(html).not.toContain("data-reactive");
+    expect(html).toBe('<p title="[object Object]">a</p>');
+    expect(state).toEqual({});
+  });
+
+  test("state.get() com texto simples e escapado", () => {
+    const s = createState("a & b <c");
+    const { html } = renderToString(() => htmlString`<p>${s.get()}</p>`);
+    expect(html).toBe("<p>a &amp; b &lt;c</p>");
+  });
+
+  test("state.get() que comeca com < e tratado como HTML pronto (regra de confianca)", () => {
+    const s = createState("<b>x</b>");
+    const { html } = renderToString(() => htmlString`<p>${s.get()}</p>`);
+    expect(html).toBe("<p><b>x</b></p>");
   });
 });
