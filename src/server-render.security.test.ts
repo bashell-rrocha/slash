@@ -350,3 +350,97 @@ describe("texto estatico vs dinamico (marcador interno)", () => {
     expect(renderToString(() => htmlString`<p class=${rx as never}>${rx as never}</p>`).state).toEqual({ s0: "r" });
   });
 });
+
+describe("round 2: raiz de htmlString sempre e SafeHtml", () => {
+  test("raiz so com valor dinamico", () => {
+    const r = htmlString`${X}`;
+    expect(isSafeHtml(r)).toBe(true);
+    expect(String(r)).toBe("&lt;img src=x onerror=alert(1)&gt;");
+    expect(`${r}`).not.toContain("<img");
+  });
+
+  test("raiz com texto e valor (antes: array)", () => {
+    const r = htmlString`Hello ${X}`;
+    expect(isSafeHtml(r)).toBe(true);
+    expect(String(r)).toBe("Hello &lt;img src=x onerror=alert(1)&gt;");
+  });
+
+  test("raiz so com texto estatico (antes: string)", () => {
+    const r = htmlString`a & b`;
+    expect(isSafeHtml(r)).toBe(true);
+    expect(String(r)).toBe("a &amp; b");
+  });
+
+  test("raiz com varios elementos", () => {
+    const r = htmlString`<a>${"<"}</a><b>x</b>`;
+    expect(isSafeHtml(r)).toBe(true);
+    expect(String(r)).toBe("<a>&lt;</a><b>x</b>");
+  });
+
+  test("resultado normalizado compoe em outro template e em renderToString", () => {
+    const inner = htmlString`Hello ${X}`;
+    expect(renderToString(() => htmlString`<p>${inner}</p>`).html).toBe("<p>Hello &lt;img src=x onerror=alert(1)&gt;</p>");
+    expect(renderToString(() => htmlString`${X}`).html).not.toContain("<img");
+  });
+
+  test("atributo misto com valor dinamico continua funcionando", () => {
+    expect(renderToString(() => htmlString`<p title="x ${"<q>"}">a</p>`).html).toBe('<p title="x &lt;q&gt;">a</p>');
+  });
+});
+
+describe("round 2: brand proprio", () => {
+  test("poluir Object.prototype com o Symbol.for nao forja SafeHtml", () => {
+    const key = Symbol.for("slash.SafeHtml");
+    try {
+      (Object.prototype as Record<symbol, unknown>)[key] = true;
+      expect(isSafeHtml({ value: "<img src=x onerror=1>" })).toBe(false);
+      expect(renderToString(() => htmlString`<p>${{ value: "<b>" } as never}</p>`).html).not.toContain("<b>");
+      expect(isSafeHtml(unsafeHtml("<b>"))).toBe(true);
+    } finally {
+      delete (Object.prototype as Record<symbol, unknown>)[key];
+    }
+  });
+});
+
+describe("round 2: CSS", () => {
+  test("image-set, -webkit-image-set e src() sao rejeitados", () => {
+    const { html } = renderToString(
+      () =>
+        htmlString`<div style=${{
+          background: 'image-set("javascript:alert(1)" 1x)',
+          backgroundImage: "-webkit-image-set(url(/a.png) 1x)",
+          content: "src(https://a.test/x)",
+          color: "red",
+        }}></div>`,
+    );
+    expect(html).toBe('<div style="color: red"></div>');
+  });
+
+  test("nome de propriedade em maiusculas e aceito (string)", () => {
+    expect(renderToString(() => htmlString`<div style=${"COLOR: red"}></div>`).html).toBe('<div style="COLOR: red"></div>');
+  });
+});
+
+describe("round 2: data-reactive reservado", () => {
+  test("atributo data-reactive-* do usuario e descartado com aviso", () => {
+    const { html } = renderToString(() => htmlString`<div ...${{ "data-reactive-onclick": "s0", "DATA-REACTIVE-x": "1", "data-ok": "2" }}>x</div>`);
+    expect(html).toBe('<div data-ok="2">x</div>');
+    expect(warnings.some((m) => m.includes("data-reactive"))).toBe(true);
+  });
+});
+
+describe("round 2: animacao SVG", () => {
+  test.each(["to", "values", "from"])("<animate %s> passa por sanitizeUrl (shim: inalterado, sem quebrar)", (attr) => {
+    const { html } = renderToString(() => htmlString`<animate ...${{ [attr]: "0;1" }} />`);
+    expect(html).toBe(`<animate ${attr}="0;1"></animate>`);
+  });
+});
+
+describe("round 2: objeto inesperado", () => {
+  test("avisa uma vez, com contexto", () => {
+    renderToString(() => htmlString`<p>${{ a: 1 } as never}${{ a: 2 } as never}</p>`);
+    const w = warnings.filter((m) => m.includes("Unexpected object in child position"));
+    expect(w).toHaveLength(1);
+    expect(w[0]).toContain("Object");
+  });
+});

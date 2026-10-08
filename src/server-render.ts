@@ -64,7 +64,9 @@ function escapeHtml(unsafe: string): string {
 // Marcador interno: htmlString embrulha todo valor string DINÂMICO (${...}) antes de
 // chamar o htm. Assim, uma string "solta" filha direta de um elemento em hString é
 // texto estático escrito pelo desenvolvedor (cru em <script>/<style>); o resto é dado.
-// toString permite a concatenação do htm em atributos mistos (class="a ${b}").
+// toString devolve o texto cru e existe SÓ para a concatenação do htm em atributos
+// mistos (class="a ${b}"); a classe é privada ao módulo e todo ponto de saída
+// (hString, htmlString) a remove antes de qualquer valor chegar ao usuário.
 class DynamicText {
   constructor(readonly value: string) {}
   toString(): string {
@@ -115,6 +117,10 @@ const URL_ATTRS = new Set([
   "ping",
   "data",
 ]);
+// Animações SVG que podem alterar href/xlink:href: to/from/values são tratados como URL
+const SVG_ANIMATION_TAGS = new Set(["animate", "set", "animatemotion"]);
+const SVG_ANIMATION_URL_ATTRS = new Set(["to", "from", "values"]);
+const RESERVED_ATTR_PREFIX = "data-reactive-";
 const BOOLEAN_ATTRS = new Set(["checked", "selected", "disabled", "readonly"]);
 
 function captureSignal(ctx: RenderContext, signal: Reactive): string {
@@ -159,12 +165,15 @@ function processClass(val: unknown): string {
 }
 
 // ---- style (SEC-09): valida nome e valor de cada declaração CSS ----
-const CSS_PROP_NAME = /^-{0,2}[a-z][a-z0-9-]*$/;
+const CSS_PROP_NAME = /^-{0,2}[a-z][a-z0-9-]*$/i;
 const CSS_FORBIDDEN_VALUE = /[;{}<\\]|expression\s*\(|javascript:|vbscript:|behaviou?r\s*:|-moz-binding|@import/i;
 const CSS_URL_ALLOWED = /^(https?:\/\/|\/(?!\/)|\.\.?\/|#)/i;
 
+// Funções que carregam URLs além de url(): rejeitadas por inteiro (inclusive strings dentro)
+const CSS_URL_FUNCTIONS = /image-set\s*\(|(?:^|[^a-z0-9_-])src\s*\(/i;
+
 function isSafeCssValue(value: string): boolean {
-  if (CSS_FORBIDDEN_VALUE.test(value)) return false;
+  if (CSS_FORBIDDEN_VALUE.test(value) || CSS_URL_FUNCTIONS.test(value)) return false;
   const opened = value.match(/url\(/gi)?.length ?? 0;
   if (opened === 0) return true;
   const urls = [...value.matchAll(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)"']*?))\s*\)/gi)];
@@ -221,7 +230,10 @@ function genericAttr(tag: string, key: string, value: unknown): string {
   }
 
   let str = String(value);
-  if (URL_ATTRS.has(lower)) {
+  if (
+    URL_ATTRS.has(lower) ||
+    (SVG_ANIMATION_URL_ATTRS.has(lower) && SVG_ANIMATION_TAGS.has(tag.toLowerCase()))
+  ) {
     // TODO(SEC-B): aceitar SafeUrl (unsafeUrl) sem sanitizar
     str = sanitizeUrl(lower, str, tag);
   } else if (lower === "style") {
@@ -241,6 +253,12 @@ function propsToAttrs(ctx: RenderContext, tag: string, props: Props | null): str
 
     if (!ATTR_NAME.test(key)) {
       warnOnce("nome de atributo inválido descartado");
+      continue;
+    }
+
+    // Prefixo reservado aos marcadores de hidratação emitidos pelo próprio SSR
+    if (key.toLowerCase().startsWith(RESERVED_ATTR_PREFIX)) {
+      warnOnce("atributos data-reactive-* são reservados à hidratação e foram descartados");
       continue;
     }
 
@@ -329,7 +347,8 @@ function childToString(child: Child, ctx: RenderContext, rawText = false): strin
 
   // Node ou outros objetos (não devem acontecer no SSR)
   if (typeof child === "object") {
-    console.warn("[slash] SSR: Unexpected object in child position. Use htmlString instead of html.");
+    const name = (child as { constructor?: { name?: string } }).constructor?.name ?? "Object";
+    warnOnce(`Unexpected object in child position (${name}). Use htmlString instead of html.`);
     return "[Object]";
   }
 
@@ -388,8 +407,13 @@ export function hString(tag: unknown, props: Props | null, ...rawChildren: Child
 // Template literal tag usando HTM (versão string)
 // O HTM não precisa saber que retorna SafeHtml - funciona normalmente
 const boundHtm = (htm as any).bind(hString) as (strings: TemplateStringsArray, ...values: unknown[]) => SafeHtml;
-export const htmlString = (strings: TemplateStringsArray, ...values: unknown[]): SafeHtml =>
-  boundHtm(strings, ...values.map(markDynamic));
+export const htmlString = (strings: TemplateStringsArray, ...values: unknown[]): SafeHtml => {
+  const result = boundHtm(strings, ...values.map(markDynamic)) as unknown;
+  if (isSafeHtml(result)) return result;
+  // O htm devolve a raiz como está quando não é um único elemento (texto, valor
+  // dinâmico, várias raízes): normaliza para SafeHtml, tudo como dado escapado
+  return new SafeHtml(childToString(result as Child, activeContext ?? createContext()));
+};
 
 // Serializa o estado para uso dentro de <script>: troca os caracteres que
 // permitiriam fechar a tag ou abrir comentário por escapes JSON equivalentes

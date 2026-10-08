@@ -55,3 +55,23 @@ describe("SSR chama sanitizeUrl nos atributos de URL", () => {
     expect(calls.map((c) => c[0])).toEqual(["href"]);
   });
 });
+
+describe("atributos de animacao SVG", () => {
+  test.each([
+    ["animate", "to"],
+    ["animate", "values"],
+    ["set", "from"],
+    ["animateMotion", "to"],
+  ])("<%s %s> passa pela politica", (tag, attr) => {
+    calls.length = 0;
+    const html = render(() => htmlString`<${tag} ...${{ [attr]: U }}></${tag}>`);
+    expect(html).toContain(`${attr}="about:blank#blocked"`);
+    expect(calls).toContainEqual([attr, U, tag]);
+  });
+
+  test("to/values em outras tags nao passam pela politica", () => {
+    calls.length = 0;
+    render(() => htmlString`<div ...${{ to: "x", values: "y" }}></div>`);
+    expect(calls).toHaveLength(0);
+  });
+});

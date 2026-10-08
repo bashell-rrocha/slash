@@ -1,10 +1,21 @@
-import { test, expect, describe } from "bun:test";
-import { renderToString, renderToStream, htmlString, serializeStateForScript } from "./server-render";
+import { afterEach, beforeEach, test, expect, describe } from "bun:test";
+import { renderToString, renderToStream, htmlString, resetSsrWarningsForTests, serializeStateForScript } from "./server-render";
 import { createState } from "./state";
 import { Router } from "./router/components";
 import { createRouter } from "./router/router";
 import { render } from "./rendering/render";
 import { unsafeHtml } from "./safe-html";
+
+// Avisos de dev (ex.: string que parece markup) não poluem a saída; os testes que
+// verificam avisos instalam o próprio espião de console.warn
+const realWarn = console.warn;
+beforeEach(() => {
+  resetSsrWarningsForTests();
+  console.warn = () => {};
+});
+afterEach(() => {
+  console.warn = realWarn;
+});
 
 describe("renderToString", () => {
   test("renderiza componente simples para HTML string", () => {
@@ -66,9 +77,18 @@ describe("renderToString", () => {
     };
 
     // Act
-    const { html } = renderToString(Component);
+    const warn = console.warn;
+    const warnings: string[] = [];
+    console.warn = (m: string) => warnings.push(m);
+    let html: string;
+    try {
+      html = renderToString(Component).html;
+    } finally {
+      console.warn = warn;
+    }
 
     // Assert
+    expect(warnings.some((m) => m.includes("unsafeHtml"))).toBe(true);
     // Strings são sempre texto: markup só via htmlString/unsafeHtml (SafeHtml)
     expect(html).toBe("<div>&lt;script&gt;alert(&#039;xss&#039;)&lt;/script&gt;</div>");
     expect(html).not.toContain("<script>");
@@ -433,6 +453,7 @@ describe("renderToStream", () => {
 
   test("avisa sobre objeto inesperado em child", () => {
     // Arrange
+    resetSsrWarningsForTests();
     const consoleWarn = console.warn;
     const warnings: string[] = [];
     console.warn = (msg: string) => warnings.push(msg);

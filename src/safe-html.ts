@@ -23,12 +23,19 @@ export class SafeHtml {
 }
 
 export function isSafeHtml(x: unknown): x is SafeHtml {
-  return (
-    typeof x === "object" &&
-    x !== null &&
-    (x as Record<symbol, unknown>)[SAFE_HTML_BRAND] === true &&
-    typeof (x as { value?: unknown }).value === "string"
-  );
+  if (typeof x !== "object" || x === null) return false;
+  try {
+    // Propriedade PRÓPRIA: poluir Object.prototype com a chave não forja o brand
+    return (
+      Object.hasOwn(x, SAFE_HTML_BRAND) &&
+      (x as Record<symbol, unknown>)[SAFE_HTML_BRAND] === true &&
+      Object.hasOwn(x, "value") &&
+      typeof (x as { value?: unknown }).value === "string"
+    );
+  } catch {
+    // Proxies exóticos (ex.: form do happy-dom) podem lançar em chaves symbol
+    return false;
+  }
 }
 
 /**
