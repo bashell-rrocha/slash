@@ -9,7 +9,7 @@
 import { isSafeHtml } from "../safe-html";
 import { isSafeUrl } from "../safe-url";
 import type { Elementish } from "../types";
-import { isForbiddenStyleKey, isSafeCssValue, isVendorStyleKey, sanitizeStyleString, styleKeyToCssName } from "../utils/css-policy";
+import { isForbiddenCssName, isForbiddenStyleKey, isSafeCssValue, isVendorStyleKey, sanitizeStyleString, styleKeyToCssName } from "../utils/css-policy";
 import { isEventHandler, isEventTuple } from "../utils/guards";
 import { processClassValue } from "../utils/helpers";
 import { securityWarn } from "../utils/security-warn";
@@ -183,7 +183,7 @@ export function computePropUpdate(
       const v = (value as Record<string, unknown>)[k];
       // Mesma política de valores do SSR (url/expression/javascript, funções de URL...)
       const emptyValue = v == null || v === false;
-      if (STYLE_KEY.test(k) && !isForbiddenStyleKey(k) && (emptyValue || isSafeCssValue(String(v).trim()))) {
+      if (STYLE_KEY.test(k) && !isForbiddenStyleKey(k) && !isForbiddenCssName(styleKeyToCssName(k)) && (emptyValue || isSafeCssValue(String(v).trim()))) {
         safe[k] = v;
       } else {
         dropped.push(k);

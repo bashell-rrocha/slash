@@ -42,7 +42,14 @@ const CSS_URL_FUNCTIONS = /(?:image-set|image|cross-fade|element|paint)\s*\(|(?:
 
 const CSS_STRING = /"(?:[^"\\]|\\[\s\S])*"|'(?:[^'\\]|\\[\s\S])*'/g;
 const CSS_UNQUOTED_URL = /url\(\s*[^)"']*\)/gi;
-const CSS_ESCAPE = /\\(?:([0-9a-f]{1,6})[ \t\n\r\f]?|([\s\S]))/gi;
+// Depois do pre-processamento (abaixo) o branco que um escape hex consome é espaço, tab ou \n
+const CSS_ESCAPE = /\\(?:([0-9a-f]{1,6})[ \t\n]?|([\s\S]))/gi;
+
+// Pre-processamento de entrada do CSS Syntax: \r\n, \r e \f viram \n e NUL vira U+FFFD.
+// Sem isto `\75\r\nrl(` seria lido aqui como `u` + \n + `rl(` e pelo navegador como `url(`.
+function preprocess(css: string): string {
+  return css.replace(/\r\n?|\f/g, "\n").replace(/\0/g, "\ufffd");
+}
 
 // Remove /* comentários */ (inclusive sem fechar) sem mexer dentro de strings
 function stripComments(css: string): string {
@@ -73,12 +80,12 @@ function decodeEscapes(css: string): string {
       const n = Number.parseInt(hex, 16);
       return n === 0 || n > 0x10ffff || (n >= 0xd800 && n <= 0xdfff) ? "\ufffd" : String.fromCodePoint(n);
     }
-    return ch === "\n" || ch === "\r" || ch === "\f" ? "" : (ch as string);
+    return ch === "\n" ? "" : (ch as string);
   });
 }
 
 export function isSafeCssValue(value: string): boolean {
-  const stripped = stripComments(value);
+  const stripped = stripComments(preprocess(value));
   // `;` `{` `}` `<` só são aceitos dentro de strings e de url()
   if (/[;{}<]/.test(stripped.replace(CSS_STRING, '""').replace(CSS_UNQUOTED_URL, "url()"))) return false;
   const decoded = decodeEscapes(stripped);
@@ -90,8 +97,13 @@ export function isSafeCssValue(value: string): boolean {
   return urls.every((m) => isAllowedCssUrl((m[1] ?? m[2] ?? m[3] ?? "").trim()));
 }
 
+// Propriedades que executam/carregam código no IE/Firefox antigos: proibidas pelo NOME
+const CSS_FORBIDDEN_NAME = /^(?:-moz-binding|behaviou?r)$/i;
+
+export const isForbiddenCssName = (name: string): boolean => CSS_FORBIDDEN_NAME.test(name);
+
 export function isSafeCssDeclaration(name: string, value: string): boolean {
-  return CSS_PROP_NAME.test(name) && value !== "" && isSafeCssValue(value);
+  return CSS_PROP_NAME.test(name) && !isForbiddenCssName(name) && value !== "" && isSafeCssValue(value);
 }
 
 /** Divide `a:b; c:d` em declarações; `;` dentro de aspas, parênteses ou comentários não separa */

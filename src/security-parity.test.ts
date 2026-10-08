@@ -263,6 +263,45 @@ describe("paridade: style", () => {
       }
     }
   });
+  // Pre-processamento do CSS: \r\n, \r e \f viram \n e um escape hex consome UM espaco em branco
+  // (\r\n conta como um), entao `\75\r\nrl(` e `url(` para o navegador
+  const NL = [["CRLF", "\r\n"], ["CR", "\r"], ["FF", "\f"], ["LF", "\n"]] as const;
+  const PAYLOADS = (nl: string) => [
+    `\\75${nl}rl(blob:x)`,
+    `\\69${nl}mage-set('x' 1x)`,
+    `\\73${nl}rc(x)`,
+    `\\75${nl}rl(javascript:alert(1))`,
+    `\\65${nl}xpression(alert(1))`,
+  ];
+  for (const [name, nl] of NL) {
+    test(`escape + quebra de linha ${name}: nao driblam a politica (string e objeto, cliente e SSR)`, () => {
+      for (const v of PAYLOADS(nl)) {
+        const outs = [
+          clientAttr("div", { style: `color:red;background:${v}` }, "style"),
+          ssrAttr("div", { style: `color:red;background:${v}` }, "style"),
+        ];
+        for (const out of outs) expect(out).toBe("color:red");
+        for (const out of [
+          clientAttr("div", { style: { color: "red", background: v } }, "style"),
+          ssrAttr("div", { style: { color: "red", background: v } }, "style"),
+        ]) {
+          expect(out ?? "").toContain("red");
+          expect(out ?? "").not.toMatch(/blob|image|src|javascript|xpression|\\|\r|\f|\n/i);
+        }
+      }
+    });
+  }
+  test("-moz-binding e behavior como NOME de propriedade (string e objeto, cliente e SSR)", () => {
+    for (const name of ["-moz-binding", "behavior", "behaviour", "-MOZ-BINDING", "Behavior"]) {
+      both("div", { style: `color:red;${name}:url(/x.xml)` }, "style", "color:red");
+    }
+    for (const key of ["MozBinding", "mozBinding", "-moz-binding", "behavior", "behaviour"]) {
+      for (const out of [
+        clientAttr("div", { style: { color: "red", [key]: "url(/x.xml)" } }, "style"),
+        ssrAttr("div", { style: { color: "red", [key]: "url(/x.xml)" } }, "style"),
+      ]) expect(out ?? "").not.toMatch(/binding|behavio/i);
+    }
+  });
   test("chaves de objeto: --custom verbatim e prefixos de vendor", () => {
     const c = h("div", { style: { "--myVar": "1px", WebkitTransition: "all 1s", msTransform: "none" } }) as HTMLElement;
     expect(c.style.getPropertyValue("--myVar")).toBe("1px");

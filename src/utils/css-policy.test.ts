@@ -145,3 +145,76 @@ describe("styleKeyToCssName", () => {
     ["color", "color"],
   ])("%s -> %s", (k, name) => expect(styleKeyToCssName(k)).toBe(name));
 });
+
+describe("pre-processamento de newlines (CSS Syntax) antes de decodificar", () => {
+  test.each([
+    ["CRLF", "\r\n"],
+    ["CR", "\r"],
+    ["FF", "\f"],
+    ["LF", "\n"],
+    ["espaco", " "],
+    ["tab", "\t"],
+  ])("escape hex + %s consome um espaco e forma o token", (_n, ws) => {
+    expect(isSafeCssValue(`\\75${ws}rl(blob:x)`)).toBe(false);
+    expect(isSafeCssValue(`\\69${ws}mage-set('x' 1x)`)).toBe(false);
+    expect(isSafeCssValue(`\\73${ws}rc(x)`)).toBe(false);
+  });
+  test("so UM espaco apos o escape e consumido: dois espacos separam os tokens", () => {
+    expect(isSafeCssValue("\\75  rl(blob:x)")).toBe(true); // `u` + espaco + `rl(` nao e url(
+    expect(isSafeCssValue("\\75\r\n\nrl(blob:x)")).toBe(true);
+  });
+  test("NUL vira U+FFFD (nao some e nao junta tokens)", () => {
+    expect(isSafeCssValue("ur\u0000l(blob:x)")).toBe(true); // `ur\uFFFDl(` nao e a funcao url
+    expect(isSafeCssValue("url(blob:x)\u0000")).toBe(false);
+    expect(isSafeCssValue("\\75\u0000rl(blob:x)")).toBe(true); // NUL nao e branco: nao e consumido
+  });
+});
+
+describe("nomes de propriedade proibidos", () => {
+  test.each(["-moz-binding", "behavior", "behaviour", "-MOZ-BINDING", "Behavior"])("%s", (n) => {
+    expect(isSafeCssDeclaration(n, "url(/x.xml)")).toBe(false);
+    expect(isSafeCssDeclaration(n, "none")).toBe(false);
+    expect(sanitizeStyleString(`color:red;${n}:none`)).toEqual({ value: "color:red", rejected: true });
+  });
+  test("nomes parecidos continuam validos", () => {
+    expect(isSafeCssDeclaration("behavior-x", "1")).toBe(true);
+    expect(isSafeCssDeclaration("scroll-behavior", "smooth")).toBe(true);
+  });
+});
+
+// Fuzz deterministico e limitado: variantes de escape/espaco/comentario dos tokens perigosos
+describe("fuzz deterministico das formas ofuscadas", () => {
+  const TARGETS: Array<[string, string]> = [
+    ["url(", "javascript:alert(1))"],
+    ["image-set(", "'x' 1x)"],
+    ["src(", "x)"],
+    ["expression(", "alert(1))"],
+    ["javascript:", "alert(1)"],
+  ];
+  const SEPS = ["", " ", "\t", "\n", "\r\n", "\r", "\f", "/**/", "/* a */"];
+  // Todas as formas de escrever o i-esimo caractere de `tok` com um escape hex seguido de `sep`
+  const variants = (tok: string, rest: string): string[] => {
+    const out = new Set<string>();
+    for (let i = 0; i < tok.length; i++) {
+      const hex = tok.charCodeAt(i).toString(16);
+      for (const sep of ["", " ", "\t", "\n", "\r\n", "\r", "\f"]) {
+        // hex curto so e seguro com separador; sem ele o escape engoliria o proximo hex
+        const padded = sep === "" ? hex.padStart(6, "0") : hex;
+        out.add(tok.slice(0, i) + "\\" + padded + sep + tok.slice(i + 1) + rest);
+      }
+    }
+    // comentario entre o token e o resto nao pode esconder o token: `tok` + comentario + rest
+    for (const sep of SEPS) if (sep.startsWith("/*")) out.add(tok.slice(0, -1) + sep + tok.slice(-1) + rest);
+    return [...out];
+  };
+
+  test("todas as variantes sao bloqueadas (e o conjunto e pequeno)", () => {
+    const cases: string[] = [];
+    for (const [tok, rest] of TARGETS) cases.push(...variants(tok, rest));
+    expect(cases.length).toBeGreaterThan(100);
+    expect(cases.length).toBeLessThan(600);
+    const leaked = cases.filter((c) => isSafeCssValue(c));
+    expect(leaked).toEqual([]);
+    for (const c of cases) expect(sanitizeStyleString(`color:red;background:${c}`).value).toBe("color:red");
+  });
+});
