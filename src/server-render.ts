@@ -3,7 +3,7 @@ import htm from "htm";
 import { isDevMode, isWarningsEnabled } from "./dev-warnings";
 import { isSafeHtml, SafeHtml } from "./safe-html";
 import type { Child, Props, Reactive } from "./types";
-import { isForbiddenStyleKey, isSafeCssDeclaration, sanitizeStyleString, styleKeyToCssName } from "./utils/css-policy";
+import { isForbiddenStyleKey, isSafeCssDeclaration, sanitizeStyleString, styleKeyToCssName, styleObjectTooLong } from "./utils/css-policy";
 import { isEventHandler, isEventTuple, isReactive } from "./utils/guards";
 import { escapeJsonForScript } from "./utils/script-json";
 import { isSafeUrl } from "./safe-url";
@@ -158,6 +158,10 @@ function processClass(val: unknown): string {
 // ---- style (SEC-09): política de nome e valor compartilhada com o cliente (utils/css-policy) ----
 
 function styleObjectToString(style: Record<string, unknown>): string {
+  if (styleObjectTooLong(style)) {
+    if (process.env.NODE_ENV !== "production") warnOnce("declaração de style rejeitada (nome ou valor CSS inseguro)");
+    return "";
+  }
   const decls: string[] = [];
   for (const [k, v] of Object.entries(style)) {
     if (v == null || v === false) continue;

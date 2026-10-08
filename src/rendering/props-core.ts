@@ -9,7 +9,7 @@
 import { isSafeHtml } from "../safe-html";
 import { isSafeUrl } from "../safe-url";
 import type { Elementish } from "../types";
-import { isForbiddenCssName, isForbiddenStyleKey, isSafeCssValue, isVendorStyleKey, sanitizeStyleString, styleKeyToCssName } from "../utils/css-policy";
+import { isForbiddenCssName, isForbiddenStyleKey, isSafeCssValue, isVendorStyleKey, sanitizeStyleString, styleKeyToCssName, styleObjectTooLong } from "../utils/css-policy";
 import { isEventHandler, isEventTuple } from "../utils/guards";
 import { processClassValue } from "../utils/helpers";
 import { securityWarn } from "../utils/security-warn";
@@ -177,6 +177,15 @@ export function computePropUpdate(
 
   // 3) SET_STYLE: style object
   if (key === "style" && value && typeof value === "object") {
+    // Mais de 8 KB no total: descarta o style inteiro
+    if (styleObjectTooLong(value as Record<string, unknown>)) {
+      return {
+        type: "SET_STYLE",
+        key,
+        value: {},
+        ...(process.env.NODE_ENV !== "production" ? { metadata: { warning: "style ignorado: mais de 8 KB" } } : {}),
+      };
+    }
     const safe: Record<string, unknown> = {};
     const dropped: string[] = [];
     for (const k of Object.keys(value)) {
