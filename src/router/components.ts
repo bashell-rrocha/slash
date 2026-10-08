@@ -28,12 +28,21 @@ export function Router({ router }: { router: RouterInstance }): Reactive<Child> 
       return state.currentRoute.route.component(state)
     },
     subscribe(fn: (v: Child) => void): () => void {
+      // Re-renderiza só quando a identidade da rota renderizada muda: caminho
+      // casado, params ou query (comparados por valor, já que router.get()
+      // devolve clones). Alternar isNavigating ou um bloqueio por guard não
+      // muda a chave e não reconstrói a página atual (preserva estado local).
+      const identity = (s: ReturnType<typeof router.get>): string =>
+        s.currentRoute
+          ? JSON.stringify([s.currentRoute.path, s.params, s.query])
+          : "null"
+      let last = identity(router.get())
       return router.watch(() => {
         const state = router.get()
-        const child = state.currentRoute
-          ? state.currentRoute.route.component(state)
-          : null
-        fn(child)
+        const key = identity(state)
+        if (key === last) return
+        last = key
+        fn(state.currentRoute ? state.currentRoute.route.component(state) : null)
       })
     },
   }
