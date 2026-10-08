@@ -11,6 +11,8 @@ export { destroyNode, h, html, html as tsx, html as jsx, render } from "./hyper"
 export { createState } from "./state";
 export type { State } from "./state";
 export { batch } from "./batch";
+export { isSafeHtml, unsafeHtml } from "./safe-html";
+export type { SafeHtml } from "./safe-html";
 
 // Developer Experience - Warnings & Error Messages (optional)
 export {

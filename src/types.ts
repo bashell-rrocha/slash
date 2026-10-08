@@ -1,4 +1,6 @@
 // src/types.ts
+import type { SafeHtml } from "./safe-html";
+
 export type Key = string | number | symbol;
 
 export type Elementish = HTMLElement | SVGElement;
@@ -12,6 +14,7 @@ export type Reactive<T = unknown> = {
 export type Child =
   | Node
   | string
+  | SafeHtml
   | number
   | boolean
   | null
