@@ -10,7 +10,14 @@ import type {
   RouteMatch,
 } from "./types"
 import { createHistory, type History } from "./history"
-import { findRouteMatch, parseNavigationPath, computeNavigation } from "./navigation-decision"
+import {
+  findRouteMatch,
+  parseNavigationPath,
+  computeNavigation,
+  hasApplicableGuards,
+  isRedirectLimitExceeded,
+  MAX_REDIRECTS,
+} from "./navigation-decision"
 import { createBrowserAdapter, detectInitialPath } from "./browser-adapter"
 import { splitPath } from "./utils"
 
@@ -36,14 +43,66 @@ export function createRouter(config: RouterConfig): RouterInstance {
   // Global guards
   const allGuards = config.guards || []
 
+  // Token de sequência: cada navegação captura o seu e descarta o resultado
+  // se uma navegação mais nova começou durante algum await
+  let navSeq = 0
+
+  // Último caminho (pathname + search) efetivamente resolvido; eventos de
+  // histórico para ele são no-op (ex.: hashchange assíncrono do próprio push)
+  let lastPath: string | null = null
+  const pathKey = (p: string): string => {
+    const input = parseNavigationPath(p)
+    const [, search] = splitPath(stripHash(p))
+    return search ? `${input.pathname}${search}` : input.pathname
+  }
+
+  const stripHash = (p: string): string => {
+    const i = p.indexOf("#")
+    return i === -1 ? p : p.slice(0, i)
+  }
+
+  // "?q" and "#h" are relative to the current path (D7); anything else is passed as is
+  const resolveRelative = (path: string): string => {
+    if (typeof path !== "string" || (path[0] !== "?" && path[0] !== "#")) return path
+    const current = stripHash(history.location() || "/")
+    const [pathname, search] = splitPath(current)
+    return path[0] === "?" ? `${pathname || "/"}${path}` : `${pathname || "/"}${search}${path}`
+  }
+
   /**
    * Navigate to a path using pure decision logic
+   * `initial`: verificação de guards da rota inicial (bloqueio zera a rota)
    */
-  async function navigate(
+  function navigate(
     path: string,
     replace: boolean = false,
-    fromHistory: boolean = false
+    fromHistory: boolean = false,
+    initial: boolean = false
   ): Promise<void> {
+    return run(path, replace, fromHistory, initial, ++navSeq, 0)
+  }
+
+  async function run(
+    path: string,
+    replace: boolean,
+    fromHistory: boolean,
+    initial: boolean,
+    seq: number,
+    depth: number
+  ): Promise<void> {
+    // Redirects em cadeia demais: provável loop entre guards
+    if (isRedirectLimitExceeded(depth)) {
+      console.error(`Navigation aborted: more than ${MAX_REDIRECTS} redirects (${path})`)
+      state.set({
+        currentRoute: null,
+        params: {},
+        query: {},
+        meta: {},
+        isNavigating: false,
+      })
+      return
+    }
+
     // Set navigating flag
     const currentState = state.get()
     state.set({
@@ -60,10 +119,20 @@ export function createRouter(config: RouterConfig): RouterInstance {
       config.fallback
     )
 
+    // Navegação mais nova começou: descarta este resultado
+    if (seq !== navSeq) return
+
     // Handle redirect
     if (decision.redirect) {
-      await navigate(decision.redirect, replace, fromHistory)
+      await run(decision.redirect, replace, fromHistory, initial, seq, depth + 1)
       return
+    }
+
+    // Eventos de histórico e a verificação inicial registram o caminho resolvido,
+    // mesmo quando bloqueado: reentrar para a mesma URL repetiria guards com efeitos
+    const previousLastPath = lastPath
+    if (fromHistory || initial || decision.shouldNavigate) {
+      lastPath = pathKey(path)
     }
 
     // Handle navigation decision
@@ -79,6 +148,15 @@ export function createRouter(config: RouterConfig): RouterInstance {
           meta: {},
           isNavigating: false,
         })
+      } else if (initial) {
+        // Rota inicial bloqueada: não mantém a rota aplicada de forma síncrona
+        state.set({
+          currentRoute: null,
+          params: {},
+          query: {},
+          meta: {},
+          isNavigating: false,
+        })
       } else {
         // Guard blocked - keep current state
         state.set({
@@ -91,6 +169,34 @@ export function createRouter(config: RouterConfig): RouterInstance {
 
     // Handle successful navigation
     if (decision.newRoute) {
+      // Update browser history FIRST (skip in SSR and history-triggered navigations): if the
+      // browser refuses the URL, state stays untouched and the push rejects with a clear error.
+      if (!adapter.isSSR() && !fromHistory) {
+        const input = parseNavigationPath(path)
+        const [, search] = splitPath(stripHash(path))
+        const hashIndex = path.indexOf("#")
+        const hash = hashIndex === -1 ? "" : path.slice(hashIndex)
+        const fullPath = (search ? `${input.pathname}${search}` : input.pathname) + hash
+
+        try {
+          if (replace) {
+            replacingInitial = initial
+            try {
+              history.replace(fullPath)
+            } finally {
+              replacingInitial = false
+            }
+          } else {
+            history.push(fullPath)
+          }
+        } catch (err) {
+          lastPath = previousLastPath
+          state.set({ ...currentState, isNavigating: false })
+          const reason = err instanceof Error ? err.message : String(err)
+          throw new Error(`Navigation failed: the browser rejected ${JSON.stringify(fullPath)} (${reason})`)
+        }
+      }
+
       state.set({
         currentRoute: decision.newRoute,
         params: decision.newRoute.params,
@@ -98,44 +204,70 @@ export function createRouter(config: RouterConfig): RouterInstance {
         meta: decision.newRoute.meta,
         isNavigating: false,
       })
-
-      // Update browser history (skip in SSR and history-triggered navigations)
-      if (!adapter.isSSR() && !fromHistory) {
-        const input = parseNavigationPath(path)
-        const [, search] = splitPath(path)
-        const fullPath = search ? `${input.pathname}${search}` : input.pathname
-
-        if (replace) {
-          history.replace(fullPath)
-        } else {
-          history.push(fullPath)
-        }
-      }
     }
   }
 
   // Initialize router using adapter for environment detection
-  const initialPath = detectInitialPath(adapter, config.initialPath)
+  const initialPath = detectInitialPath(adapter, config.initialPath, config.mode || "history")
+
+  // initialPath explícito ou estado do servidor: a rota é aplicada de forma síncrona
+  // (sem flash, markup do SSR preservado) e os guards rodam em seguida
+  const fromBrowserLocation =
+    !config.initialPath && !adapter.getServerState()?.currentRoute?.path
+
+  // Resolve quando a navegação inicial termina
+  let ready: Promise<void> = Promise.resolve()
+  // Ligada só ao redor do replace da navegação inicial, para ele não reentrar
+  // via history.listen (eventos de histórico reais superam a inicial pelo token)
+  let replacingInitial = false
 
   if (initialPath) {
-    // Parse and match initial path synchronously (SSR or hydration)
     const input = parseNavigationPath(initialPath)
     const match = findRouteMatch(input.pathname, input.query, config.routes, config.fallback)
 
     if (match) {
-      state.set({
-        currentRoute: match,
-        params: match.params,
-        query: match.query,
-        meta: match.meta,
-        isNavigating: false,
-      })
+      const guarded = !adapter.isSSR() && hasApplicableGuards(match, allGuards)
+
+      if (guarded && fromBrowserLocation) {
+        // Sem expor a rota protegida antes da decisão
+        state.set({
+          currentRoute: null,
+          params: {},
+          query: input.query,
+          meta: {},
+          isNavigating: true,
+        })
+      } else {
+        state.set({
+          currentRoute: match,
+          params: match.params,
+          query: match.query,
+          meta: match.meta,
+          isNavigating: guarded,
+        })
+      }
+
+      if (!guarded) lastPath = pathKey(initialPath)
+
+      if (guarded) {
+        const promise = navigate(initialPath, true, false, true)
+        const initialSeq = navSeq
+        ready = promise.catch((err) => {
+          console.error("Navigation error:", err)
+          // Só encerra isNavigating se nenhuma navegação mais nova está em andamento
+          if (initialSeq === navSeq) {
+            state.set({ ...state.get(), isNavigating: false })
+          }
+        })
+      }
     }
   }
 
   // Listen to history changes (browser only)
   if (!adapter.isSSR()) {
     history.listen((location) => {
+      if (replacingInitial) return
+      if (lastPath !== null && pathKey(location) === lastPath) return
       navigate(location, true, true).catch((err) => {
         console.error("Navigation error:", err)
       })
@@ -147,11 +279,11 @@ export function createRouter(config: RouterConfig): RouterInstance {
     ...state,
 
     async push(path: string): Promise<void> {
-      await navigate(path, false)
+      await navigate(resolveRelative(path), false)
     },
 
     async replace(path: string): Promise<void> {
-      await navigate(path, true)
+      await navigate(resolveRelative(path), true)
     },
 
     back(): void {
@@ -169,5 +301,7 @@ export function createRouter(config: RouterConfig): RouterInstance {
     currentRoute(): RouteMatch | null {
       return state.get().currentRoute
     },
+
+    ready,
   }
 }

@@ -10,8 +10,8 @@ import type { RouteQuery } from "./types"
  * @returns Sanitized path
  */
 export function sanitizePath(path: string): string {
-  // Remove duplicate slashes
-  let sanitized = path.replace(/\/+/g, "/")
+  // Browsers treat "\" as "/" in http(s) URLs: normalize first, then remove duplicate slashes
+  let sanitized = path.replace(/[\\/]+/g, "/")
 
   // Remove trailing slash (except for root path)
   if (sanitized.length > 1 && sanitized.endsWith("/")) {
@@ -26,13 +26,23 @@ export function sanitizePath(path: string): string {
   return sanitized
 }
 
+/** Decodifica percent-encoding; se malformado, devolve o texto cru em vez de lançar */
+function safeDecode(text: string): string {
+  try {
+    return decodeURIComponent(text)
+  } catch {
+    return text
+  }
+}
+
 /**
  * Parse query string into object
  * @param search - Query string (with or without leading ?)
  * @returns Query object
  */
 export function parseQuery(search: string): RouteQuery {
-  const query: RouteQuery = {}
+  // Sem prototipo: chaves como __proto__ e constructor viram chaves proprias (SEC-11)
+  const query: RouteQuery = Object.create(null)
 
   // Remove leading ?
   const cleanSearch = search.startsWith("?") ? search.slice(1) : search
@@ -44,9 +54,17 @@ export function parseQuery(search: string): RouteQuery {
   // Parse key=value pairs
   const pairs = cleanSearch.split("&")
   for (const pair of pairs) {
-    const [key, value] = pair.split("=")
+    // Divide no primeiro "=": o valor pode conter "=" (ex.: redirect=/x?y=1)
+    const eq = pair.indexOf("=")
+    const key = eq === -1 ? pair : pair.slice(0, eq)
+    const value = eq === -1 ? "" : pair.slice(eq + 1)
     if (key) {
-      query[decodeURIComponent(key)] = value ? decodeURIComponent(value) : ""
+      Object.defineProperty(query, safeDecode(key), {
+        value: safeDecode(value),
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      })
     }
   }
 

@@ -196,10 +196,12 @@ const styles = { color: 'red', fontSize: '16px' }
 const el2 = html`<div style=${styles}></div>`
 ```
 
+Declarações inseguras (`url(javascript:...)`, `expression(...)`, `;` no valor) são descartadas; veja [Segurança](../19-security/README.md#style).
+
 ### Children (Filhos)
 
 Children podem ser:
-- Strings e números
+- Strings e números (strings são sempre texto: `<b>` aparece literalmente; para marcação confiável use `unsafeHtml(...)`, veja [Segurança](../19-security/README.md))
 - Elementos DOM (Node)
 - Arrays (aninhados)
 - Objetos `Reactive` (`get()` + `subscribe()`), atualizados automaticamente (é o caso do valor retornado por `Router({ router })`)
@@ -291,12 +293,12 @@ render(html`<div>Second</div>`, root)
 Se o container já tem conteúdo renderizado pelo servidor E existe um `<script id="__SLASH_STATE__">`, `render()` hidrata em vez de substituir:
 
 ```typescript
-// Server-side
+// Server-side (import { renderToString, serializeStateForScript } from '@_bashell/slash/ssr')
 const { html, state: stateData } = renderToString(() => App())
 const output = `
   <div id="app">${html}</div>
   <script id="__SLASH_STATE__" type="application/json">
-    ${JSON.stringify(stateData)}
+    ${serializeStateForScript(stateData)}
   </script>
 `
 

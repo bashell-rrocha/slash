@@ -40,7 +40,9 @@ export interface NavigationInput {
  * Pure function - no side effects
  */
 export function parseNavigationPath(path: string): NavigationInput {
-  const [pathname, search] = splitPath(path)
+  // The fragment never takes part in route matching or in the query
+  const hashIndex = path.indexOf("#")
+  const [pathname, search] = splitPath(hashIndex === -1 ? path : path.slice(0, hashIndex))
   const sanitizedPath = sanitizePath(pathname)
   const query = parseQuery(search)
 
@@ -75,6 +77,25 @@ export function findRouteMatch(
   }
 
   return match
+}
+
+/** Limite de redirects encadeados por navegação (evita loops de guards) */
+export const MAX_REDIRECTS = 10
+
+/**
+ * Indica se a cadeia de redirects passou do limite
+ * Pure function - no side effects
+ */
+export function isRedirectLimitExceeded(depth: number): boolean {
+  return depth > MAX_REDIRECTS
+}
+
+/**
+ * Indica se há algum guard aplicável (globais ou da rota casada)
+ * Pure function - no side effects
+ */
+export function hasApplicableGuards(match: RouteMatch, globalGuards: NavigationGuard[]): boolean {
+  return globalGuards.length > 0 || (match.route.guards?.length ?? 0) > 0
 }
 
 /**

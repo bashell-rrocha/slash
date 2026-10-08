@@ -134,3 +134,20 @@ describe("detectInitialPath", () => {
     expect(path).toBe("/fallback")
   })
 })
+
+describe("detectInitialPath em modo hash", () => {
+  it("deve usar o hash da localização", () => {
+    const adapter = { ...createMockAdapter({ currentLocation: "/" }), getHashLocation: () => "/sobre?x=1" }
+    expect(detectInitialPath(adapter, undefined, "hash")).toBe("/sobre?x=1")
+  })
+
+  it("deve cair em / quando o hash está vazio", () => {
+    const adapter = { ...createMockAdapter({ currentLocation: "/pagina" }), getHashLocation: () => "" }
+    expect(detectInitialPath(adapter, undefined, "hash")).toBe("/")
+  })
+
+  it("initialPath configurado tem precedência", () => {
+    const adapter = { ...createMockAdapter({}), getHashLocation: () => "/sobre" }
+    expect(detectInitialPath(adapter, "/x", "hash")).toBe("/x")
+  })
+})

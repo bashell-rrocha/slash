@@ -219,7 +219,7 @@ describe("rendering/props-core (Functional Core)", () => {
         expect(result.value).toEqual({ color: "red", fontSize: "16px" });
       });
 
-      it("não retorna SET_STYLE para style string (fallback para SET_PROPERTY)", () => {
+      it("style string não é SET_STYLE: vira SET_ATTRIBUTE com a string sanitizada (S9)", () => {
         // Arrange
         const elementType = "div";
         const key = "style";
@@ -230,7 +230,8 @@ describe("rendering/props-core (Functional Core)", () => {
         const result = computePropUpdate(elementType, key, value, hasProperty);
 
         // Assert
-        expect(result.type).toBe("SET_PROPERTY");
+        expect(result.type).toBe("SET_ATTRIBUTE");
+        expect(result.value).toBe("color: red");
       });
 
       it("não retorna SET_STYLE para style null", () => {

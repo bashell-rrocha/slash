@@ -1,7 +1,16 @@
 import { addCleanup, destroyNode } from "../lifecycle/cleanup";
+import { isSafeHtml, type SafeHtml } from "../safe-html";
 import type { Child, Reactive } from "../types";
 import { isReactive } from "../utils/guards";
 import { toStr } from "../utils/helpers";
+
+// Único innerHTML sancionado da biblioteca: só alcançável por SafeHtml
+// (htmlString/unsafeHtml). <template> mantém scripts e handlers inertes durante o parse
+export function safeHtmlToFragment(safe: SafeHtml): DocumentFragment {
+  const template = document.createElement("template");
+  template.innerHTML = safe.value;
+  return template.content;
+}
 
 export function appendReactiveChild(parent: Node, sig: Reactive<unknown>): void {
   const start = document.createComment("sig:start");
@@ -10,12 +19,17 @@ export function appendReactiveChild(parent: Node, sig: Reactive<unknown>): void 
   parent.appendChild(end);
 
   const renderBetween = (value: unknown): void => {
+    // Usa o pai vivo dos marcadores: o pai original pode ter sido um fragment
+    // temporário (componentes) e os nós já foram movidos para o pai real
+    const live = start.parentNode;
+    if (!live || live !== end.parentNode) return;
+
     // Limpa nós atuais entre start e end
     let n = start.nextSibling;
     while (n && n !== end) {
       const next = n.nextSibling;
       destroyNode(n);
-      parent.removeChild(n);
+      live.removeChild(n);
       n = next;
     }
 
@@ -25,12 +39,14 @@ export function appendReactiveChild(parent: Node, sig: Reactive<unknown>): void 
       // nada a inserir
     } else if (Array.isArray(value)) {
       for (const v of value) appendChildSmart(frag, v as Child);
+    } else if (isSafeHtml(value)) {
+      frag.appendChild(safeHtmlToFragment(value));
     } else if (value instanceof Node) {
       appendNodeSafe(frag, value);
     } else {
       frag.appendChild(document.createTextNode(toStr(value)));
     }
-    parent.insertBefore(frag, end);
+    live.insertBefore(frag, end);
   };
 
   renderBetween(sig.get());
@@ -70,6 +86,11 @@ export function appendChildSmart(parent: Node, child: Child): void {
 
   if (Array.isArray(child)) {
     for (const c of child) appendChildSmart(parent, c as Child);
+    return;
+  }
+
+  if (isSafeHtml(child)) {
+    parent.appendChild(safeHtmlToFragment(child));
     return;
   }
 

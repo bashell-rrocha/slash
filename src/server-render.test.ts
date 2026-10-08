@@ -1,6 +1,21 @@
-import { test, expect, describe } from "bun:test";
-import { renderToString, renderToStream, htmlString } from "./server-render";
+import { afterEach, beforeEach, test, expect, describe } from "bun:test";
+import { renderToString, renderToStream, htmlString, resetSsrWarningsForTests, serializeStateForScript } from "./server-render";
 import { createState } from "./state";
+import { Router } from "./router/components";
+import { createRouter } from "./router/router";
+import { render } from "./rendering/render";
+import { unsafeHtml } from "./safe-html";
+
+// Avisos de dev (ex.: string que parece markup) não poluem a saída; os testes que
+// verificam avisos instalam o próprio espião de console.warn
+const realWarn = console.warn;
+beforeEach(() => {
+  resetSsrWarningsForTests();
+  console.warn = () => {};
+});
+afterEach(() => {
+  console.warn = realWarn;
+});
 
 describe("renderToString", () => {
   test("renderiza componente simples para HTML string", () => {
@@ -62,12 +77,21 @@ describe("renderToString", () => {
     };
 
     // Act
-    const { html } = renderToString(Component);
+    const warn = console.warn;
+    const warnings: string[] = [];
+    console.warn = (m: string) => warnings.push(m);
+    let html: string;
+    try {
+      html = renderToString(Component).html;
+    } finally {
+      console.warn = warn;
+    }
 
     // Assert
-    // Note: htmlString não escapa automaticamente, é responsabilidade do desenvolvedor
-    // Este teste documenta o comportamento atual
-    expect(html).toContain(malicious);
+    expect(warnings.some((m) => m.includes("unsafeHtml"))).toBe(true);
+    // Strings são sempre texto: markup só via htmlString/unsafeHtml (SafeHtml)
+    expect(html).toBe("<div>&lt;script&gt;alert(&#039;xss&#039;)&lt;/script&gt;</div>");
+    expect(html).not.toContain("<script>");
   });
 
   test("renderiza void elements sem tag de fechamento", () => {
@@ -198,26 +222,26 @@ describe("renderToString", () => {
 
   test("reseta signal registry entre renderizações", () => {
     // Arrange
-    const sig1 = createState({ value: "first" });
-    const Component1 = () => htmlString`<div>${sig1}</div>`;
+    const sig1 = { get: () => "first", subscribe: () => () => {} };
+    const Component1 = () => htmlString`<div class=${sig1 as never}></div>`;
 
     // Act - primeira renderização
     const result1 = renderToString(Component1);
 
     // Assert - primeira renderização
     expect(Object.keys(result1.state)).toHaveLength(1);
-    expect(result1.state.s0).toEqual({ value: "first" });
+    expect(result1.state.s0).toBe("first");
 
     // Arrange - segunda renderização
-    const sig2 = createState({ value: "second" });
-    const Component2 = () => htmlString`<div>${sig2}</div>`;
+    const sig2 = { get: () => "second", subscribe: () => () => {} };
+    const Component2 = () => htmlString`<div class=${sig2 as never}></div>`;
 
     // Act - segunda renderização
     const result2 = renderToString(Component2);
 
     // Assert - segunda renderização (registry foi resetado)
     expect(Object.keys(result2.state)).toHaveLength(1);
-    expect(result2.state.s0).toEqual({ value: "second" }); // Counter resetou
+    expect(result2.state.s0).toBe("second"); // Counter resetou
   });
 });
 
@@ -429,6 +453,7 @@ describe("renderToStream", () => {
 
   test("avisa sobre objeto inesperado em child", () => {
     // Arrange
+    resetSsrWarningsForTests();
     const consoleWarn = console.warn;
     const warnings: string[] = [];
     console.warn = (msg: string) => warnings.push(msg);
@@ -476,5 +501,165 @@ describe("renderToStream", () => {
     // Valida que o estado foi capturado
     expect(Object.keys(capturedState)).toHaveLength(1);
     expect(capturedState.s0).toEqual(["<li>task 1</li>", "<li>task 2</li>"]);
+  });
+});
+
+describe("Router no SSR", () => {
+  const mk = (component: () => unknown = () => htmlString`<h1>home</h1>`) =>
+    createRouter({
+      initialPath: "/",
+      routes: [{ path: "/", component: component as never }],
+    });
+
+  test("Router no SSR emite o HTML da rota", () => {
+    const router = mk();
+    const { html } = renderToString(() => htmlString`<main>${Router({ router })}</main>`);
+    expect(html).toBe("<main><!--reactive-start:s0--><h1>home</h1><!--reactive-end:s0--></main>");
+    expect(html).not.toContain("&lt;h1");
+  });
+
+  test("Router no SSR nao duplica a rota no estado", () => {
+    const router = mk();
+    const { state } = renderToString(() => htmlString`<main>${Router({ router })}</main>`);
+    expect(JSON.stringify(state)).not.toContain("<h1>");
+  });
+
+  test("reativo nao-State com texto simples e escapado", () => {
+    const rx = { get: () => "a & b <c", subscribe: () => () => {} };
+    const { html } = renderToString(() => htmlString`<p>${rx as never}</p>`);
+    expect(html).toContain("a &amp; b &lt;c");
+  });
+
+  test("rota nula renderiza vazio no SSR", () => {
+    const router = createRouter({ initialPath: "/nada", routes: [] });
+    const { html } = renderToString(() => htmlString`<main>${Router({ router })}</main>`);
+    expect(html).toBe("<main><!--reactive-start:s0--><!--reactive-end:s0--></main>");
+  });
+
+  test("SSR com Router hidrata no cliente sem erro", async () => {
+    const router = mk();
+    const { html, state } = renderToString(() => htmlString`<main>${Router({ router })}</main>`);
+    const el = document.createElement("div");
+    el.innerHTML = html;
+    const script = document.createElement("script");
+    script.id = "__SLASH_STATE__";
+    script.type = "application/json";
+    script.textContent = JSON.stringify(state);
+    el.appendChild(script);
+    document.body.appendChild(el);
+    const clientRouter = createRouter({
+      initialPath: "/",
+      routes: [
+        { path: "/", component: (() => document.createTextNode("home")) as never },
+        { path: "/b", component: (() => document.createTextNode("page-b")) as never },
+      ],
+    });
+    expect(() => render(Router({ router: clientRouter }) as never, el)).not.toThrow();
+    expect(el.textContent).toContain("home");
+    await clientRouter.push("/b");
+    expect(el.textContent).toContain("page-b");
+    el.remove();
+  });
+});
+
+describe("SSR usa a regra de reativo do cliente", () => {
+  test("SSR nao trata State como reativo (igual ao cliente)", () => {
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      const { html, state } = renderToString(() => htmlString`<p>${createState(7) as never}</p>`);
+      expect(html).not.toContain("reactive-start");
+      expect(state).toEqual({});
+    } finally {
+      console.warn = warn;
+    }
+  });
+
+  test("SSR com state.get() renderiza o valor sem marcadores", () => {
+    const count = createState(7);
+    const { html, state } = renderToString(() => htmlString`<p>${count.get()}</p>`);
+    expect(html).toBe("<p>7</p>");
+    expect(state).toEqual({});
+  });
+
+  test("reativo com subscribe continua marcado no SSR (string e texto; SafeHtml e markup)", () => {
+    const rx = { get: () => "<b>x</b>", subscribe: () => () => {} };
+    const { html, state } = renderToString(() => htmlString`<p>${rx as never}</p>`);
+    expect(html).toBe("<p><!--reactive-start:s0-->&lt;b&gt;x&lt;/b&gt;<!--reactive-end:s0--></p>");
+    const rxHtml = { get: () => htmlString`<b>x</b>`, subscribe: () => () => {} };
+    expect(renderToString(() => htmlString`<p>${rxHtml as never}</p>`).html).toBe(
+      "<p><!--reactive-start:s0--><b>x</b><!--reactive-end:s0--></p>",
+    );
+    expect(state).toEqual({});
+  });
+});
+
+describe("serializeStateForScript", () => {
+  test("valores não serializáveis no topo viram null", () => {
+    for (const v of [undefined, () => 1, Symbol("x")]) {
+      expect(serializeStateForScript(v)).toBe("null");
+    }
+  });
+
+  test("barra invertida literal, surrogate solitário e < em chave são inertes e idênticos", () => {
+    const x = { "</script>": ["\\u003c", "\ud800"] };
+    const out = serializeStateForScript(x);
+    expect(out).not.toContain("<");
+    expect(JSON.parse(out)).toEqual(x);
+  });
+
+  test("neutraliza </script> e <!--", () => {
+    const out = serializeStateForScript({ a: "</script><!-- x -->" });
+    expect(out).not.toContain("</script");
+    expect(out).not.toContain("<!--");
+    expect(out).not.toContain("<");
+    expect(out).not.toContain(">");
+  });
+
+  test("faz ida e volta exata", () => {
+    const original = {
+      a: "</script>",
+      b: "a & b",
+      c: "x\u2028y\u2029z",
+      d: "ação não é <b>",
+      n: [1, null, true],
+    };
+    const out = serializeStateForScript(original);
+    expect(out).not.toContain("\u2028");
+    expect(out).not.toContain("\u2029");
+    expect(JSON.parse(out)).toEqual(original);
+  });
+
+  test("renderToStream usa a serializacao segura", async () => {
+    const rx = { get: () => "</script><img onerror=x>", subscribe: () => () => {} };
+    let out = "";
+    for await (const c of renderToStream(() => htmlString`<p class=${rx as never}></p>`)) out += c;
+    const script = out.slice(out.indexOf('<script id="__SLASH_STATE__"'));
+    expect(script.indexOf("</script>")).toBe(script.length - "</script>".length);
+    expect(script).not.toContain("<img");
+  });
+});
+
+describe("regra de confianca e State em atributo no SSR", () => {
+  test("State como atributo nao e reativo (cai no fluxo comum, igual ao cliente)", () => {
+    const { html, state } = renderToString(
+      () => htmlString`<p title=${createState(1) as never}>a</p>`,
+    );
+    expect(html).not.toContain("data-reactive");
+    expect(html).toBe('<p title="[object Object]">a</p>');
+    expect(state).toEqual({});
+  });
+
+  test("state.get() com texto simples e escapado", () => {
+    const s = createState("a & b <c");
+    const { html } = renderToString(() => htmlString`<p>${s.get()}</p>`);
+    expect(html).toBe("<p>a &amp; b &lt;c</p>");
+  });
+
+  test("state.get() que comeca com < e texto (sem regra de confianca); unsafeHtml e a saida", () => {
+    const s = createState("<b>x</b>");
+    const { html } = renderToString(() => htmlString`<p>${s.get()}</p>`);
+    expect(html).toBe("<p>&lt;b&gt;x&lt;/b&gt;</p>");
+    expect(renderToString(() => htmlString`<p>${unsafeHtml(s.get())}</p>`).html).toBe("<p><b>x</b></p>");
   });
 });

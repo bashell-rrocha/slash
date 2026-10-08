@@ -1,6 +1,6 @@
 {
   "name": "@_bashell/slash",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "htm + hyper + observable state (no VDOM) — tiny, fast, DX-first",
   "repository": {
     "type": "git",
@@ -15,6 +15,9 @@
   "sideEffects": false,
   "files": [
     "dist",
+    "!dist/.tsbuildinfo",
+    "!dist/**/*.gz",
+    "!dist/**/*.br",
     "src",
     "!src/**/*.test.ts",
     "!src/**/*.test.tsx"
@@ -24,36 +27,56 @@
   "types": "./dist/types/index.d.ts",
   "exports": {
     ".": {
-      "bun": "./src/index.ts",
       "types": "./dist/types/index.d.ts",
+      "bun": "./src/index.ts",
+      "development": {
+        "import": "./dist/dev/index.mjs",
+        "require": "./dist/dev/index.cjs"
+      },
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs",
       "default": "./dist/index.mjs"
     },
     "./core": {
-      "bun": "./src/core.ts",
       "types": "./dist/types/core.d.ts",
+      "bun": "./src/core.ts",
+      "development": {
+        "import": "./dist/dev/core.mjs",
+        "require": "./dist/dev/core.cjs"
+      },
       "import": "./dist/core.mjs",
       "require": "./dist/core.cjs",
       "default": "./dist/core.mjs"
     },
     "./router": {
-      "bun": "./src/router/index.ts",
       "types": "./dist/types/router/index.d.ts",
+      "bun": "./src/router/index.ts",
+      "development": {
+        "import": "./dist/dev/router.mjs",
+        "require": "./dist/dev/router.cjs"
+      },
       "import": "./dist/router.mjs",
       "require": "./dist/router.cjs",
       "default": "./dist/router.mjs"
     },
     "./ssr": {
-      "bun": "./src/ssr.ts",
       "types": "./dist/types/ssr.d.ts",
+      "bun": "./src/ssr.ts",
+      "development": {
+        "import": "./dist/dev/ssr.mjs",
+        "require": "./dist/dev/ssr.cjs"
+      },
       "import": "./dist/ssr.mjs",
       "require": "./dist/ssr.cjs",
       "default": "./dist/ssr.mjs"
     },
     "./forms": {
-      "bun": "./src/forms/index.ts",
       "types": "./dist/types/forms/index.d.ts",
+      "bun": "./src/forms/index.ts",
+      "development": {
+        "import": "./dist/dev/forms.mjs",
+        "require": "./dist/dev/forms.cjs"
+      },
       "import": "./dist/forms.mjs",
       "require": "./dist/forms.cjs",
       "default": "./dist/forms.mjs"
@@ -64,14 +87,17 @@
     "build:types": "tsc -p ./tsconfig.json",
     "build:esm": "FORMAT=esm NODE_ENV=production bun run scripts/build.ts",
     "build:cjs": "FORMAT=cjs NODE_ENV=production bun run scripts/build.ts",
+    "build:esm:dev": "FORMAT=esm DIST_VARIANT=dev bun run scripts/build.ts",
+    "build:cjs:dev": "FORMAT=cjs DIST_VARIANT=dev bun run scripts/build.ts",
     "build:compress": "bun run scripts/compress.ts",
-    "build": "bun run clean && bun run build:esm && bun run build:cjs && bun run build:types && bun run build:compress",
+    "build": "bun run clean && bun run build:esm && bun run build:cjs && bun run build:esm:dev && bun run build:cjs:dev && bun run build:types",
     "dev:bundle": "FORMAT=esm NODE_ENV=development bun run scripts/build.ts --watch",
     "dev:types": "tsc -w -p ./tsconfig.json --preserveWatchOutput",
     "dev": "concurrently --kill-others --names \"types,bundle\" \"bun run dev:types\" \"bun run dev:bundle\"",
     "test": "bun test",
     "test:watch": "bun test --watch",
-    "test:bundle": "bun test scripts/bundle-size.test.ts"
+    "test:bundle": "bun test scripts/bundle-size.test.ts",
+    "verify:dist": "node scripts/verify-dist.mjs"
   },
   "dependencies": {
     "htm": "^3.1.1"

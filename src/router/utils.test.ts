@@ -293,3 +293,53 @@ describe("splitPath", () => {
     expect(result).toEqual(["/search", "?q=what?why"])
   })
 })
+
+describe("parseQuery - entrada maliciosa (SEC-11)", () => {
+  test("percent-encoding malformado nao lanca e cai para o texto cru", () => {
+    expect(() => parseQuery("?a=%E0%A4%A")).not.toThrow()
+    expect(parseQuery("?a=%E0%A4%A")).toEqual({ a: "%E0%A4%A" })
+    expect(parseQuery("?%E0%A4%A=1&ok=%41")).toEqual({ "%E0%A4%A": "1", ok: "A" })
+  })
+
+  test("divide no primeiro '=' e preserva o restante do valor", () => {
+    expect(parseQuery("?redirect=/x?y=1&z=a=b")).toEqual({ redirect: "/x?y=1", z: "a=b" })
+  })
+
+  test("chaves de prototipo viram chaves proprias e o objeto nao tem prototipo", () => {
+    const q = parseQuery("?__proto__=x&constructor=y&toString=z")
+    expect(Object.getPrototypeOf(q)).toBe(null)
+    expect(Object.keys(q).sort()).toEqual(["__proto__", "constructor", "toString"])
+    expect(q.constructor).toBe("y")
+    expect(q.toString).toBe("z")
+    expect(JSON.stringify(q)).toContain('"constructor":"y"')
+    expect(({} as any).x).toBeUndefined()
+  })
+
+  test("query vazia continua sendo objeto sem prototipo", () => {
+    expect(Object.getPrototypeOf(parseQuery(""))).toBe(null)
+    expect(parseQuery("")).toEqual({})
+  })
+})
+
+describe("parseQuery - casos de borda", () => {
+  test("chave repetida: o ultimo valor vence", () => {
+    expect(parseQuery("?a=1&a=2")).toEqual({ a: "2" })
+  })
+
+  test("'+' e mantido literalmente", () => {
+    expect(parseQuery("?q=a+b")).toEqual({ q: "a+b" })
+  })
+
+  test("chave vazia e descartada", () => {
+    expect(parseQuery("?=x&a=1")).toEqual({ a: "1" })
+  })
+
+  test("chave sem '=' tem valor vazio", () => {
+    expect(parseQuery("?flag&a=1")).toEqual({ flag: "", a: "1" })
+  })
+
+  test("'%' solitario no fim nao lanca", () => {
+    expect(parseQuery("?a=100%")).toEqual({ a: "100%" })
+    expect(parseQuery("?a%=1")).toEqual({ "a%": "1" })
+  })
+})

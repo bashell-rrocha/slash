@@ -15,7 +15,7 @@ import {
 } from './state-core'
 import type { StateHistory } from './state-history'
 import { createHistory, addToHistory, clearHistory as clearHistoryCore } from './state-history'
-import { isInBatch, __recordBatchUpdate, __addBatchEndCallback } from './batch'
+import { isInBatch, __enqueueBatchNotify, __dropInFlightNotify } from './batch'
 
 export type StateWatcher<T> = (params: T) => void;
 
@@ -45,6 +45,8 @@ export const createState = <S = unknown>(
   // Estado interno mutável (encapsulado)
   let _state = deepClone(initialState);
   const _watchers = new Set<StateWatcher<S>>();
+  // Geração da notificação mais recente (o último valor vence)
+  let _notifyGen = 0;
 
   // Histórico opcional (time-travel debugging)
   let _history: StateHistory<S> | null = options?.enableHistory
@@ -55,9 +57,35 @@ export const createState = <S = unknown>(
    * Side effect: Notifica todos os watchers
    */
   const _notifyHandlers = (payload: S) => {
-    for (const stateWatcher of _watchers) {
-      stateWatcher(payload);
+    // Isola erros: todos os watchers rodam e o primeiro erro é relançado no fim
+    let firstError: unknown;
+    let hasError = false;
+    // Se um watcher fizer set reentrante, a notificação aninhada (mais nova)
+    // já entregou o valor atual a todos: este laço para, sem entregar o velho
+    const gen = ++_notifyGen;
+    // Retrato: watcher adicionado durante a notificação começa na próxima
+    for (const stateWatcher of Array.from(_watchers)) {
+      if (gen !== _notifyGen) break;
+      // Removido por um watcher anterior: não recebe nada
+      if (!_watchers.has(stateWatcher)) continue;
+      try {
+        stateWatcher(payload);
+      } catch (error) {
+        if (!hasError) {
+          hasError = true;
+          firstError = error;
+        }
+      }
     }
+    if (hasError) throw firstError;
+  };
+
+  /**
+   * Notificador deste estado para o fim do batch (identidade estável
+   * para deduplicar); entrega o valor final.
+   */
+  const _notifyFinal = () => {
+    _notifyHandlers(deepClone(_state));
   };
 
   /**
@@ -80,9 +108,12 @@ export const createState = <S = unknown>(
 
     // 5. FUNCTIONAL CORE: Decidir se deve notificar (puro)
     if (shouldNotifyWatchers(command)) {
-      // 6. BATCH: Registrar update se em modo batch
+      // Se este estado ainda esperava notificação num flush em andamento,
+      // a notificação abaixo (ou a re-enfileirada) já entrega o valor novo
+      __dropInFlightNotify(_notifyFinal);
+      // 6. BATCH: Enfileirar notificador deste estado se em modo batch
       if (isInBatch()) {
-        __recordBatchUpdate();
+        __enqueueBatchNotify(_notifyFinal);
       } else {
         // 7. IMPERATIVE SHELL: Side effect de notificação (fora de batch)
         _notifyHandlers(deepClone(_state));
@@ -191,11 +222,6 @@ export const createState = <S = unknown>(
     state.getHistory = getHistory;
     state.clearHistory = clearHistory;
   }
-
-  // BATCH: Registrar callback para notificar watchers ao finalizar batch
-  __addBatchEndCallback(() => {
-    _notifyHandlers(deepClone(_state));
-  });
 
   return state;
 };
