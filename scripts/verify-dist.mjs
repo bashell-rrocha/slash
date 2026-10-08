@@ -41,14 +41,14 @@ for (const [label, conditions, dir] of [['prod', '', resolve(ROOT, 'dist')], ['d
   try {
     resolved = probe(conditions);
   } catch (error) {
-    failures.push(`resolução (${label}): ${error.message}`);
+    failures.push(`resolution (${label}): ${error.message}`);
     continue;
   }
   for (const [subpath, kinds] of Object.entries(resolved)) {
     for (const [kind, file] of Object.entries(kinds)) {
       const inDir = resolve(file, '..') === dir;
-      if (!inDir) failures.push(`resolução ${label} ${subpath} (${kind}): ${file} fora de ${dir}`);
-      if (!existsSync(file)) failures.push(`resolução ${label} ${subpath} (${kind}): ${file} não existe`);
+      if (!inDir) failures.push(`resolution ${label} ${subpath} (${kind}): ${file} is outside ${dir}`);
+      if (!existsSync(file)) failures.push(`resolution ${label} ${subpath} (${kind}): ${file} does not exist`);
     }
   }
 }
@@ -62,7 +62,7 @@ for (const { label, pick, dir } of builds) {
   for (const [subpath, conditions] of Object.entries(pkg.exports)) {
     const targets = pick(conditions);
     if (!targets || !targets.import || !targets.require) {
-      failures.push(`${label} ${subpath}: exports sem import/require`);
+      failures.push(`${label} ${subpath}: exports has no import/require`);
       continue;
     }
     const loaded = {};
@@ -83,7 +83,7 @@ for (const { label, pick, dir } of builds) {
     const cjsKeys = loaded.require ? Object.keys(loaded.require).sort() : [];
 
     if (loaded.require && cjsKeys.length === 0) {
-      failures.push(`${label} ${subpath}: require não expõe nenhum export`);
+      failures.push(`${label} ${subpath}: require exposes no exports`);
     }
     // O CJS é gerado sem splitting e serve de referência da API pública. No ESM,
     // um entrypoint que também é chunk de outro (ex.: core.mjs usado por index.mjs)
@@ -91,11 +91,11 @@ for (const { label, pick, dir } of builds) {
     if (loaded.import && loaded.require) {
       const missing = cjsKeys.filter((key) => !esmKeys.includes(key));
       if (missing.length > 0) {
-        failures.push(`${label} ${subpath}: import não expõe ${missing.join(', ')}`);
+        failures.push(`${label} ${subpath}: import does not expose ${missing.join(', ')}`);
       }
       const extra = esmKeys.filter((key) => !cjsKeys.includes(key));
       if (extra.length > 0) {
-        console.warn(`  ⚠ ${label} ${subpath}: import expõe nomes internos a mais (${extra.join(', ')})`);
+        console.warn(`  ⚠ ${label} ${subpath}: import exposes extra internal names (${extra.join(', ')})`);
       }
       console.log(`  ✓ ${label} ${subpath} (${esmKeys.length} exports)`);
     }
@@ -106,18 +106,18 @@ for (const { label, pick, dir } of builds) {
   const code = files.map((file) => readFileSync(file, 'utf-8')).join('\n');
   for (const text of DEV_WARNING_TEXTS) {
     const present = code.includes(text);
-    if (label === 'prod' && present) failures.push(`prod: contém aviso de dev "${text}"`);
-    if (label === 'dev' && !present) failures.push(`dev: não contém aviso de dev "${text}"`);
+    if (label === 'prod' && present) failures.push(`prod: contains dev warning "${text}"`);
+    if (label === 'dev' && !present) failures.push(`dev: does not contain dev warning "${text}"`);
   }
   if (!code.includes(CONSOLE_ERROR)) {
-    failures.push(`${label}: nenhum ${CONSOLE_ERROR} no build (console.* não pode ser removido)`);
+    failures.push(`${label}: no ${CONSOLE_ERROR} in the build (console.* must not be removed)`);
   }
 }
 
 if (failures.length > 0) {
-  console.error('❌ dist/ inválido:');
+  console.error('❌ dist/ is invalid:');
   for (const failure of failures) console.error(`  - ${failure}`);
   process.exit(1);
 }
 
-console.log('✅ Todos os entrypoints de dist/ (produção) e dist/dev/ (desenvolvimento) carregam');
+console.log('✅ All entrypoints in dist/ (production) and dist/dev/ (development) load');
