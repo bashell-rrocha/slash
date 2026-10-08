@@ -74,10 +74,6 @@ export function isAllowedImageUrl(url: string): boolean {
   return isAllowedSingleUrl("src", url, "img");
 }
 
-/** @deprecated use isAllowedImageUrl; mantém o comportamento estrito anterior (sem svg+xml e blob:) */
-export const isAllowedCssUrl = (url: string): boolean =>
-  !/^(?:blob:|data:image\/svg)/i.test(normalizeForSchemeCheck(url)) && isAllowedImageUrl(url);
-
 /** true se o atributo carrega uma URL (case-insensitive) */
 export function isUrlAttribute(attr: string, tag?: string): boolean {
   const name = attr.toLowerCase();

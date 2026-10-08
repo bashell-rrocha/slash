@@ -17,6 +17,10 @@ describe("isSafeCssValue", () => {
     "url(data:image/png;base64,AAAA)",
     "url('data:image/webp;base64,AAAA')",
     "url(mailto:a@b.co)",
+    // D3/D4: url() is an image context, same as <img src>: svg+xml images and blob: are allowed
+    "url(data:image/svg+xml;base64,AAAA)",
+    "url('data:image/svg+xml;base64,AAAA')",
+    "url(blob:https://x/y)",
     // escapes e comentarios: o valor DECODIFICADO e que e avaliado
     '"\\2022"',
     '"\\2022 "',
@@ -50,9 +54,7 @@ describe("isSafeCssValue", () => {
     "-webkit-cross-fade(url(/a.png), url(/b.png), 50%)",
     // svg e data nao-raster
     "url(data:image/svg+xml,<svg/>)",
-    "url(data:image/svg+xml;base64,AAAA)",
     "url(data:text/html;base64,AAAA)",
-    "url(blob:https://x/y)",
     "url(vbscript:x)",
     // escapes CSS decodificados antes de checar
     "\\75rl(javascript:alert(1))",
@@ -364,9 +366,9 @@ describe("estrito: url() sem argumento nao-quoted fora do charset seguro", () =>
     "url(javascript:x)",
     "url(data:image/svg+xml,<svg/>)",
     "url(data:text/html;base64,AAAA)",
-    "url(blob:x)",
     "url(\"javascript:x\")",
-    "url('data:image/svg+xml;base64,AAAA')",
+    "url(\"data:text/html;base64,AAAA\")",
+    "url(vbscript:x)",
     "url(\"a.png\" x)",
     "url(\"a.png\"",
     "URL(javascript:x)",
@@ -387,6 +389,8 @@ describe("estrito: url() sem argumento nao-quoted fora do charset seguro", () =>
     "URL(/a.png)",
     "url(#frag)",
     "url(/a.png), url(/b.png)",
+    "url(blob:x)",
+    "url('data:image/svg+xml;base64,AAAA')",
   ])("permite %s", (v) => expect(isSafeCssValue(v)).toBe(true));
 });
 
