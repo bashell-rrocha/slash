@@ -1,8 +1,7 @@
 // scripts/bundle-size.test.ts
 import { describe, expect, test } from 'bun:test';
 import { resolve } from 'node:path';
-import { mkdtempSync } from 'node:fs';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { gzipSync, brotliCompressSync } from 'node:zlib';

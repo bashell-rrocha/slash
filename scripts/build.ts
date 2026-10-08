@@ -143,6 +143,11 @@ if (publishable && result.outputs.length > 0) {
       }
 
       await rename(oldPath, newPath);
+
+      // src/ é publicado e "sources" já aponta para ele: sourcesContent só incharia o pacote
+      const map = JSON.parse(await readFile(newPath, 'utf-8'));
+      delete map.sourcesContent;
+      await writeFile(newPath, JSON.stringify(map), 'utf-8');
     }
   }
 } else if (result.outputs.length > 0) {

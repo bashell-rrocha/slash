@@ -4,7 +4,8 @@
 // dist/dev/). O build pode "passar" e ainda gerar chunks que quebram em runtime (ex.:
 // export de identificador não declarado), então esta verificação roda depois do build e
 // antes de publicar. Também confere que os avisos de dev existem só no build de dev.
-import { readFileSync, readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -14,7 +15,8 @@ const require = createRequire(import.meta.url);
 const pkg = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf-8'));
 
 // Textos de avisos de dev (src/): presentes no build de dev, ausentes no de produção.
-const DEV_WARNING_TEXTS = ['unsafeHtml()', 'Unexpected object in child position'];
+// Substrings estáveis (nomes de API e de atributo, que sobrevivem à tradução das mensagens).
+const DEV_WARNING_TEXTS = ['unsafeHtml()', 'unsafeUrl()', 'data-reactive-*', 'onClick=${fn}', 'Unexpected object in child position'];
 // Erros de runtime: console.error NUNCA pode ser removido de nenhum build.
 const CONSOLE_ERROR = 'console.error';
 
@@ -25,6 +27,30 @@ function jsFiles(dir) {
   return readdirSync(dir, { withFileTypes: true })
     .filter((entry) => entry.isFile() && /\.(mjs|cjs)$/.test(entry.name))
     .map((entry) => resolve(dir, entry.name));
+}
+
+// Resolução real pelo "exports": condições padrão -> produção; --conditions=development -> dev.
+function probe(conditions) {
+  const args = conditions ? [`--conditions=${conditions}`] : [];
+  const output = execFileSync(process.execPath, [...args, resolve(ROOT, 'scripts/resolve-probe.mjs')], { encoding: 'utf-8' });
+  return JSON.parse(output);
+}
+
+for (const [label, conditions, dir] of [['prod', '', resolve(ROOT, 'dist')], ['dev', 'development', resolve(ROOT, 'dist/dev')]]) {
+  let resolved;
+  try {
+    resolved = probe(conditions);
+  } catch (error) {
+    failures.push(`resolução (${label}): ${error.message}`);
+    continue;
+  }
+  for (const [subpath, kinds] of Object.entries(resolved)) {
+    for (const [kind, file] of Object.entries(kinds)) {
+      const inDir = resolve(file, '..') === dir;
+      if (!inDir) failures.push(`resolução ${label} ${subpath} (${kind}): ${file} fora de ${dir}`);
+      if (!existsSync(file)) failures.push(`resolução ${label} ${subpath} (${kind}): ${file} não existe`);
+    }
+  }
 }
 
 const builds = [
