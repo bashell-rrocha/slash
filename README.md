@@ -204,7 +204,7 @@ function App() {
         <${Link} to="/" router=${router}>Home<//>
         <${Link} to="/users/42" router=${router}>User 42<//>
       </nav>
-      <main>${Router({ router })}</main>
+      <main><${Router} router=${router} /></main>
     </div>
   `;
 }

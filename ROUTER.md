@@ -42,7 +42,7 @@ function App() {
         <${Link} to="/" router=${router}>Home<//>
         <${Link} to="/about" router=${router}>About<//>
       </nav>
-      <main>${Router({ router })}</main>
+      <main><${Router} router=${router} /></main>
     </div>
   `;
 }
@@ -93,7 +93,7 @@ router.currentRoute();            // RouteMatch | null
 
 ### `Router`
 
-`Router({ router })` retorna um valor reativo que renderiza o `component` da rota atual e se atualiza a cada navegação. Chame-o dentro de um elemento do template, como em `<main>${Router({ router })}</main>`.
+`Router({ router })` retorna um valor reativo que renderiza o `component` da rota atual e se atualiza a cada navegação. Chame-o dentro de um elemento do template, como em `<main><${Router} router=${router} /></main>`.
 
 ### `Link`
 
