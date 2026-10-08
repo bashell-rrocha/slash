@@ -136,7 +136,7 @@ export const Counter = () => html`
 
 ### Server-Side Rendering (SSR)
 
-Estrutura para aplicação com SSR. O `App` compartilhado precisa usar `htmlString` no servidor e `html` no cliente (veja o template [slash-ssr](https://github.com/bashell-rrocha/slash-ssr)):
+Estrutura para aplicação com SSR. O `App` compartilhado precisa usar `htmlString` no servidor e `html` no cliente (veja o template [slash-ssr](https://github.com/bashell-rrocha/slash-ssr)). `htmlString` devolve um `SafeHtml` e todo texto dinâmico é escapado; o shell da página é um template literal com `renderToString().html` e `serializeStateForScript`:
 
 ```
 my-slash-ssr/
@@ -155,7 +155,7 @@ my-slash-ssr/
 #### src/server.ts
 
 ```typescript
-import { renderToString } from '@_bashell/slash/ssr'
+import { renderToString, serializeStateForScript } from '@_bashell/slash/ssr'
 import { App } from './App'
 
 const server = Bun.serve({
@@ -173,7 +173,7 @@ const server = Bun.serve({
       </head>
       <body>
         <div id="app">${html}</div>
-        <script id="__SLASH_STATE__" type="application/json">${JSON.stringify(state)}</script>
+        <script id="__SLASH_STATE__" type="application/json">${serializeStateForScript(state)}</script>
         <script type="module" src="/client.js"></script>
       </body>
       </html>
@@ -319,7 +319,7 @@ console.log('✅ State created:', state.get())
 
 // htmlString não precisa de DOM; no navegador use `html` de '@_bashell/slash/core'
 const markup = htmlString`<div>Hello Slash!</div>`
-console.log('✅ HTM working:', markup)
+console.log('✅ HTM working:', String(markup)) // htmlString devolve SafeHtml
 ```
 
 Execute:

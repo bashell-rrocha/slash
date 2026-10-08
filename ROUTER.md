@@ -90,6 +90,8 @@ router.currentRoute();            // RouteMatch | null
 await router.ready;               // navegação inicial concluída
 ```
 
+`router.ready` é obrigatório no tipo `RouterInstance`: mocks escritos à mão precisam incluir `ready: Promise.resolve()`. O componente `Router` só atualiza quando a rota muda (caminho, params ou query): alternar `isNavigating` ou um `push` para a URL atual não reconstrói a página.
+
 ## Componentes
 
 ### `Router`
@@ -103,6 +105,17 @@ html`<${Link} to="/about" router=${router}>About<//>`;
 ```
 
 Renderiza um `<a href="/about">` cujo clique é interceptado e chama `router.push("/about")`. Props extras (como `class`) são repassadas ao `<a>`.
+
+`to` precisa ser um **caminho do app**: `/x`, `?q` ou `#h`. Qualquer outro valor nunca navega: o clique recebe `preventDefault`, o `href` vira `about:blank#blocked` e há um aviso em dev. Isso inclui formas relativas (`./x`, `../x`, `about`), `//host`, `/\host` e esquemas como `javascript:` ou `https://...`.
+
+Para um link externo de verdade, use a prop `external`:
+
+```typescript
+html`<${Link} to="https://example.com/docs" external router=${router}>Docs<//>`;
+// <a href="https://example.com/docs" rel="noopener noreferrer">Docs</a>
+```
+
+`external` aceita apenas `http(s)`, `mailto:` e `tel:` (a URL ainda passa pela política de URLs), adiciona `rel="noopener noreferrer"` e deixa o navegador navegar normalmente. `//host` e `\` continuam bloqueados. No SSR, `Link` gera o mesmo `<a href>` (dentro de `htmlString`/`renderToString`).
 
 ## Parâmetros e query string
 
@@ -175,7 +188,7 @@ Outros pontos:
 
 Passe `initialPath` para que o roteador resolva a rota de forma síncrona na criação (no servidor e na hidratação). No cliente, sem `initialPath`, ele usa `window.location`.
 
-No servidor, `Router({ router })` funciona dentro de `htmlString`/`renderToString`: o HTML da rota é emitido de verdade (não escapado), entre marcadores `<!--reactive-start:id-->`, e não é gravado no estado serializado. Regra de confiança: no SSR, uma string (filho comum ou retornada por um reativo) que começa com `<` é tratada como HTML já renderizado e emitida como está, incluindo `${state.get()}` dentro de `htmlString`; nunca devolva de um reativo, componente ou `state.get()` texto vindo do usuário que comece com `<` como está. Dentro de `htmlString`, prefixe um espaço nas strings do usuário que possam começar com `<`: `const text = (v: string) => (v.startsWith("<") ? ` ${v}` : v)` (não escape antes: `htmlString` já escapa e haveria escape duplo); escape no estilo `escapeHtml` só em shells de template literal comuns.
+No servidor, `Router({ router })` funciona dentro de `htmlString`/`renderToString`: o HTML da rota (um `SafeHtml` devolvido por `htmlString`) é emitido de verdade, entre marcadores `<!--reactive-start:id-->`, e não é gravado no estado serializado. Strings comuns devolvidas por uma rota são sempre escapadas como texto; para HTML confiável use `unsafeHtml()`. Veja [Segurança](./docs/19-security/README.md).
 
 ```typescript
 import { Router, createRouter } from "@_bashell/slash/router";
@@ -192,7 +205,7 @@ const { html: markup } = renderToString(
 // markup: "<main><!--reactive-start:s0--><h1>Home</h1><!--reactive-end:s0--></main>"
 ```
 
-Veja o [README](./README.md) para o fluxo completo de SSR e hidratação.
+Veja o [README](./README.md) para o fluxo completo de SSR e hidratação. Guards não rodam no SSR e, no cliente, são apenas UX: o servidor sempre autoriza o acesso.
 
 ## Limitações conhecidas
 
