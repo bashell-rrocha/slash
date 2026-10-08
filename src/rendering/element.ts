@@ -4,6 +4,7 @@ import type { Child, Elementish, Props } from "../types";
 import { SVG_NS, SVG_TAGS } from "../utils/constants";
 import { appendChildSmart } from "./children";
 import { setProp } from "./props";
+import { isValidTagName } from "./props-core";
 import { diffTrackedStates } from "./element-core";
 
 export function h(tag: unknown, props: Props, ...children: Child[]): Node {
@@ -170,6 +171,10 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
 
   // Tag nativa
   const tagName = String(tag || "div");
+  // S5: tag inválida é erro de programação (nunca dado): falha cedo e com mensagem clara
+  if (!isValidTagName(tagName)) {
+    throw new Error(`[slash] Nome de tag inválido: ${JSON.stringify(tagName)}`);
+  }
   const el = (
     SVG_TAGS.has(tagName)
       ? document.createElementNS(SVG_NS, tagName)

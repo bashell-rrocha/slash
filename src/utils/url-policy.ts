@@ -15,8 +15,7 @@
  *   (A stream SSR escapa o valor depois de sanitizar, nunca antes.)
  */
 
-import { createDevMessage } from "../dev-warnings-core";
-import { emitDevMessage } from "../dev-warnings";
+import { securityWarn } from "./security-warn";
 
 /** URL inerte usada no lugar de qualquer valor rejeitado */
 export const BLOCKED_URL = "about:blank#blocked";
@@ -74,58 +73,22 @@ function isAllowedSingleUrl(attr: string, value: string, tag?: string): boolean 
   return false;
 }
 
-type SrcsetCandidate = { url: string; descriptor: string };
-
-// Parser de srcset no espírito da especificação do HTML: a URL é a sequência
-// de não-espaços (pode conter vírgulas, como em data:), e vírgulas finais
-// da URL encerram o candidato.
-function parseSrcset(value: string): SrcsetCandidate[] {
-  const out: SrcsetCandidate[] = [];
-  const n = value.length;
-  let i = 0;
-  const isSpace = (c: string) => /\s/.test(c);
-
-  while (i < n) {
-    while (i < n && (isSpace(value[i] as string) || value[i] === ",")) i++;
-    if (i >= n) break;
-
-    let start = i;
-    while (i < n && !isSpace(value[i] as string)) i++;
-    let url = value.slice(start, i);
-
-    let descriptor = "";
-    if (url.endsWith(",")) {
-      url = url.replace(/,+$/, "");
-    } else {
-      start = i;
-      let depth = 0;
-      while (i < n) {
-        const c = value[i] as string;
-        if (c === "(") depth++;
-        else if (c === ")") depth = Math.max(0, depth - 1);
-        else if (c === "," && depth === 0) break;
-        i++;
-      }
-      descriptor = value.slice(start, i).trim();
-    }
-    out.push({ url, descriptor });
-  }
-  return out;
-}
+// Candidatos do srcset como no HTML: a URL é a sequência de não-espaços (pode
+// conter vírgulas, como em data:); vírgula final da URL ou vírgula após os
+// descritores encerra o candidato.
+const SRCSET_CANDIDATE = /[\s,]*([^\s,]\S*?)(?:,+(?=\s|$)|\s+((?:[^,(]|\([^)]*\))*)(?=,|$)|$)/g;
 
 function evaluateSrcset(value: string, tag?: string): { value: string; blocked: boolean } {
-  const candidates = parseSrcset(value);
   let blocked = false;
-  const rebuilt = candidates.map((c) => {
-    if (isAllowedSingleUrl("srcset", c.url, tag)) return c;
-    blocked = true;
-    return { url: BLOCKED_URL, descriptor: c.descriptor };
-  });
-  if (!blocked) return { value, blocked: false };
-  return {
-    value: rebuilt.map((c) => (c.descriptor ? `${c.url} ${c.descriptor}` : c.url)).join(", "),
-    blocked: true,
-  };
+  const parts: string[] = [];
+  for (const m of value.matchAll(SRCSET_CANDIDATE)) {
+    const url = m[1] as string;
+    const desc = (m[2] ?? "").trim();
+    const ok = isAllowedSingleUrl("srcset", url, tag);
+    blocked ||= !ok;
+    parts.push((ok ? url : BLOCKED_URL) + (desc ? ` ${desc}` : ""));
+  }
+  return blocked ? { value: parts.join(", "), blocked } : { value, blocked };
 }
 
 /**
@@ -148,17 +111,9 @@ export function evaluateUrl(
   return { value: BLOCKED_URL, blocked: true };
 }
 
-/** Mensagem de dev padrão para um valor bloqueado (usada também pela hidratação/props) */
-export function warnBlockedUrl(attr: string, value: string): void {
-  const shown = value.length > 60 ? `${value.slice(0, 60)}...` : value;
-  emitDevMessage(
-    createDevMessage(
-      "warning",
-      "API_MISUSE",
-      `URL bloqueada em "${attr}": ${JSON.stringify(shown)}`,
-      "Permitido: http(s), mailto, tel e URLs relativas. Para uma URL confiável use unsafeUrl(url).",
-    ),
-  );
+/** Aviso de dev padrão para um valor bloqueado (usado também por props-core) */
+export function blockedUrlMessage(attr: string, value: string): string {
+  return `URL bloqueada em ${attr}: ${JSON.stringify(value.slice(0, 40))}. Para URL confiável use unsafeUrl()`;
 }
 
 /**
@@ -171,6 +126,6 @@ export function warnBlockedUrl(attr: string, value: string): void {
  */
 export function sanitizeUrl(attr: string, value: string, tag?: string): string {
   const result = evaluateUrl(attr, value, tag);
-  if (result.blocked) warnBlockedUrl(attr, value);
+  if (result.blocked) securityWarn(blockedUrlMessage(attr, value));
   return result.value;
 }

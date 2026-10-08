@@ -48,15 +48,17 @@ export function setProp(element: Elementish, key: string, val: unknown): void {
     return;
   }
 
-  // 3) Eventos: onClick / onInput / onChange / ...
-  if (key.startsWith("on") && key[2] === key[2]?.toUpperCase()) {
-    const type = key.slice(2).toLowerCase();
+  // 3) Eventos: onClick / onclick / onInput / ... (case-insensitive, mesma regra do SSR).
+  // Só função / objeto handleEvent / tupla viram listener; qualquer outro valor
+  // cai no Functional Core, que bloqueia on* com aviso (nunca vira atributo).
+  if (key.length > 2 && /^on/i.test(key)) {
     const parsed = parseEventProp(val);
     if (parsed) {
+      const type = key.slice(2).toLowerCase();
       element.addEventListener(type, parsed.handler, parsed.options);
       addCleanup(element, () => element.removeEventListener(type, parsed.handler, parsed.options));
+      return;
     }
-    return;
   }
 
   // 4) FCIS Pattern: Functional Core + Imperative Shell
