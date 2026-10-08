@@ -9,7 +9,7 @@ Slash oferece duas formas de criar elementos DOM: a função `h()` (hyperscript)
 O template tag `html` permite escrever markup HTML-like diretamente no JavaScript/TypeScript sem necessidade de transpilação:
 
 ```typescript
-import { html } from '@_bashell/slash'
+import { html } from '@_bashell/slash/core'
 
 const element = html`
   <div class="container">
@@ -30,7 +30,7 @@ const element = html`
 Para uma abordagem mais programática, use a função `h()`:
 
 ```typescript
-import { h } from '@_bashell/slash'
+import { h } from '@_bashell/slash/core'
 
 const element = h('div', { class: 'container' },
   h('h1', null, 'Hello, World!'),
@@ -68,7 +68,7 @@ const greeting = h('div', { class: 'greeting' },
 ### Elementos HTML Básicos
 
 ```typescript
-import { html } from '@_bashell/slash'
+import { html } from '@_bashell/slash/core'
 
 // Div simples
 const div = html`<div>Content</div>`
@@ -89,7 +89,7 @@ const br = html`<br />`
 Slash detecta automaticamente elementos SVG e aplica o namespace correto:
 
 ```typescript
-import { html } from '@_bashell/slash'
+import { html } from '@_bashell/slash/core'
 
 const icon = html`
   <svg width="24" height="24" viewBox="0 0 24 24">
@@ -202,19 +202,20 @@ Children podem ser:
 - Strings e números
 - Elementos DOM (Node)
 - Arrays (aninhados)
-- Reactive/State (atualizados automaticamente)
+- Objetos `Reactive` (`get()` + `subscribe()`), atualizados automaticamente (é o caso do valor retornado por `Router({ router })`)
 - `null`, `undefined`, `false` (ignorados)
 
 ```typescript
-import { html, createState } from '@_bashell/slash'
+import { html, createState } from '@_bashell/slash/core'
 
 const count = createState(0)
 const name = "Alice"
 
-const element = html`
+// Um `State` não é um Reactive: leia o valor com get() dentro de um componente
+const Element = () => html`
   <div>
     <h1>Hello, ${name}!</h1>
-    <p>Count: ${count}</p>
+    <p>Count: ${count.get()}</p>
     ${count.get() > 5 && html`<p>Count is high!</p>`}
     <ul>
       ${[1, 2, 3].map(n => html`<li>Item ${n}</li>`)}
@@ -223,6 +224,8 @@ const element = html`
 `
 ```
 
+Funções não são aceitas como children (lançam erro): chame a função e passe o resultado.
+
 **Implementação:** [src/rendering/children.ts](../../src/rendering/children.ts:1)
 
 ## Função `render()` para Montar na Página
@@ -230,7 +233,7 @@ const element = html`
 A função `render()` monta elementos no DOM:
 
 ```typescript
-import { render, html } from '@_bashell/slash'
+import { render, html } from '@_bashell/slash/core'
 
 const App = () => html`
   <div>
@@ -244,6 +247,10 @@ render(App(), root)
 
 // Ou usando seletor CSS
 render(App(), '#app')
+
+// Se App lê um state (createState), monte-o como componente
+// para que ele re-renderize quando o state mudar
+render(html`<${App} />`, '#app')
 ```
 
 ### Assinatura
@@ -285,7 +292,7 @@ Se o container já tem conteúdo renderizado pelo servidor E existe um `<script 
 
 ```typescript
 // Server-side
-const html = renderToString(App())
+const { html, state: stateData } = renderToString(() => App())
 const output = `
   <div id="app">${html}</div>
   <script id="__SLASH_STATE__" type="application/json">
@@ -294,7 +301,7 @@ const output = `
 `
 
 // Client-side
-render(App(), '#app') // Hidrata DOM existente
+render(html`<${App} />`, '#app') // Hidrata DOM existente
 ```
 
 #### Erro Handling
@@ -318,22 +325,20 @@ Event handlers são passados como props prefixadas com `on`:
 ### Sintaxe Básica
 
 ```typescript
-import { html, createState } from '@_bashell/slash'
+import { html, createState } from '@_bashell/slash/core'
 
-const Counter = () => {
-  const count = createState(0)
+const count = createState(0)
 
-  const increment = () => count.set(count.get() + 1)
-  const decrement = () => count.set(count.get() - 1)
+const increment = () => count.set(count.get() + 1)
+const decrement = () => count.set(count.get() - 1)
 
-  return html`
-    <div>
-      <p>Count: ${count}</p>
-      <button onclick=${increment}>+</button>
-      <button onclick=${decrement}>-</button>
-    </div>
-  `
-}
+const Counter = () => html`
+  <div>
+    <p>Count: ${count.get()}</p>
+    <button onClick=${increment}>+</button>
+    <button onClick=${decrement}>-</button>
+  </div>
+`
 ```
 
 ### Eventos Disponíveis
@@ -344,12 +349,12 @@ Todos os eventos DOM padrão são suportados:
 const element = html`
   <input
     type="text"
-    oninput=${(e) => console.log(e.target.value)}
-    onchange=${handleChange}
-    onfocus=${handleFocus}
-    onblur=${handleBlur}
-    onkeydown=${handleKeyDown}
-    onkeyup=${handleKeyUp}
+    onInput=${(e) => console.log(e.target.value)}
+    onChange=${handleChange}
+    onFocus=${handleFocus}
+    onBlur=${handleBlur}
+    onKeydown=${handleKeyDown}
+    onKeyup=${handleKeyUp}
   />
 `
 ```
@@ -366,7 +371,7 @@ const handleClick = (event: MouseEvent) => {
 }
 
 const button = html`
-  <button onclick=${handleClick}>Click Me</button>
+  <button onClick=${handleClick}>Click Me</button>
 `
 ```
 
@@ -380,7 +385,7 @@ const handleScroll = (e: Event) => {
 }
 
 const container = html`
-  <div onscroll=${[handleScroll, { passive: true, capture: false }]}>
+  <div onScroll=${[handleScroll, { passive: true, capture: false }]}>
     Content
   </div>
 `
@@ -396,17 +401,17 @@ const container = html`
 ### Form Events com Type Safety
 
 ```typescript
-import { html } from '@_bashell/slash'
-import type { TextFieldEvent } from '@_bashell/slash'
+import { html } from '@_bashell/slash/core'
+import type { TextFieldEvent } from '@_bashell/slash/forms'
 
-const handleInput = (e: TextFieldEvent<'input'>) => {
+const handleInput = (e: TextFieldEvent<InputEvent>) => {
   const value = e.target.value // Type-safe access
   console.log('Input value:', value)
 }
 
 const form = html`
   <form>
-    <input type="text" oninput=${handleInput} />
+    <input type="text" onInput=${handleInput} />
   </form>
 `
 ```
@@ -418,9 +423,9 @@ const form = html`
 Event listeners são **automaticamente removidos** quando um nó é destruído:
 
 ```typescript
-import { destroyNode } from '@_bashell/slash'
+import { destroyNode } from '@_bashell/slash/core'
 
-const button = html`<button onclick=${handler}>Click</button>`
+const button = html`<button onClick=${handler}>Click</button>`
 
 // Quando não mais necessário
 destroyNode(button as Node) // Remove listener automaticamente
@@ -433,111 +438,104 @@ destroyNode(button as Node) // Remove listener automaticamente
 ### Exemplo 1: Botão com Estado
 
 ```typescript
-import { html, createState, render } from '@_bashell/slash'
+import { html, createState, render } from '@_bashell/slash/core'
 
-const ToggleButton = () => {
-  const isActive = createState(false)
+const isActive = createState(false)
 
-  const toggle = () => isActive.set(!isActive.get())
+const toggle = () => isActive.set(!isActive.get())
 
-  return html`
-    <button
-      class=${isActive.get() ? 'active' : ''}
-      onclick=${toggle}
-    >
-      ${isActive.get() ? 'Active' : 'Inactive'}
-    </button>
-  `
-}
+const ToggleButton = () => html`
+  <button
+    class=${isActive.get() ? 'active' : ''}
+    onClick=${toggle}
+  >
+    ${isActive.get() ? 'Active' : 'Inactive'}
+  </button>
+`
 
-render(ToggleButton(), '#app')
+render(html`<${ToggleButton} />`, '#app')
 ```
 
 ### Exemplo 2: Lista Dinâmica
 
 ```typescript
-import { html, createState, render } from '@_bashell/slash'
+import { html, createState, render } from '@_bashell/slash/core'
 
-const TodoList = () => {
-  const todos = createState<string[]>(['Buy milk', 'Walk dog'])
-  const input = createState('')
+const todos = createState<string[]>(['Buy milk', 'Walk dog'])
 
-  const addTodo = () => {
-    const value = input.get().trim()
-    if (value) {
-      todos.set([...todos.get(), value])
-      input.set('')
-    }
+// O texto digitado fica numa variável comum: ler um state durante o render
+// faria o componente re-renderizar (e recriar o <input>) a cada tecla
+let draft = ''
+
+const addTodo = () => {
+  const value = draft.trim()
+  if (value) {
+    draft = ''
+    todos.set([...todos.get(), value])
   }
-
-  return html`
-    <div>
-      <h1>Todos</h1>
-      <ul>
-        ${todos.get().map(todo => html`<li>${todo}</li>`)}
-      </ul>
-      <input
-        type="text"
-        value=${input}
-        oninput=${(e: Event) => input.set((e.target as HTMLInputElement).value)}
-      />
-      <button onclick=${addTodo}>Add</button>
-    </div>
-  `
 }
 
-render(TodoList(), '#app')
+const TodoList = () => html`
+  <div>
+    <h1>Todos</h1>
+    <ul>
+      ${todos.get().map(todo => html`<li>${todo}</li>`)}
+    </ul>
+    <input
+      type="text"
+      onInput=${(e: Event) => { draft = (e.target as HTMLInputElement).value }}
+    />
+    <button onClick=${addTodo}>Add</button>
+  </div>
+`
+
+render(html`<${TodoList} />`, '#app')
 ```
 
 ### Exemplo 3: Form com Validação
 
 ```typescript
-import { html, createState, render } from '@_bashell/slash'
+import { html, createState, render } from '@_bashell/slash/core'
+import { onSubmit } from '@_bashell/slash/forms'
 
-const LoginForm = () => {
-  const email = createState('')
-  const password = createState('')
-  const error = createState('')
+const error = createState('')
 
-  const handleSubmit = (e: Event) => {
-    e.preventDefault()
-
-    if (!email.get().includes('@')) {
-      error.set('Invalid email')
-      return
-    }
-
-    if (password.get().length < 6) {
-      error.set('Password must be at least 6 characters')
-      return
-    }
-
-    error.set('')
-    console.log('Login:', { email: email.get(), password: password.get() })
-  }
-
-  return html`
-    <form onsubmit=${handleSubmit}>
-      <h1>Login</h1>
-      ${error.get() && html`<p class="error">${error}</p>`}
-      <input
-        type="email"
-        placeholder="Email"
-        value=${email}
-        oninput=${(e: Event) => email.set((e.target as HTMLInputElement).value)}
-      />
-      <input
-        type="password"
-        placeholder="Password"
-        value=${password}
-        oninput=${(e: Event) => password.set((e.target as HTMLInputElement).value)}
-      />
-      <button type="submit">Login</button>
-    </form>
-  `
+// Só este componente lê `error`: a mensagem re-renderiza e o form (com o que
+// foi digitado) permanece intacto
+const ErrorMessage = () => {
+  const message = error.get()
+  return message ? html`<p class="error">${message}</p>` : null
 }
 
-render(LoginForm(), '#app')
+const handleSubmit = onSubmit((data) => {
+  const email = String(data.email ?? '')
+  const password = String(data.password ?? '')
+
+  if (!email.includes('@')) {
+    error.set('Invalid email')
+    return
+  }
+
+  if (password.length < 6) {
+    error.set('Password must be at least 6 characters')
+    return
+  }
+
+  error.set('')
+  console.log('Login:', { email, password })
+})
+
+const LoginForm = () => html`
+  <form onSubmit=${handleSubmit}>
+    <h1>Login</h1>
+    <${ErrorMessage} />
+    <input type="email" name="email" placeholder="Email" />
+    <input type="password" name="password" placeholder="Password" />
+    <button type="submit">Login</button>
+  </form>
+`
+
+render(html`<${LoginForm} />`, '#app')
 ```
 
 ## Próximos Passos
@@ -545,5 +543,5 @@ render(LoginForm(), '#app')
 Agora que você domina renderização básica, explore:
 
 1. [Sistema de Estado](../04-state/README.md) - State management reativo avançado
-2. [Componentes](../06-components/README.md) - Criar componentes reutilizáveis
+2. Componentes (capítulo ainda não escrito) - Criar componentes reutilizáveis
 3. [Batch Updates](../05-batch/README.md) - Otimizar múltiplas atualizações

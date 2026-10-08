@@ -6,11 +6,11 @@ Slash é uma biblioteca reativa moderna para construção de interfaces de usuá
 
 - **HTM** (Hyperscript Tagged Markup): Template strings para JSX-like syntax sem compilação
 - **Hyperscript**: Criação programática de elementos DOM
-- **Reactive Signals**: Sistema de reatividade baseado em signals para atualizações eficientes
+- **State observável**: `createState` com `get` / `set` / `watch`; componentes que leem um state re-renderizam quando ele muda
 
 ### Por que Slash?
 
-Diferente de bibliotecas tradicionais como React ou Vue, Slash não utiliza Virtual DOM para gerenciar atualizações da interface. Em vez disso, usa um sistema de **reactive signals** que atualiza apenas os elementos específicos do DOM que dependem do estado alterado.
+Diferente de bibliotecas tradicionais como React ou Vue, Slash não utiliza Virtual DOM para gerenciar atualizações da interface. Em vez disso, templates `html` criam nós DOM reais e um sistema de **state observável** (`createState`) re-renderiza apenas os componentes que leram o estado alterado.
 
 **Vantagens:**
 - Zero overhead de diffing do VDOM
@@ -20,14 +20,14 @@ Diferente de bibliotecas tradicionais como React ou Vue, Slash não utiliza Virt
 - TypeScript first-class support
 - API minimalista e intuitiva
 
-## Filosofia: htm + hyperscript + reactive signals
+## Filosofia: htm + hyperscript + state observável
 
 ### HTM (Hyperscript Tagged Markup)
 
 Slash utiliza a biblioteca [htm](https://github.com/developit/htm) para permitir sintaxe JSX-like sem necessidade de transpilação:
 
 ```typescript
-import { html } from '@_bashell/slash'
+import { html } from '@_bashell/slash/core'
 
 const element = html`
   <div class="container">
@@ -42,7 +42,7 @@ const element = html`
 Para quem prefere uma abordagem programática, a função `h()` está disponível:
 
 ```typescript
-import { h } from '@_bashell/slash'
+import { h } from '@_bashell/slash/core'
 
 const element = h('div', { class: 'container' },
   h('h1', null, 'Hello, Slash!'),
@@ -50,26 +50,30 @@ const element = h('div', { class: 'container' },
 )
 ```
 
-### Reactive Signals
+### State observável
 
-O coração do Slash é seu sistema de estado reativo baseado em signals:
+O coração do Slash é `createState`, um estado com `get`, `set` e `watch` (padrão observer):
 
 ```typescript
-import { createState, html } from '@_bashell/slash'
+import { createState, html, render } from '@_bashell/slash/core'
 
+// O state fica fora do componente para sobreviver a re-renders
 const count = createState(0)
 
 const Counter = () => html`
   <div>
-    <p>Count: ${count}</p>
-    <button onclick=${() => count.set(count.get() + 1)}>
+    <p>Count: ${count.get()}</p>
+    <button onClick=${() => count.set(count.get() + 1)}>
       Increment
     </button>
   </div>
 `
+
+// Monte como <${Counter} /> para que ele re-renderize quando o state mudar
+render(html`<${Counter} />`, '#app')
 ```
 
-Quando `count.set()` é chamado, **apenas** os elementos DOM que dependem de `count` são atualizados - sem re-render completo do componente.
+Quando um componente chama `count.get()` durante a renderização, o Slash passa a rastrear esse state. Quando `count.set()` muda o valor, **o componente que leu o state** roda de novo e seus nós são substituídos. O `watch` permite reagir a mudanças fora de templates, e `batch()` agrupa várias atualizações em uma única notificação.
 
 ## Quando usar Slash?
 
@@ -92,10 +96,10 @@ Quando `count.set()` é chamado, **apenas** os elementos DOM que dependem de `co
 | Característica | Slash | React | Vue | Solid |
 |----------------|-------|-------|-----|-------|
 | VDOM | ❌ | ✅ | ✅ | ❌ |
-| Reactive Signals | ✅ | ❌ | ✅ (Composition API) | ✅ |
+| State reativo | ✅ (`createState`) | ✅ (hooks) | ✅ (Composition API) | ✅ (signals) |
 | SSR Nativo | ✅ | ✅ | ✅ | ✅ |
 | JSX sem build | ✅ (htm) | ❌ | ❌ | ❌ |
-| Bundle size | ~8KB | ~45KB | ~35KB | ~7KB |
+| Bundle size | core ≤ 6KB gzip | ~45KB | ~35KB | ~7KB |
 | TypeScript | ✅ | ✅ | ✅ | ✅ |
 
 ## Requisitos Mínimos
@@ -144,12 +148,9 @@ export function deepClone<T>(value: T): T {
   // Implementação pura de clonagem
 }
 
-// Pure decision function
-export function shouldNotifyWatchers<T>(
-  oldValue: T,
-  newValue: T
-): boolean {
-  return !deepEqual(oldValue, newValue)
+// Pure decision function: decide a partir de um comando, sem executar nada
+export function shouldNotifyWatchers<S>(command: StateCommand<S>): boolean {
+  return command.type === 'UPDATE'
 }
 ```
 
@@ -163,25 +164,27 @@ Módulos sem sufixo `-core` contêm **side effects**:
 
 Exemplo: [state.ts](../../src/state.ts:1)
 ```typescript
-// Imperative shell - manages side effects
-export function createState<T>(
-  initialValue: T,
-  options?: StateOptions
-): State<T> {
-  let currentValue = initialValue
-  const watchers = new Set<StateWatcher<T>>()
+// Imperative shell (versão simplificada): executa os efeitos que o core decidiu
+export const createState = <S>(initialState: S, options?: StateOptions): State<S> => {
+  let _state = deepClone(initialState)
+  const _watchers = new Set<StateWatcher<S>>()
 
-  return {
-    get: () => currentValue,
-    set: (newValue) => {
-      // Side effect: notify watchers
-      watchers.forEach(watcher => watcher(newValue))
-    },
-    watch: (callback) => {
-      watchers.add(callback)
-      return () => watchers.delete(callback)
+  const set = (payload: S) => {
+    const command = computeStateUpdate(_state, payload) // core: puro
+    _state = applyStateCommand(_state, command)         // core: puro
+    if (shouldNotifyWatchers(command)) {                // core: puro
+      for (const watcher of _watchers) watcher(deepClone(_state)) // efeito
     }
   }
+
+  const get = () => deepClone(_state)
+
+  const watch = (callback: StateWatcher<S>) => {
+    _watchers.add(callback)
+    return () => _watchers.delete(callback)
+  }
+
+  return { get, set, watch }
 }
 ```
 

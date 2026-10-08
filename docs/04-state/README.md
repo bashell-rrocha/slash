@@ -2,7 +2,7 @@
 
 ## `createState()` - Criação de Estado Reativo
 
-A função `createState()` cria um container de estado reativo que notifica automaticamente componentes quando o valor muda.
+A função `createState()` cria um container de estado observável: watchers são notificados quando o valor muda e componentes que leem o estado re-renderizam automaticamente.
 
 ### Assinatura
 
@@ -30,7 +30,7 @@ interface State<T> {
 ### Uso Básico
 
 ```typescript
-import { createState } from '@_bashell/slash'
+import { createState } from '@_bashell/slash/core'
 
 // Estado simples
 const count = createState(0)
@@ -173,36 +173,40 @@ watch(callback: (newValue: T) => void): () => void
 
 ## Reatividade Automática
 
-Estados são **automaticamente reativos** em componentes. Quando você usa um state em um componente, o componente se inscreve automaticamente para re-render quando o state muda.
+Componentes que leem um state durante a renderização se inscrevem automaticamente nele e re-renderizam quando ele muda. O padrão é observer: o rastreamento é feito pelas chamadas a `get()` feitas enquanto o componente executa.
 
 ### Como Funciona
 
 ```typescript
-import { html, createState, render } from '@_bashell/slash'
+import { html, createState, render } from '@_bashell/slash/core'
 
+// O state fica fora do componente: se fosse criado dentro, seria recriado a cada render
 const count = createState(0)
 
 const Counter = () => html`
   <div>
-    <p>Count: ${count}</p>
-    <button onclick=${() => count.set(count.get() + 1)}>
+    <p>Count: ${count.get()}</p>
+    <button onClick=${() => count.set(count.get() + 1)}>
       Increment
     </button>
   </div>
 `
 
-render(Counter(), '#app')
+// Monte o componente como <${Counter} />. render(Counter(), '#app') renderiza uma vez, sem reatividade
+render(html`<${Counter} />`, '#app')
 ```
 
 **O que acontece:**
-1. Durante a renderização, `${count}` acessa `count.get()`
-2. O componente é **rastreado** como dependente de `count`
-3. Quando `count.set()` é chamado, apenas o elemento `<p>` é atualizado
-4. **Sem re-render completo do componente** - apenas o nó afetado
+1. Ao montar `<${Counter} />`, o componente executa e cada `count.get()` registra `count` como dependência dele
+2. Quando `count.set()` muda o valor (deep equal), `count` notifica seus watchers
+3. O componente executa de novo e **seus nós anteriores são substituídos** pelos novos
+4. `get()` chamado dentro de um event handler (fora da execução do componente) não cria dependência
+
+A granularidade é o componente, não o nó: não há atualização de um único `<p>`. Divida a interface em componentes pequenos para que uma mudança re-renderize só o necessário.
 
 ### Tracking de Estados
 
-Slash rastreia quais states um componente usa durante a renderização:
+Slash rastreia quais states um componente leu durante a renderização:
 
 ```typescript
 const name = createState('Alice')
@@ -210,20 +214,20 @@ const age = createState(30)
 
 const Profile = () => html`
   <div>
-    <h1>${name}</h1>
-    <p>Age: ${age}</p>
+    <h1>${name.get()}</h1>
+    <p>Age: ${age.get()}</p>
   </div>
 `
 ```
 
-- `name.set('Bob')` → Atualiza apenas o `<h1>`
-- `age.set(31)` → Atualiza apenas o `<p>`
+- `name.set('Bob')` ou `age.set(31)` re-renderizam `Profile`, porque ele leu os dois
+- Um componente que leu só `name` não re-renderiza quando `age` muda
 
 **Implementação:** [src/rendering/element-core.ts](../../src/rendering/element-core.ts:1)
 
-### Reactive em Props
+### State em Props
 
-States também são reativos quando usados em props:
+Valores lidos com `get()` também funcionam em props, e o componente re-renderiza quando o state muda:
 
 ```typescript
 const isActive = createState(false)
@@ -234,11 +238,11 @@ const Button = () => html`
   </button>
 `
 
-// Quando isActive muda, class é atualizada automaticamente
+// Quando isActive muda, o componente Button re-renderiza com a nova class
 isActive.set(true)
 ```
 
-### Reactive em Arrays
+### State em Arrays
 
 ```typescript
 const items = createState([1, 2, 3])
@@ -249,11 +253,15 @@ const List = () => html`
   </ul>
 `
 
-// Quando items muda, lista é re-renderizada
+// Quando items muda, o componente é re-renderizado
 items.set([...items.get(), 4])
 ```
 
 **Nota:** Para listas longas, considere técnicas de virtualização ou memoização.
+
+### Objetos Reactive
+
+Um `State` tem `get`/`watch`, mas **não** `subscribe`, então passar o próprio state como child ou prop (`${count}`) não é reativo: use `${count.get()}` dentro de um componente. Objetos que implementam `Reactive<T>` (`get()` + `subscribe(fn)`) são aceitos como child ou prop e mantidos em sincronia por `subscribe`. É o caso de `Router({ router })` e dos controles de formulário (`textFieldControl` etc.).
 
 ## Deep Cloning e Imutabilidade
 
@@ -263,7 +271,7 @@ Slash adota **imutabilidade** para:
 1. **Previsibilidade**: Estado nunca muda "por baixo dos panos"
 2. **Debugging**: Fácil rastrear mudanças
 3. **Time-travel**: Histórico de estados é possível
-4. **Performance**: Comparações por referência são rápidas
+4. **Detecção de mudança**: o novo valor é comparado em profundidade (deep equal) com o anterior
 
 ### Deep Clone Automático
 
@@ -292,6 +300,10 @@ function deepClone<T>(value: T): T {
     return value
   }
 
+  // Error é preservado (mesma instância); Date vira uma nova instância
+  if (value instanceof Error) return value
+  if (value instanceof Date) return new Date(value.getTime()) as T
+
   // Arrays
   if (Array.isArray(value)) {
     return value.map(deepClone) as unknown as T
@@ -309,9 +321,9 @@ function deepClone<T>(value: T): T {
 ```
 
 **Otimizações:**
-- WeakMap cache para evitar clonagens duplicadas
-- Skip de propriedades não-enumeráveis
-- Tratamento especial para Date, RegExp, Map, Set
+- Tratamento especial para `Error` (preservado) e `Date` (nova instância)
+- `Map`, `Set`, `RegExp`, funções e Symbols não são suportados como valores de state (não são clonados corretamente)
+- O `deepEqual` usa um cache em `WeakMap` para acelerar comparações repetidas
 
 ### Deep Equality
 
@@ -363,7 +375,7 @@ console.log(history.entries.length) // 3
 
 ### `getHistory()` - Obter Histórico
 
-Retorna histórico de comandos e estados resultantes:
+Retorna histórico de comandos e estados resultantes. Um `set` com valor igual ao atual também gera uma entrada, com `command: { type: 'NO_CHANGE' }`:
 
 ```typescript
 interface StateHistory<T> {
@@ -401,12 +413,12 @@ for (const entry of history.entries) {
 ```
 {
   time: 2026-02-03T10:30:45.123Z,
-  command: { type: 'replace', value: 5 },
+  command: { type: 'UPDATE', oldState: 0, newState: 5 },
   result: 5
 }
 {
   time: 2026-02-03T10:30:46.456Z,
-  command: { type: 'replace', value: 10 },
+  command: { type: 'UPDATE', oldState: 5, newState: 10 },
   result: 10
 }
 ```
@@ -504,7 +516,7 @@ const state = createState(initialValue, {
 ### Exemplo 1: Counter com Watch
 
 ```typescript
-import { createState, html, render } from '@_bashell/slash'
+import { createState, html, render } from '@_bashell/slash/core'
 
 const count = createState(0)
 
@@ -515,20 +527,20 @@ count.watch((newValue) => {
 
 const Counter = () => html`
   <div>
-    <p>Count: ${count}</p>
-    <button onclick=${() => count.set(count.get() + 1)}>+</button>
-    <button onclick=${() => count.set(count.get() - 1)}>-</button>
-    <button onclick=${() => count.set(0)}>Reset</button>
+    <p>Count: ${count.get()}</p>
+    <button onClick=${() => count.set(count.get() + 1)}>+</button>
+    <button onClick=${() => count.set(count.get() - 1)}>-</button>
+    <button onClick=${() => count.set(0)}>Reset</button>
   </div>
 `
 
-render(Counter(), '#app')
+render(html`<${Counter} />`, '#app')
 ```
 
 ### Exemplo 2: Todo List com Estado Complexo
 
 ```typescript
-import { createState, html, render } from '@_bashell/slash'
+import { createState, html, render } from '@_bashell/slash/core'
 
 interface Todo {
   id: number
@@ -537,10 +549,12 @@ interface Todo {
 }
 
 const todos = createState<Todo[]>([])
-const input = createState('')
+
+// Texto em edição fora de qualquer state lido no render: o <input> não é recriado a cada tecla
+let draft = ''
 
 const addTodo = () => {
-  const text = input.get().trim()
+  const text = draft.trim()
   if (!text) return
 
   const newTodo: Todo = {
@@ -549,8 +563,8 @@ const addTodo = () => {
     completed: false
   }
 
+  draft = ''
   todos.set([...todos.get(), newTodo])
-  input.set('')
 }
 
 const toggleTodo = (id: number) => {
@@ -568,16 +582,15 @@ const TodoApp = () => html`
     <h1>Todos</h1>
     <input
       type="text"
-      value=${input}
-      oninput=${(e: Event) => input.set((e.target as HTMLInputElement).value)}
-      onkeypress=${(e: KeyboardEvent) => e.key === 'Enter' && addTodo()}
+      onInput=${(e: Event) => { draft = (e.target as HTMLInputElement).value }}
+      onKeypress=${(e: KeyboardEvent) => e.key === 'Enter' && addTodo()}
     />
-    <button onclick=${addTodo}>Add</button>
+    <button onClick=${addTodo}>Add</button>
     <ul>
       ${todos.get().map(todo => html`
         <li
           style=${{ textDecoration: todo.completed ? 'line-through' : 'none' }}
-          onclick=${() => toggleTodo(todo.id)}
+          onClick=${() => toggleTodo(todo.id)}
         >
           ${todo.text}
         </li>
@@ -586,13 +599,13 @@ const TodoApp = () => html`
   </div>
 `
 
-render(TodoApp(), '#app')
+render(html`<${TodoApp} />`, '#app')
 ```
 
 ### Exemplo 3: Form com Validação
 
 ```typescript
-import { createState, html, render } from '@_bashell/slash'
+import { createState, html, render } from '@_bashell/slash/core'
 
 interface FormData {
   email: string
@@ -630,35 +643,40 @@ const handleSubmit = (e: Event) => {
   }
 }
 
+// Só este componente lê `errors`: os inputs não são recriados ao validar
+const FieldErrors = () => {
+  const { email, password } = errors.get()
+  return html`
+    <div>
+      ${email && html`<p class="error">${email}</p>`}
+      ${password && html`<p class="error">${password}</p>`}
+    </div>
+  `
+}
+
+// `form` só é lido dentro dos handlers, então o form não re-renderiza a cada tecla
 const LoginForm = () => html`
-  <form onsubmit=${handleSubmit}>
-    <div>
-      <input
-        type="email"
-        placeholder="Email"
-        value=${form.get().email}
-        oninput=${(e: Event) =>
-          form.set({ ...form.get(), email: (e.target as HTMLInputElement).value })
-        }
-      />
-      ${errors.get().email && html`<p class="error">${errors.get().email}</p>`}
-    </div>
-    <div>
-      <input
-        type="password"
-        placeholder="Password"
-        value=${form.get().password}
-        oninput=${(e: Event) =>
-          form.set({ ...form.get(), password: (e.target as HTMLInputElement).value })
-        }
-      />
-      ${errors.get().password && html`<p class="error">${errors.get().password}</p>`}
-    </div>
+  <form onSubmit=${handleSubmit}>
+    <input
+      type="email"
+      placeholder="Email"
+      onInput=${(e: Event) =>
+        form.set({ ...form.get(), email: (e.target as HTMLInputElement).value })
+      }
+    />
+    <input
+      type="password"
+      placeholder="Password"
+      onInput=${(e: Event) =>
+        form.set({ ...form.get(), password: (e.target as HTMLInputElement).value })
+      }
+    />
+    <${FieldErrors} />
     <button type="submit">Login</button>
   </form>
 `
 
-render(LoginForm(), '#app')
+render(html`<${LoginForm} />`, '#app')
 ```
 
 ## Próximos Passos
@@ -666,5 +684,5 @@ render(LoginForm(), '#app')
 Agora que você domina o sistema de estado, explore:
 
 1. [Batch Updates](../05-batch/README.md) - Otimizar múltiplas atualizações de estado
-2. [Componentes](../06-components/README.md) - Usar state em componentes reutilizáveis
-3. [Router](../07-router/README.md) - State management para roteamento
+2. Componentes (capítulo ainda não escrito) - Usar state em componentes reutilizáveis
+3. Router (capítulo ainda não escrito) - State management para roteamento
