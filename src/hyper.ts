@@ -34,11 +34,11 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
 // SafeHtml survive; dynamic strings (and anything that could carry one) are dropped.
 const RAW_TEXT_TAGS = new Set(["script", "style"]);
 
-// Static template text (plain string), numbers and SafeHtml survive. A marked dynamic string is a
+// Static template text (plain string) and SafeHtml survive. A marked dynamic string is a
 // DynamicText object, so it fails this test, as does anything that could carry a string
 // (functions, reactives, arrays, nodes).
 const keepRawTextChild = (c: unknown): boolean =>
-  c == null || c === false || typeof c === "string" || typeof c === "number" || isSafeHtml(c);
+  c == null || c === false || typeof c === "string" || isSafeHtml(c);
 
 // h() as seen by the html template: dynamic strings arrive wrapped in DynamicText
 function hTemplate(tag: unknown, props: Props, ...children: Child[]): Node {

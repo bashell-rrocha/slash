@@ -361,6 +361,11 @@ function childToString(child: Child, ctx: RenderContext, rawText = false): strin
 
   // Array - verificar se veio de um state
   if (Array.isArray(child)) {
+    // Dynamic by definition (and a state-read array would emit markers): dropped in raw text
+    if (rawText) {
+      if (process.env.NODE_ENV !== "production") warnOnce(RAW_TEXT_DROPPED);
+      return "";
+    }
     const id = captureAccessedValue(ctx, child);
     const inner = child.map((c) => childToString(c as Child, ctx, rawText)).join("");
     return id ? `<!--reactive-start:${id}-->${inner}<!--reactive-end:${id}-->` : inner;
@@ -374,12 +379,14 @@ function childToString(child: Child, ctx: RenderContext, rawText = false): strin
   }
 
   // String e primitivos: sempre texto escapado; valor lido de state ganha marcador
+  // Escaping does not make code safe (alert(1) survives): in raw text every dynamic string, number
+  // or boolean is dropped, as on the client, and never captured (no hydration markers)
+  if (rawText) {
+    if (process.env.NODE_ENV !== "production") warnOnce(RAW_TEXT_DROPPED);
+    return "";
+  }
   if (typeof child === "string") {
-    if (rawText) {
-      // Escaping does not make code safe (alert(1) survives): a dynamic string is dropped, as on the client
-      if (process.env.NODE_ENV !== "production") warnOnce(RAW_TEXT_DROPPED);
-      return "";
-    } else if (LOOKS_LIKE_MARKUP.test(child)) {
+    if (LOOKS_LIKE_MARKUP.test(child)) {
       if (process.env.NODE_ENV !== "production") warnOnce("string rendered as text. For trusted HTML use unsafeHtml() (never with user input)");
     }
   }
