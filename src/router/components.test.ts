@@ -2,7 +2,9 @@
  * Components tests
  */
 
-import { describe, expect, test } from "bun:test"
+import { beforeEach, describe, expect, test } from "bun:test"
+import { html, render } from "../core"
+import { setHydrateContext } from "../hydration/context"
 import { Router, Link } from "./components"
 import { createRouter } from "./router"
 import type { RouteConfig } from "./types"
@@ -156,5 +158,30 @@ describe("Link component", () => {
 
     // Assert
     expect(link.textContent).toBe("Click me")
+  })
+})
+
+describe("Router como componente", () => {
+  // Outros testes podem deixar um contexto de hidratação global ativo
+  beforeEach(() => setHydrateContext(null))
+
+  test("<Router/> como componente troca de rota e atualiza a URL", async () => {
+    // Arrange
+    ;(window as any).happyDOM.setURL("http://localhost/")
+    const router = createRouter({ routes: [
+      { path: "/", component: () => html`<h1>home</h1>` },
+      { path: "/about", component: () => html`<h1>about</h1>` },
+    ], initialPath: "/" })
+    const el = document.createElement("div")
+    render(html`<${Router} router=${router}/>` as any, el)
+    expect(el.innerHTML).toContain("home")
+
+    // Act
+    await router.push("/about")
+
+    // Assert
+    expect(el.innerHTML).toContain("about")
+    expect(el.innerHTML).not.toContain("home")
+    expect(window.location.pathname).toBe("/about")
   })
 })

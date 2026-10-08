@@ -10,12 +10,17 @@ export function appendReactiveChild(parent: Node, sig: Reactive<unknown>): void 
   parent.appendChild(end);
 
   const renderBetween = (value: unknown): void => {
+    // Usa o pai vivo dos marcadores: o pai original pode ter sido um fragment
+    // temporário (componentes) e os nós já foram movidos para o pai real
+    const live = start.parentNode;
+    if (!live || live !== end.parentNode) return;
+
     // Limpa nós atuais entre start e end
     let n = start.nextSibling;
     while (n && n !== end) {
       const next = n.nextSibling;
       destroyNode(n);
-      parent.removeChild(n);
+      live.removeChild(n);
       n = next;
     }
 
@@ -30,7 +35,7 @@ export function appendReactiveChild(parent: Node, sig: Reactive<unknown>): void 
     } else {
       frag.appendChild(document.createTextNode(toStr(value)));
     }
-    parent.insertBefore(frag, end);
+    live.insertBefore(frag, end);
   };
 
   renderBetween(sig.get());

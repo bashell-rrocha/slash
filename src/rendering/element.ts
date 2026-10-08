@@ -30,9 +30,26 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
     // Criar anchor para marcar posição do componente
     const anchor = document.createComment("component");
 
-    // Container que vai segurar anchor + conteúdo renderizado
+    // Marcador final: o intervalo anchor..end é o conteúdo do componente.
+    // Acompanhar pelos marcadores (e não por um retrato dos nós) cobre nós
+    // que filhos reativos inserem ou removem depois da renderização.
+    const end = document.createComment("component:end");
+
+    // Container que vai segurar anchor + conteúdo renderizado + end
     const wrapper = document.createDocumentFragment();
     wrapper.appendChild(anchor);
+    wrapper.appendChild(end);
+
+    // Destrói e remove tudo entre anchor e end
+    const clearRange = () => {
+      let n = anchor.nextSibling;
+      while (n && n !== end) {
+        const next = n.nextSibling;
+        destroyNode(n);
+        n.parentNode?.removeChild(n);
+        n = next;
+      }
+    };
 
     // Lista de nodes renderizados (para cleanup)
     let renderedNodes: Node[] = [];
@@ -43,12 +60,7 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
     // Função de renderização
     const render = () => {
       // Limpar nodes anteriores
-      for (const node of renderedNodes) {
-        destroyNode(node);
-        if (node.parentNode) {
-          node.parentNode.removeChild(node);
-        }
-      }
+      clearRange();
       renderedNodes = [];
 
       // Resetar tracking para nova renderização
@@ -77,10 +89,10 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
         const newNodes = Array.from(frag.childNodes);
         renderedNodes = newNodes;
 
-        // Inserir após anchor
-        const parent = anchor.parentNode;
+        // Inserir antes do marcador final
+        const parent = end.parentNode;
         if (parent) {
-          parent.insertBefore(frag, anchor.nextSibling);
+          parent.insertBefore(frag, end);
         }
       } finally {
         // Parar tracking em caso de erro
@@ -112,10 +124,7 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
     }
 
     // Componente reativo - configurar sistema de re-renderização
-    // Inserir nodes renderizados no wrapper para retorno
-    for (const node of renderedNodes) {
-      wrapper.appendChild(node);
-    }
+    // (anchor, conteúdo e end já estão no wrapper)
 
     // Registrar watchers nos states acessados
     const trackedStates = getTrackedStates(tracker);
@@ -138,9 +147,12 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
         unwatch();
       }
       unwatchers = [];
-      // Limpar nodes renderizados
-      for (const node of renderedNodes) {
-        destroyNode(node);
+      // Destruir nodes do intervalo (sem removê-los do DOM)
+      let n = anchor.nextSibling;
+      while (n && n !== end) {
+        const next = n.nextSibling;
+        destroyNode(n);
+        n = next;
       }
       renderedNodes = [];
     });
