@@ -249,3 +249,21 @@ export function applyTrackingCommand(
     }
   }
 }
+
+/**
+ * Diferença entre o conjunto de states já observados e o lido na renderização atual.
+ * Pura: states presentes nos dois conjuntos não aparecem (mantêm o watcher).
+ * @param previous States com watcher ativo
+ * @param next States lidos na renderização mais recente
+ * @returns States a observar (`add`) e a deixar de observar (`remove`)
+ */
+export function diffTrackedStates(
+  previous: ReadonlySet<State<any>>,
+  next: ReadonlySet<State<any>>
+): { readonly add: ReadonlyArray<State<any>>; readonly remove: ReadonlyArray<State<any>> } {
+  const add: State<any>[] = [];
+  const remove: State<any>[] = [];
+  for (const s of next) if (!previous.has(s)) add.push(s);
+  for (const s of previous) if (!next.has(s)) remove.push(s);
+  return { add, remove };
+}

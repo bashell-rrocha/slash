@@ -12,6 +12,7 @@ import {
   clearTrackedStates,
   hasTrackedStates,
   getTrackedStates,
+  diffTrackedStates,
   type StateTracker,
 } from "./element-core";
 
@@ -20,12 +21,6 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
   if (typeof tag === "function") {
     // Rastrear states acessados durante renderização usando Functional Core
     let tracker = createStateTracker();
-
-    // Registrar função de rastreamento global
-    const originalTracker = (globalThis as any).__SLASH_TRACK_STATE__;
-    (globalThis as any).__SLASH_TRACK_STATE__ = (state: State<any>) => {
-      tracker = trackState(tracker, state);
-    };
 
     // Criar anchor para marcar posição do componente
     const anchor = document.createComment("component");
@@ -53,8 +48,31 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
       }
     };
 
-    // Lista de unwatchers (para cleanup)
-    let unwatchers: Array<() => void> = [];
+    // Watchers ativos por state (reconciliados a cada renderização)
+    const unwatchers = new Map<State<any>, () => void>();
+    // Componente estático (sem states na 1ª renderização) nunca observa nada
+    let reactive = false;
+
+    // Reconcilia watchers: remove os de states não lidos mais, adiciona os novos
+    const reconcileWatchers = () => {
+      const { add, remove } = diffTrackedStates(
+        new Set(unwatchers.keys()),
+        new Set(getTrackedStates(tracker))
+      );
+      for (const state of remove) {
+        unwatchers.get(state)?.();
+        unwatchers.delete(state);
+      }
+      for (const state of add) {
+        unwatchers.set(
+          state,
+          state.watch(() => {
+            // Apenas re-renderizar se ainda estiver no DOM
+            if (anchor.parentNode) render();
+          })
+        );
+      }
+    };
 
     // Função de renderização
     const render = () => {
@@ -64,6 +82,13 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
       tracker = clearTrackedStates(tracker);
       tracker = startTracking(tracker);
 
+      // Rastreador instalado só durante a execução deste componente
+      // (restaura o anterior, ex.: o do pai, mesmo em caso de erro)
+      const originalTracker = (globalThis as any).__SLASH_TRACK_STATE__;
+      (globalThis as any).__SLASH_TRACK_STATE__ = (state: State<any>) => {
+        tracker = trackState(tracker, state);
+      };
+
       try {
         // Executar componente
         const out = (tag as (p: Record<string, unknown>) => Node | Child)({
@@ -71,8 +96,9 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
           children,
         });
 
-        // Parar tracking após execução
+        // Parar tracking e restaurar o rastreador antes de renderizar o resultado
         tracker = stopTracking(tracker);
+        (globalThis as any).__SLASH_TRACK_STATE__ = originalTracker;
 
         // Renderizar resultado
         const frag = document.createDocumentFragment();
@@ -88,16 +114,16 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
           parent.insertBefore(frag, end);
         }
       } finally {
-        // Parar tracking em caso de erro
+        // Parar tracking e restaurar o rastreador em caso de erro
         tracker = stopTracking(tracker);
+        (globalThis as any).__SLASH_TRACK_STATE__ = originalTracker;
+        // Re-renderizações mantêm os watchers alinhados aos states lidos
+        if (reactive) reconcileWatchers();
       }
     };
 
     // Primeira renderização
     render();
-
-    // Restaurar tracker original
-    (globalThis as any).__SLASH_TRACK_STATE__ = originalTracker;
 
     // Se não há states acessados, retornar node diretamente (retrocompatibilidade)
     if (!hasTrackedStates(tracker)) {
@@ -124,27 +150,20 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
     // Componente reativo - configurar sistema de re-renderização
     // (anchor, conteúdo e end já estão no wrapper)
 
-    // Registrar watchers nos states acessados
-    const trackedStates = getTrackedStates(tracker);
-    for (const state of trackedStates) {
-      const unwatch = state.watch(() => {
-        if (anchor.parentNode) {
-          // Apenas re-renderizar se ainda estiver no DOM
-          render();
-        }
-      });
-      unwatchers.push(unwatch);
-    }
+    // Registrar watchers nos states lidos na primeira renderização
+    reactive = true;
+    reconcileWatchers();
 
     // Cleanup ao remover do DOM
     addCleanup(anchor, () => {
       tracker = stopTracking(tracker);
       tracker = clearTrackedStates(tracker);
       // Chamar unwatchers
-      for (const unwatch of unwatchers) {
+      for (const unwatch of unwatchers.values()) {
         unwatch();
       }
-      unwatchers = [];
+      unwatchers.clear();
+      reactive = false;
       // Destruir nodes do intervalo (sem removê-los do DOM)
       if (anchor.parentNode !== end.parentNode) return;
       let n = anchor.nextSibling;

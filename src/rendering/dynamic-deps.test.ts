@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { html, render, createState, destroyNode } from "../core";
+import { diffTrackedStates } from "./element-core";
 import { setHydrateContext } from "../hydration/context";
 
 describe("dependências dinâmicas de componente", () => {
@@ -122,5 +123,14 @@ describe("dependências dinâmicas de componente", () => {
     render(html`<${Comp}/>` as any, el);
     n.set(1);
     expect(runs).toBe(1);
+  });
+});
+
+describe("diffTrackedStates", () => {
+  it("separa states novos, removidos e mantidos", () => {
+    const a = {} as any, b = {} as any, c = {} as any;
+    const d = diffTrackedStates(new Set([a, b]), new Set([b, c]));
+    expect(d.add).toEqual([c]);
+    expect(d.remove).toEqual([a]);
   });
 });
