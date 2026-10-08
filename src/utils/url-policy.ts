@@ -46,21 +46,36 @@ const SMIL_TAGS = new Set(["animate", "set", "animatemotion"]);
 const isSmil = (name: string, tag?: string): boolean =>
   SMIL_ATTRIBUTES.has(name) && tag !== undefined && SMIL_TAGS.has(tag.toLowerCase());
 
-const ALLOWED_SCHEMES = new Set(["http", "https", "mailto", "tel"]);
+const ALLOWED_SCHEMES = new Set(["http", "https", "mailto", "tel", "sms"]);
+
+// Limite de entrada para srcset e meta refresh (falha fechada acima disso)
+const MAX_POLICY_INPUT = 16 * 1024;
 
 // Atributos que carregam imagem (único lugar onde data:image/* é aceito)
 const IMAGE_ATTRIBUTES = new Set(["src", "srcset", "poster", "imagesrcset"]);
 const IMAGE_TAGS = new Set(["img", "source", "video", "image", "link"]);
 
 const DATA_IMAGE = /^data:image\/(?:png|jpeg|gif|webp|avif)[;,]/i;
+const DATA_SVG = /^data:image\/svg\+xml[;,]/i;
+// blob: (URL de objeto da mesma origem) só como src de mídia, onde é inerte
+const BLOB_TAGS = new Set(["img", "audio", "video", "source", "track"]);
 const SCHEME = /^([a-z][a-z0-9+.-]*):/i;
 
 /**
- * `url()` de CSS segue a MESMA lista dos atributos de URL de imagem: relativa (inclui `//host`,
- * como em href), http(s)/mailto/tel e data:image raster; svg+xml, data:text e o resto são rejeitados.
+ * Contexto de imagem (`<img src>`): relativa, http(s)/mailto/tel/sms, data:image raster e svg+xml
+ * e blob:. Usada pela política de CSS para `url()`.
  */
-export function isAllowedCssUrl(url: string): boolean {
+export function isAllowedImageUrl(url: string): boolean {
   return isAllowedSingleUrl("src", url, "img");
+}
+
+/** @deprecated use isAllowedImageUrl; mantém o comportamento estrito anterior (sem svg+xml e blob:) */
+export function isAllowedCssUrl(url: string): boolean {
+  const scheme = SCHEME.exec(normalizeForSchemeCheck(url));
+  if (scheme && (scheme[1] as string).toLowerCase() === "blob") return false;
+  const normalized = normalizeForSchemeCheck(url);
+  if (DATA_SVG.test(normalized)) return false;
+  return isAllowedImageUrl(url);
 }
 
 /** true se o atributo carrega uma URL (case-insensitive) */
@@ -73,8 +88,9 @@ export function isUrlAttribute(attr: string, tag?: string): boolean {
 // estrita: remove C0 controls (inclui \t \n \r) em qualquer posição e
 // espaços/whitespace nas pontas, para que `java\tscript:` seja detectado.
 function normalizeForSchemeCheck(value: string): string {
+  // trim() é linear; um regex `^\s+|\s+$` é quadrático em "x" + espaços + "x"
   // biome-ignore lint/suspicious/noControlCharactersInRegex: remoção intencional de C0
-  return value.replace(/[\u0000-\u001f\u007f]/g, "").replace(/^\s+|\s+$/g, "");
+  return value.replace(/[\u0000-\u001f\u007f]/g, "").trim();
 }
 
 function isAllowedSingleUrl(attr: string, value: string, tag?: string): boolean {
@@ -87,6 +103,12 @@ function isAllowedSingleUrl(attr: string, value: string, tag?: string): boolean 
   const scheme = (match[1] as string).toLowerCase();
   if (ALLOWED_SCHEMES.has(scheme)) return true;
 
+  if (scheme === "blob") {
+    return attr === "src" && tag !== undefined && BLOB_TAGS.has(tag.toLowerCase());
+  }
+  if (scheme === "data" && DATA_SVG.test(normalized)) {
+    return (attr === "src" || attr === "srcset") && tag?.toLowerCase() === "img";
+  }
   if (scheme === "data" && DATA_IMAGE.test(normalized)) {
     if (!IMAGE_ATTRIBUTES.has(attr)) return false;
     // Sem tag informada: falha fechado (não dá para provar que é uma imagem)
@@ -95,17 +117,45 @@ function isAllowedSingleUrl(attr: string, value: string, tag?: string): boolean 
   return false;
 }
 
-// Candidatos do srcset como no HTML: a URL é a sequência de não-espaços (pode
-// conter vírgulas, como em data:); vírgula final da URL ou vírgula após os
-// descritores encerra o candidato.
-const SRCSET_CANDIDATE = /[\s,]*([^\s,]\S*?)(?:,+(?=\s|$)|\s+((?:[^,(]|\([^)]*\))*)(?=,|$)|$)/g;
+const isSrcsetSpace = (c: string): boolean => c === " " || c === "\t" || c === "\n" || c === "\f" || c === "\r";
+
+// Varredura linear dos candidatos do srcset como no HTML: a URL é a sequência de não-espaços (pode
+// conter vírgulas, como em data:); vírgula final da URL encerra o candidato; senão os descritores
+// vão até a próxima vírgula fora de parênteses.
+function parseSrcset(value: string): Array<{ url: string; desc: string }> {
+  const out: Array<{ url: string; desc: string }> = [];
+  const n = value.length;
+  let i = 0;
+  while (i < n) {
+    while (i < n && (isSrcsetSpace(value[i] as string) || value[i] === ",")) i++;
+    if (i >= n) break;
+    const start = i;
+    while (i < n && !isSrcsetSpace(value[i] as string)) i++;
+    let url = value.slice(start, i);
+    if (url.endsWith(",")) {
+      url = url.replace(/,+$/, "");
+      out.push({ url, desc: "" });
+      continue;
+    }
+    const dStart = i;
+    let depth = 0;
+    while (i < n) {
+      const c = value[i] as string;
+      if (c === "(") depth++;
+      else if (c === ")" && depth > 0) depth--;
+      else if (c === "," && depth === 0) break;
+      i++;
+    }
+    out.push({ url, desc: value.slice(dStart, i).trim() });
+  }
+  return out;
+}
 
 function evaluateSrcset(value: string, tag?: string): { value: string; blocked: boolean } {
+  if (value.length > MAX_POLICY_INPUT) return { value: BLOCKED_URL, blocked: true };
   let blocked = false;
   const parts: string[] = [];
-  for (const m of value.matchAll(SRCSET_CANDIDATE)) {
-    const url = m[1] as string;
-    const desc = (m[2] ?? "").trim();
+  for (const { url, desc } of parseSrcset(value)) {
     const ok = isAllowedSingleUrl("srcset", url, tag);
     blocked ||= !ok;
     parts.push((ok ? url : BLOCKED_URL) + (desc ? ` ${desc}` : ""));
@@ -149,7 +199,9 @@ export function evaluateUrl(
 // `;`, `,` ou espaço, `url=` opcional, aspas opcionais). Sem separador depois do número, ou sem
 // atraso, o navegador ignora o refresh e o valor não é URL. Só deve ser aplicada quando o
 // elemento tem http-equiv=refresh (o chamador decide; um <meta description> nunca passa por aqui).
-const META_REFRESH = /^(\s*[\d.]+(?=[;,\s]|$)\s*[;,]?\s*(?:url\s*=\s*)?['"]?)([\s\S]*?)(['"]?\s*)$/i;
+// Só o prefixo é casado por regex (sem ambiguidade de backtracking relevante e com entrada limitada);
+// aspas/espaços finais são separados em código.
+const META_REFRESH_PREFIX = /^\s*[\d.]+(?=[;,\s]|$)\s*[;,]?\s*(?:url\s*=\s*)?['"]?/i;
 
 /** O valor de http-equiv é "refresh" (sem case, sem espaços nas pontas)? */
 export function isRefreshHttpEquiv(value: unknown): boolean {
@@ -158,9 +210,16 @@ export function isRefreshHttpEquiv(value: unknown): boolean {
 
 /** PURO: URL do `content` de um meta refresh passa pela política (como href) */
 export function evaluateMetaRefresh(content: string): { value: string; blocked: boolean } {
-  const m = META_REFRESH.exec(content);
-  if (!m || isAllowedSingleUrl("href", m[2] as string, "meta")) return { value: content, blocked: false };
-  return { value: `${m[1]}${BLOCKED_URL}${m[3]}`, blocked: true };
+  // Falha fechada: não analisa entradas enormes
+  if (content.length > MAX_POLICY_INPUT) return { value: BLOCKED_URL, blocked: true };
+  const m = META_REFRESH_PREFIX.exec(content);
+  if (!m) return { value: content, blocked: false };
+  const rest = content.slice(m[0].length);
+  let end = rest.trimEnd().length;
+  if (end > 0 && (rest[end - 1] === "'" || rest[end - 1] === '"')) end--;
+  const target = rest.slice(0, end);
+  if (isAllowedSingleUrl("href", target, "meta")) return { value: content, blocked: false };
+  return { value: `${m[0]}${BLOCKED_URL}${rest.slice(end)}`, blocked: true };
 }
 
 /** Aviso de dev padrão para um valor bloqueado (usado também por props-core) */

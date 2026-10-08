@@ -113,8 +113,10 @@ describe("sanitizeUrl - data:image", () => {
     expect(sanitizeUrl("srcset", "data:image/png;base64,AAAA 1x", "source")).toBe("data:image/png;base64,AAAA 1x");
     expect(sanitizeUrl("poster", "data:image/png;base64,AAAA", "video")).toBe("data:image/png;base64,AAAA");
   });
-  test("svg+xml nunca é permitido", () => {
-    expect(sanitizeUrl("src", "data:image/svg+xml;base64,AAAA", "img")).toBe(BLOCKED_URL);
+  test("svg+xml só em img src/srcset (D4); fora disso é bloqueado", () => {
+    expect(sanitizeUrl("src", "data:image/svg+xml;base64,AAAA", "img")).toBe("data:image/svg+xml;base64,AAAA");
+    expect(sanitizeUrl("src", "data:image/svg+xml;base64,AAAA", "video")).toBe(BLOCKED_URL);
+    expect(sanitizeUrl("href", "data:image/svg+xml;base64,AAAA", "a")).toBe(BLOCKED_URL);
   });
   test("data:image em href, iframe, embed, script e object é bloqueado", () => {
     const u = "data:image/png;base64,AAAA";
