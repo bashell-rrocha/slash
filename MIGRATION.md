@@ -309,7 +309,6 @@ console.log(document.getElementById("__SLASH_STATE__")); // Should be null
 | --- | --- | --- |
 | uses ``htmlString`...` `` as a `string` (`.length`, `+`, `.startsWith`, `res.send(x)`) | it returns a `SafeHtml` | use `String(x)`, or `renderToString(() => x).html` |
 | returns hand-built HTML strings from a component or helper (`return "<div>...</div>"`, Markdown, icons) | the string renders as visible text | return an `htmlString`/`html` template; for trusted markup use `unsafeHtml(str)` |
-| used the old workaround of prefixing a space to user strings | not needed | remove it; strings are always escaped |
 | passes `innerHTML=${...}`, `outerHTML=...` or `srcdoc=${...}` as a prop | the prop is ignored (dev warning) | use `unsafeHtml(...)` as a child; `srcdoc=${unsafeHtml(...)}` |
 | uses `javascript:`, `data:text/html`, `blob:` or custom schemes in `href`/`src`/`action` | the value becomes `about:blank#blocked` | use a real URL, or `unsafeUrl(url)` for a trusted one |
 | uses `<${Link} to="./x">`, `to="../x"`, `to="about"` or an absolute URL | no navigation, `href` blocked | use an app path (`/x`, `?q`, `#h`); for an external site add `external` |

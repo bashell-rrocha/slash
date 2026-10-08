@@ -30,7 +30,7 @@ Tudo abaixo vale no cliente e no SSR, sem configuração. Referência completa: 
 ### Breaking changes
 
 - **`htmlString` devolve `SafeHtml`**, não `string`. Migre: `String(x)` ou `renderToString(() => x).html`. (`renderToString().html` continua `string`.)
-- **Strings com HTML viram texto**, no SSR e no cliente (componentes que retornam `"<div>...</div>"`, Markdown/CMS, ícones SVG em string). Migre: retorne um template `htmlString`/`html`, ou `unsafeHtml(str)` para HTML confiável. O workaround de prefixar um espaço deixou de existir.
+- **Strings com HTML viram texto**, no SSR e no cliente (componentes que retornam `"<div>...</div>"`, Markdown/CMS, ícones SVG em string). Migre: retorne um template `htmlString`/`html`, ou `unsafeHtml(str)` para HTML confiável.
 - **Props `innerHTML`, `outerHTML` e `srcdoc` (string) são ignoradas.** Migre: `unsafeHtml(...)` como filho; `srcdoc=${unsafeHtml(...)}`.
 - **URLs bloqueadas.** Esquemas fora de `http(s)`, `mailto:`, `tel:` e relativas viram `about:blank#blocked`. Migre: use uma URL válida ou `unsafeUrl(url)` para uma URL confiável.
 - **`Link` só aceita caminhos do app.** `./x`, `../x`, `about` e URLs absolutas ficam bloqueados. Migre: use `/x`, `?q` ou `#h`; para site externo, `external`.
