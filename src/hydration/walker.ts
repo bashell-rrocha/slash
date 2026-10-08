@@ -1,7 +1,8 @@
 import { setProp } from "../rendering/props";
 import type { Child, Elementish, Props } from "../types";
 import { isReactive } from "../utils/guards";
-import { getHydrateContext } from "./context";
+import { h } from "../hyper";
+import { getHydrateContext, setHydrateContext } from "./context";
 
 /**
  * Pula marcadores de signal (reactive-start/reactive-end) durante hidratação
@@ -87,9 +88,7 @@ export function hHydrate(tag: unknown, props: Props, ...children: Child[]): Node
 
   if (!existingNode || existingNode.nodeType !== Node.ELEMENT_NODE) {
     // Fallback: criar novo elemento
-    const { h } = require("../hyper");
     const savedCtx = getHydrateContext();
-    const { setHydrateContext } = require("./context");
     setHydrateContext(null);
     const el = h(tag, props, ...children);
     setHydrateContext(savedCtx);
