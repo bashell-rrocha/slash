@@ -50,8 +50,13 @@ Isso executa:
 1. `clean` - Remove `dist/`
 2. `build:esm` - Gera os bundles `dist/*.mjs` (minificados)
 3. `build:cjs` - Gera os bundles `dist/*.cjs` (minificados)
-4. `build:types` - Gera arquivos `.d.ts` em `dist/types/`
-5. `build:compress` - Gera as versões `.gz` e `.br` dos bundles
+4. `build:esm:dev` - Gera o build de desenvolvimento ESM em `dist/dev/*.mjs` (com os avisos de dev)
+5. `build:cjs:dev` - Gera o build de desenvolvimento CJS em `dist/dev/*.cjs`
+6. `build:types` - Gera arquivos `.d.ts` em `dist/types/`
+
+O build de desenvolvimento é escolhido pela condição de exportação `development` (Vite em dev e webpack em modo development a ativam sozinhos; no Node, use `--conditions=development`). Sem ela vale `dist/`, o build de produção. Depois do build, `bun run verify:dist` carrega os dois e confere as exportações.
+
+`build:compress` (versões `.gz` e `.br`) continua disponível para uso manual, mas não faz parte de `bun run build` e os arquivos comprimidos não vão para o pacote npm.
 
 ### Build Individual
 
@@ -92,7 +97,8 @@ dist/
 ├── forms.mjs / forms.cjs      # @_bashell/slash/forms
 ├── ssr.mjs / ssr.cjs          # @_bashell/slash/ssr
 ├── chunk-*.mjs / chunk-*.cjs  # Código compartilhado entre os entry points
-├── *.map, *.gz, *.br          # Source maps e versões comprimidas
+├── *.map                      # Source maps (sem sourcesContent)
+├── dev/                       # Build de desenvolvimento (condição "development"), com avisos
 └── types/                     # Arquivos de definição TypeScript
     ├── index.d.ts
     ├── core.d.ts

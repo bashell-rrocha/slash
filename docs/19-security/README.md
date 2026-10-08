@@ -41,16 +41,40 @@ Vale para `href`, `src`, `action`, `formaction`, `xlink:href`, `poster`, `cite`,
 
 Permitido:
 
-- `http:`, `https:`, `mailto:` e `tel:`;
+- `http:`, `https:`, `mailto:`, `tel:` e `sms:`;
 - URLs relativas: `/x`, `./x`, `../x`, `?q`, `#h`, caminho sem esquema, e `//host` (herda `http(s)` da página; valide o host você mesmo se precisar restringir origem);
-- `data:image/png|jpeg|gif|webp|avif` **somente** em atributos de imagem (`img src`, `srcset`, `poster`).
+- `data:image/png|jpeg|gif|webp|avif` **somente** em atributos de imagem (`img src`, `srcset`, `poster`);
+- `blob:` **somente** em `src` de mídia (`img`, `audio`, `video`, `source`, `track`): são object URLs da mesma origem, inertes nesses contextos;
+- `data:image/svg+xml` **somente** em `img src`, `img srcset` e em `url()` de CSS: como imagem, o SVG não executa scripts.
 
-Todo o resto (`javascript:`, `vbscript:`, `data:text/html`, `data:image/svg+xml`, `blob:`, `file:`...) vira `about:blank#blocked`, com aviso em dev. Espaços, tabs e caracteres de controle antes ou dentro do esquema não enganam a política (`java\tscript:` é bloqueado). Entidades HTML não são decodificadas.
+Todo o resto (`javascript:`, `vbscript:`, `data:text/html`, `file:`, `ftp:`, `whatsapp:`...) vira `about:blank#blocked`, com aviso em dev. `blob:` e `data:image/svg+xml` em `href`, `iframe src`, `object` ou `embed` também são bloqueados. Para um esquema que a lista não cobre, use `unsafeUrl(...)`. Espaços, tabs e caracteres de controle antes ou dentro do esquema não enganam a política (`java\tscript:` é bloqueado). Entidades HTML não são decodificadas.
 
 ```typescript
 html`<a href=${"javascript:alert(1)"}>x</a>`; // <a href="about:blank#blocked">
 html`<img src=${"data:image/png;base64,iVBOR..."} />`; // permitido
+html`<img src=${URL.createObjectURL(arquivo)} />`; // blob: permitido em mídia
 ```
+
+`srcset` e o `content` de `<meta http-equiv="refresh">` com mais de **16 KB** são bloqueados por inteiro (a análise é linear, então uma entrada enorme não trava a página).
+
+### A política é de esquema, não de origem
+
+A política decide quais **esquemas** passam. Ela não sabe se o host é confiável. Se o valor de `<base href>`, `<script src>`, `<iframe src>` ou `<link href>` vem de entrada de usuário, restringir a origem é responsabilidade do app (compare `new URL(valor).origin` com uma lista sua). Um `https://atacante.com/x.js` passa pela política, porque `https:` é um esquema permitido.
+
+### Validar entrada você mesmo: `sanitizeUrl` e `BLOCKED_URL`
+
+As duas peças da política são exportadas de `@_bashell/slash/core` e `@_bashell/slash/ssr`. Use quando a URL não passa por um atributo do Slash (um redirect no servidor, uma URL guardada no banco):
+
+```typescript
+import { sanitizeUrl, BLOCKED_URL } from "@_bashell/slash/core";
+
+// sanitizeUrl(atributo, valor, tag?) devolve o valor ou BLOCKED_URL
+const destino = sanitizeUrl("href", req.query.next ?? "/");
+if (destino === BLOCKED_URL) return res.redirect("/");
+res.redirect(destino);
+```
+
+O primeiro argumento é o nome do atributo (`"href"`, `"src"`...) e o terceiro, opcional, a tag (`"img"`), porque `blob:` e `data:image/svg+xml` dependem do contexto. Em dev, um valor bloqueado emite o mesmo aviso dos templates.
 
 `<meta http-equiv="refresh" content="N;url=...">` segue a mesma regra: a URL do `content` é verificada como um `href`. Só esse caso é tratado; o `content` de qualquer outro `<meta>` não é tocado.
 
@@ -98,9 +122,9 @@ Regras por nome e valor:
 
 Uma declaração insegura é descartada e as demais são mantidas: `color:red;background:url(javascript:alert(1))` vira `color:red`. No SSR, chaves de objeto em camelCase viram propriedades CSS e prefixos de fornecedor saem como `-ms-`, `-webkit-` e `-moz-`. Em objetos, chaves como `cssText`, `setProperty` ou `__proto__` são ignoradas.
 
-## `Link`
+## `Link` e roteador
 
-`to` precisa ser um caminho do app: `/x`, `?q` ou `#h`. Qualquer outra coisa nunca navega: o clique recebe `preventDefault`, o `href` vira `about:blank#blocked` e há um aviso em dev. Isso inclui `./x`, `../x`, `about`, `//host`, `/\host`, `javascript:` e `https://...`.
+`to` precisa ser um caminho do app: `/x`, `?q` ou `#h`. Qualquer outra coisa nunca navega: o clique recebe `preventDefault`, o `href` vira `about:blank#blocked` e há um aviso em dev. Isso inclui `./x`, `../x`, `about`, `//host`, `javascript:` e `https://...`. `?q` e `#h` são relativos à página atual.
 
 Para um link externo de verdade, diga isso explicitamente:
 
@@ -109,7 +133,14 @@ html`<${Link} to="https://example.com/docs" external router=${router}>Docs<//>`;
 // <a href="https://example.com/docs" rel="noopener noreferrer">Docs</a>
 ```
 
-`external` só libera `http(s)`, `mailto:` e `tel:` (a URL ainda passa pela política) e adiciona `rel="noopener noreferrer"`; `//host` e `\` continuam bloqueados. No SSR o `Link` gera o mesmo `<a href>`.
+`external` só libera `http(s)`, `mailto:`, `tel:` e `sms:` (a URL ainda passa pela política) e adiciona `rel="noopener noreferrer"`; `//host` continua bloqueado. No SSR o `Link` gera o mesmo `<a href>`.
+
+Regras do roteador no navegador:
+
+- O interceptador de cliques só assume links `http(s)` da **mesma origem** (respeitando `<base>`). `mailto:`, `tel:`, `sms:`, `//outro.com` e outras origens ficam com o navegador.
+- Com ctrl, meta, shift ou alt, botão que não seja o esquerdo, `target` diferente de `_self` ou `download`, o `Link` não interfere e o navegador age normalmente.
+- Barras invertidas viram o caminho da mesma origem: `push("/\\evil")` vai para `/evil`, nunca para outro host.
+- Se o navegador recusar um `push`/`replace`, a promise rejeita com `Navigation failed: ...` e o estado do roteador continua igual à URL. Se o `pushState` lançar durante um clique em um link, o roteador cai na navegação nativa do navegador.
 
 ## Estado e dados de loader em `<script>`
 
@@ -123,17 +154,25 @@ const pagina = `<div id="app">${html}</div>
 <script id="__SLASH_STATE__" type="application/json">${serializeStateForScript(state)}</script>`;
 ```
 
+O atributo `type="application/json"` é **obrigatório**: o `render()` só lê `script#__SLASH_STATE__[type="application/json"]` e, com um script sem `type`, avisa em dev e não hidrata.
+
 `serializeStateForScript` e `serializeLoaderData` escapam `<`, `>`, `&`, U+2028 e U+2029; `JSON.parse` devolve exatamente o valor original. Para JSON em outro `<script>` dentro de um `htmlString`:
 
 ```typescript
 htmlString`<script type="application/ld+json">${unsafeHtml(serializeStateForScript(dados))}</script>`;
 ```
 
-Strings dinâmicas dentro de `<script>`/`<style>` são sempre escapadas (com aviso em dev). Texto **estático** do template é mantido como está, então CSS e JS inline escritos por você funcionam. Limitação do htm: um `<` literal dentro de um `<script>` estático (`if (a < b)`) é lido como início de tag; coloque esse código em `unsafeHtml(...)`.
+Valores dinâmicos dentro de `<script>`/`<style>` (strings, números, arrays, componentes, templates aninhados e reativos) são **descartados**, no cliente e no SSR, com aviso em dev. Só passam o texto **estático** do template, então CSS e JS inline escritos por você funcionam, e `unsafeHtml(...)`. No cliente a regra é mais estrita: `unsafeHtml` precisa ser filho **direto** do `<script>`/`<style>`; vindo de um componente, de um array ou de uma função ele também é descartado. As props `text`, `textContent` e `innerText` de `<script>`/`<style>` também exigem `unsafeHtml`. Isso vale para templates (`html`/`htmlString`); chamadas diretas a `h()`/`hString()` (uso avançado) tratam uma string como texto estático confiável, então nunca passe entrada de usuário a elas.
+
+Limitação do htm: um `<` literal dentro de um `<script>` estático (`if (a < b)`) é lido como início de tag; coloque esse código em `unsafeHtml(...)`.
+
+## Props e nomes de atributo
+
+Uma prop com nome de método do DOM (`click`, `focus`, `remove`...) vira **atributo**, nunca sobrescreve o método do elemento. `constructor`, `__proto__`, `prototype` e outras props de protótipo são bloqueadas no cliente e no SSR. A gramática de nome de atributo é a mesma nos dois lados e só aceita ASCII; nomes como `@click` ou `[x]` são descartados (com aviso em dev).
 
 ## Dados sem protótipo
 
-`formToObject()` e `state.query` do roteador devolvem objetos sem protótipo (`Object.create(null)`): nomes como `__proto__` ou `constructor` viram chaves comuns e não afetam nada. Em troca, `obj.hasOwnProperty(...)` não existe; use `Object.hasOwn(obj, "campo")` ou `"campo" in obj`. `parseQuery` não lança com percent-encoding malformado (mantém o texto cru), e o clone interno de estado não deixa `__proto__` alterar protótipos.
+`formToObject()` e `state.query` do roteador devolvem objetos sem protótipo (`Object.create(null)`): nomes como `__proto__` ou `constructor` viram chaves comuns e não afetam nada. Em troca, `obj.hasOwnProperty(...)` não existe; use `Object.hasOwn(obj, "campo")` ou `"campo" in obj`. `parseQuery` não lança com percent-encoding malformado (mantém o texto cru), e o clone interno de estado não deixa `__proto__` alterar protótipos. Um estado circular, ou aninhado em mais de 1000 níveis, lança `State is circular or nested deeper than 1000 levels and cannot be cloned` em vez de estourar a pilha.
 
 ## Limitação do htm em `<script>` estático
 
@@ -148,11 +187,16 @@ Guards do roteador, botões escondidos e rotas "protegidas" no navegador melhora
 O Slash testa as mesmas entradas nos dois lados e o resultado é igual, com estas exceções conhecidas:
 
 1. `innerHTML=...`, `outerHTML=...` e `insertAdjacentHTML=...`: o cliente bloqueia a prop; o SSR emite um atributo comum com o valor escapado (inerte, nunca vira marcação).
-2. Props `__proto__` e `constructor`: o cliente descarta; o SSR emite um atributo inofensivo.
-3. `style` em objeto: o cliente serializa pelo CSSOM (formatação diferente), com a mesma política de valores.
-4. Atributos `data-reactive-*` são reservados e removidos só no SSR (marcadores de hidratação).
-5. `SafeHtml`/`SafeUrl` guardados em estado reativo perdem a marca ao serializar para hidratação e passam a falhar fechado: o HTML vira texto e a URL é sanitizada. Reembrulhe com `unsafeHtml`/`unsafeUrl` no cliente se precisar.
+2. `style` em objeto: o cliente serializa pelo CSSOM (formatação diferente), com a mesma política de valores.
+3. Atributos `data-reactive-*` são reservados e removidos só no SSR (marcadores de hidratação).
+4. `SafeHtml`/`SafeUrl` guardados em estado reativo perdem a marca ao serializar para hidratação e passam a falhar fechado: o HTML vira texto e a URL é sanitizada. Reembrulhe com `unsafeHtml`/`unsafeUrl` no cliente se precisar.
+5. Em `<script>`/`<style>`, o cliente é mais estrito que o SSR: `unsafeHtml` que chega por componente, array ou função é descartado no cliente.
 
-## Avisos de desenvolvimento
+## Builds de desenvolvimento e de produção
 
-Cada bloqueio emite um aviso (uma vez por tipo) com a correção sugerida. Os avisos são removidos do build de produção, que não paga o custo das mensagens.
+O pacote publica dois builds por entrada (`core`, `router`, `forms`, `ssr`), escolhidos pelas condições de exportação:
+
+- **Desenvolvimento** (`dist/dev`): Vite em `dev` e webpack em `mode: "development"` o escolhem sozinhos. Cada bloqueio emite um aviso (uma vez por tipo) com a correção sugerida.
+- **Produção** (`dist`, o padrão): sem os avisos, que não pagam o custo das mensagens. Os erros de verdade (`ErrorBoundary`, guards do roteador, `batch`) continuam indo para `console.error`.
+
+Para forçar os avisos fora de um bundler, por exemplo no Node: `node --conditions=development app.mjs`. Sem a condição, o Node usa o build de produção. As mensagens de runtime são todas em inglês.

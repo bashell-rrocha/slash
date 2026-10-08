@@ -101,11 +101,13 @@ render(html`<${App} />`, "#app");
 Slash is secure by default. You write templates the normal way and the library does the safe thing:
 
 - **All text and attribute values are escaped**, on the client and on the server. A string is always data, never markup, whatever it contains.
-- **Dangerous URLs are blocked.** `href`, `src`, `action` and friends only accept `http:`, `https:`, `mailto:`, `tel:` and relative URLs (plus `data:image/*` on images). `javascript:`, `vbscript:`, `data:text/html`, `blob:` and `file:` become `about:blank#blocked`.
-- **Event handlers must be functions.** Any prop starting with `on` (any case) is an event, and only a function, a handler object or a `[fn, options]` tuple is attached. Anything else (`onclick="alert(1)"`, booleans, objects) is dropped with a dev warning, on the client and on the server. A plain attribute that starts with "on" must use a `data-` prefix.
-- **`Link` only navigates to app paths** (`/x`, `?q`, `#h`). Anything else is blocked unless you opt in with `external`.
-- **State and loader data go into `<script>` safely** (`serializeStateForScript`, `serializeLoaderData`), so a value like `</script>` cannot break out.
-- `innerHTML`, `outerHTML`, `insertAdjacentHTML` and `srcdoc` props are blocked on the client (on the server they are emitted as inert, escaped attributes), `style` is checked against a strict CSS policy (a declaration is dropped for any `/*` comment, a backslash outside quotes, a malformed string, an unquoted `url()` with characters outside a safe set — use `url("a b.png")` — or `-moz-binding`/`behavior`; styles over 8 KB are dropped), and the URL in `<meta http-equiv="refresh" content="N;url=...">` follows the same URL rules (other meta content is untouched).
+- **Dangerous URLs are blocked.** Links and sources accept `http:`, `https:`, `mailto:`, `tel:`, `sms:` and relative URLs. `javascript:`, `data:text/html`, `file:` and any other scheme become `about:blank#blocked`. Images also accept `data:image/*` and `blob:`. `sanitizeUrl` is exported if you want to validate input yourself.
+- **Event handlers must be functions.** `onclick="alert(1)"` and other non-function `on*` values are dropped, on the client and on the server. A plain attribute that starts with "on" must use a `data-` prefix.
+- **`Link` and the router only navigate inside your app** (`/x`, `?q`, `#h`). Anything else is blocked unless you opt in with `external`.
+- **`<script>` and `<style>` never take dynamic values.** Interpolated strings, numbers and templates are dropped; only the static text you write and `unsafeHtml(...)` are kept.
+- **State goes into `<script>` safely** (`serializeStateForScript`, `serializeLoaderData`), so a value like `</script>` cannot break out.
+- `innerHTML`, `outerHTML` and `srcdoc` props are blocked, and `style` is checked against a strict CSS policy.
+- **Dev and production builds.** Vite and webpack pick the dev build in development, which prints a warning for each block. Production builds drop those warnings (errors still reach `console.error`). Details: [docs/19-security](./docs/19-security/README.md).
 
 ```typescript
 import { html } from "@_bashell/slash/core";
@@ -141,10 +143,9 @@ Things to know:
 
 - **Strings that look like markup are text.** A component that returns `"<div>hi</div>"` renders the literal characters (dev mode logs a hint). Return an `html`/`htmlString` template, or `unsafeHtml(...)` if the string is trusted.
 - **Client-side guards (router guards, hidden buttons) are UX, not security.** The server must authorize every request.
-- Dynamic strings inside `<script>`/`<style>` are escaped; for JSON use `unsafeHtml(serializeStateForScript(data))`.
-- Dev-mode warnings explain each block and are stripped from production builds.
+- Dynamic values inside `<script>`/`<style>` are dropped; for JSON use `unsafeHtml(serializeStateForScript(data))`.
 
-Full reference, URL policy, `Link`, `style`, and the small differences between client and server rendering: [docs/19-security](./docs/19-security/README.md) (also: literal `<` in a static `<script>`, `SafeHtml` in reactive state).
+Full reference, URL policy, `Link`, `style`, and the small differences between client and server rendering: [docs/19-security](./docs/19-security/README.md) (also: `Link` and router rules, literal `<` in a static `<script>`, `SafeHtml` in reactive state).
 
 ## State
 
@@ -275,7 +276,7 @@ await router.push("/users/7");
 
 The router is itself a state (`router.get()`, `router.watch()`) holding `currentRoute`, `params`, `query`, `meta` and `isNavigating`. It also exposes `push`, `replace`, `back`, `forward` and `go`. Guards (global or per route) return `false` to block or a path string to redirect. For SSR, pass `initialPath`. `await router.ready` resolves when the initial navigation (including guards) is done. Client-side guards are UX only: the server must always authorize access.
 
-`Link` only navigates to app paths (`/x`, `?q`, `#h`). Relative forms such as `./x`, `../x` or `about` and dangerous schemes are blocked (`href="about:blank#blocked"`, no navigation, dev warning). For a real external link opt in explicitly: `<${Link} to="https://example.com" external router=${router}>Docs<//>` renders a native link with `rel="noopener noreferrer"`. `state.query` has no prototype (use `Object.hasOwn`). See [ROUTER.md](./ROUTER.md).
+`Link` only navigates to app paths (`/x`, `?q`, `#h`). Relative forms such as `./x`, `../x` or `about` and dangerous schemes are blocked (`href="about:blank#blocked"`, no navigation, dev warning). For a real external link opt in explicitly: `<${Link} to="https://example.com" external router=${router}>Docs<//>` renders a native link with `rel="noopener noreferrer"`. `state.query` has no prototype (use `Object.hasOwn`). See [ROUTER.md](./ROUTER.md). The router only intercepts same-origin `http(s)` links; with ctrl/meta/shift/alt, a non-left button, `target` other than `_self` or `download`, the browser acts normally. `?q` and `#h` are relative to the current page.
 
 ## Forms
 
@@ -313,10 +314,10 @@ Available helpers: `textFieldControl`, `checkboxControl`, `radioControl`, `Selec
 
 | Import | Contents |
 | --- | --- |
-| `@_bashell/slash/core` | `html`, `h`, `render`, `destroyNode`, `createState`, `batch`, `ErrorBoundary`, `safeRender`, `catchAsync`, `setupGlobalErrorHandler`, `unsafeHtml`, `isSafeHtml`, `unsafeUrl`, `isSafeUrl` (types `SafeHtml`, `SafeUrl`), dev-mode helpers |
+| `@_bashell/slash/core` | `html`, `h`, `render`, `destroyNode`, `createState`, `batch`, `ErrorBoundary`, `safeRender`, `catchAsync`, `setupGlobalErrorHandler`, `unsafeHtml`, `isSafeHtml`, `unsafeUrl`, `isSafeUrl`, `sanitizeUrl`, `BLOCKED_URL` (types `SafeHtml`, `SafeUrl`), dev-mode helpers |
 | `@_bashell/slash/router` | `createRouter`, `Router`, `Link`, route utilities and types |
 | `@_bashell/slash/forms` | form controls, event helpers and form types |
-| `@_bashell/slash/ssr` | `htmlString`, `renderToString`, `renderToStream`, `serializeStateForScript`, `unsafeHtml`, `isSafeHtml`, `unsafeUrl`, `isSafeUrl`, loader helpers |
+| `@_bashell/slash/ssr` | `htmlString`, `renderToString`, `renderToStream`, `serializeStateForScript`, `unsafeHtml`, `isSafeHtml`, `unsafeUrl`, `isSafeUrl`, `sanitizeUrl`, `BLOCKED_URL`, loader helpers |
 | `@_bashell/slash` | everything above in one bundle |
 
 Prefer the subpaths: they keep your bundle small.

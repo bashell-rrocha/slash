@@ -90,6 +90,8 @@ router.currentRoute();            // RouteMatch | null
 await router.ready;               // navegação inicial concluída
 ```
 
+`push` e `replace` aceitam `?q` e `#h` relativos à página atual, e barras invertidas viram o caminho da mesma origem (`"/\\evil"` vai para `/evil`). Se o navegador recusar a navegação (por exemplo, `pushState` lança), a promise rejeita com `Navigation failed: the browser rejected "<path>" (<reason>)` e o estado do roteador volta ao anterior, sem dessincronizar da URL.
+
 `router.ready` é obrigatório no tipo `RouterInstance`: mocks escritos à mão precisam incluir `ready: Promise.resolve()`. O componente `Router` só atualiza quando a rota muda (caminho, params ou query): alternar `isNavigating` ou um `push` para a URL atual não reconstrói a página.
 
 ## Componentes
@@ -106,7 +108,7 @@ html`<${Link} to="/about" router=${router}>About<//>`;
 
 Renderiza um `<a href="/about">` cujo clique é interceptado e chama `router.push("/about")`. Props extras (como `class`) são repassadas ao `<a>`.
 
-`to` precisa ser um **caminho do app**: `/x`, `?q` ou `#h`. Qualquer outro valor nunca navega: o clique recebe `preventDefault`, o `href` vira `about:blank#blocked` e há um aviso em dev. Isso inclui formas relativas (`./x`, `../x`, `about`), `//host`, `/\host` e esquemas como `javascript:` ou `https://...`.
+`to` precisa ser um **caminho do app**: `/x`, `?q` ou `#h`. Qualquer outro valor nunca navega: o clique recebe `preventDefault`, o `href` vira `about:blank#blocked` e há um aviso em dev. Isso inclui formas relativas (`./x`, `../x`, `about`), `//host`, `/\host` e esquemas como `javascript:` ou `https://...`. `?q` e `#h` são relativos à página atual (`/users` + `?page=2` vira `/users?page=2`).
 
 Para um link externo de verdade, use a prop `external`:
 
@@ -115,7 +117,7 @@ html`<${Link} to="https://example.com/docs" external router=${router}>Docs<//>`;
 // <a href="https://example.com/docs" rel="noopener noreferrer">Docs</a>
 ```
 
-`external` aceita apenas `http(s)`, `mailto:` e `tel:` (a URL ainda passa pela política de URLs), adiciona `rel="noopener noreferrer"` e deixa o navegador navegar normalmente. `//host` e `\` continuam bloqueados. No SSR, `Link` gera o mesmo `<a href>` (dentro de `htmlString`/`renderToString`).
+`external` aceita apenas `http(s)`, `mailto:`, `tel:` e `sms:` (a URL ainda passa pela política de URLs), adiciona `rel="noopener noreferrer"` e deixa o navegador navegar normalmente. `//host` e `\` continuam bloqueados. No SSR, `Link` gera o mesmo `<a href>` (dentro de `htmlString`/`renderToString`).
 
 ## Parâmetros e query string
 
@@ -209,6 +211,6 @@ Veja o [README](./README.md) para o fluxo completo de SSR e hidratação. Guards
 
 ## Limitações conhecidas
 
-**Interceptação global de links.** Com um roteador criado, o clique esquerdo (sem modificadores, `target` ou `download`) em qualquer `<a>` com `href` que não seja `#...` nem `http(s)` de outra origem recebe `preventDefault()` e `history.pushState` com o `href` cru. Links `javascript:` não executam no clique simples (o `pushState` lança), e links protocolo-relativos como `//outro.com` ficam sem efeito em vez de navegar; para links externos use URL absoluta `https://...` ou `target="_blank"`. Não há open redirect: a navegação só ocorre para rotas casadas.
+**Interceptação global de links.** Com um roteador criado, o clique esquerdo em um `<a>` é interceptado (`preventDefault()` e `history.pushState`) somente se o `href`, resolvido contra `<base>` e a URL atual, for `http(s)` da **mesma origem**. `mailto:`, `tel:`, `sms:`, `javascript:`, `//outro.com` e outras origens ficam com o navegador, que também age sozinho com ctrl/meta/shift/alt, botão que não seja o esquerdo, `target` diferente de `_self`, `download`, `<area>` e links `#...`. Se o `pushState` lançar, o clique cai na navegação nativa (`location.assign`). Não há open redirect: a navegação só ocorre para rotas casadas.
 
 O roteador não oferece lazy loading, data loaders, pré-carregamento, transições, `<Route>` declarativo nem curingas. Para carregar dados use `createLoader` do subpath `@_bashell/slash/ssr`.

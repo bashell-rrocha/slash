@@ -99,7 +99,7 @@ Quando um componente chama `count.get()` durante a renderização, o Slash passa
 | State reativo | ✅ (`createState`) | ✅ (hooks) | ✅ (Composition API) | ✅ (signals) |
 | SSR Nativo | ✅ | ✅ | ✅ | ✅ |
 | JSX sem build | ✅ (htm) | ❌ | ❌ | ❌ |
-| Bundle size | core ≈ 8,0KB gzip (produção, com a camada de segurança) | ~45KB | ~35KB | ~7KB |
+| Bundle size | core ≈ 8,4KB gzip (produção, com a camada de segurança) | ~45KB | ~35KB | ~7KB |
 | TypeScript | ✅ | ✅ | ✅ | ✅ |
 
 ## Requisitos Mínimos

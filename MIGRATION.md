@@ -310,10 +310,15 @@ console.log(document.getElementById("__SLASH_STATE__")); // Should be null
 | uses ``htmlString`...` `` as a `string` (`.length`, `+`, `.startsWith`, `res.send(x)`) | it returns a `SafeHtml` | use `String(x)`, or `renderToString(() => x).html` |
 | returns hand-built HTML strings from a component or helper (`return "<div>...</div>"`, Markdown, icons) | the string renders as visible text | return an `htmlString`/`html` template; for trusted markup use `unsafeHtml(str)` |
 | passes `innerHTML=${...}`, `outerHTML=...` or `srcdoc=${...}` as a prop | the prop is ignored (dev warning) | use `unsafeHtml(...)` as a child; `srcdoc=${unsafeHtml(...)}` |
-| uses `javascript:`, `data:text/html`, `blob:` or custom schemes in `href`/`src`/`action` | the value becomes `about:blank#blocked` | use a real URL, or `unsafeUrl(url)` for a trusted one |
+| uses `javascript:`, `data:text/html`, `file:`, `whatsapp:`, `ftp:` or other custom schemes in `href`/`src`/`action` (allowed: `http`, `https`, `mailto`, `tel`, `sms`; `blob:` on media `src`; `data:image/svg+xml` on `img` and CSS `url()`) | the value becomes `about:blank#blocked` | use a real URL, or `unsafeUrl(url)` for a trusted one; validate input with `sanitizeUrl` |
 | uses `<${Link} to="./x">`, `to="../x"`, `to="about"` or an absolute URL | no navigation, `href` blocked | use an app path (`/x`, `?q`, `#h`); for an external site add `external` |
+| relied on the router intercepting `mailto:`, `tel:` or other-origin links, or on `?q`/`#h` resolving against the route path | only same-origin `http(s)` links are intercepted; `?q` and `#h` are relative to the current page | nothing for normal links; use `external` for other sites |
 | uses string handlers (`onclick="..."`) or a plain attribute starting with `on` | any `on*` prop that is not a function, handler object or `[fn, options]` is dropped (client and SSR) | pass a function: `onClick=${fn}`; use `data-` for plain attributes |
-| writes `<script>${json}</script>` or `<style>${css}</style>` with dynamic values in `htmlString` | dynamic strings are escaped (dev warning) | `unsafeHtml(serializeStateForScript(data))` for JSON; keep CSS/JS static |
+| writes `<script>${json}</script>` or `<style>${css}</style>` with dynamic values (client `html` or `htmlString`) | dynamic strings, numbers, arrays, components and reactives are dropped (dev warning) | `unsafeHtml(serializeStateForScript(data))` for JSON, as a direct child; keep CSS/JS static |
+| renders the state script as `<script id="__SLASH_STATE__">` without a type | `render()` ignores it (dev warning) | add `type="application/json"` |
+| passes props named like DOM methods (`click`, `focus`) or `constructor` | the DOM method prop becomes an attribute; `constructor` is blocked | use `onClick=${fn}` for events |
+| keeps a circular state, or one nested over 1000 levels | `createState`/`get`/`set` throws `State is circular or nested deeper than 1000 levels` | flatten the state or store ids instead of references |
+| matches on Portuguese runtime messages (`URL bloqueada`...) in tests | messages are now in English | update the expected text |
 | puts a literal `<` in a static `<script>` inside `htmlString` (`if (a < b)`) | htm reads it as a tag | move that code into `unsafeHtml(...)` |
 | interpolates a `State` directly in SSR (`${state}`) | a `State` is not reactive on the server | interpolate `state.get()` |
 | embeds state with `JSON.stringify(state)` in a `<script>` | breaks out on `</script>` | `serializeStateForScript(state)` |
@@ -321,6 +326,8 @@ console.log(document.getElementById("__SLASH_STATE__")); // Should be null
 | builds a `RouterInstance` mock by hand | `ready` is required | add `ready: Promise.resolve()` |
 | calls `data.hasOwnProperty(...)` on `formToObject()` or `router.query` | those objects have no prototype | `Object.hasOwn(data, "field")` |
 | relied on client `style="..."` strings being applied verbatim | unsafe declarations are dropped | keep to plain CSS values (see [docs/19-security](./docs/19-security/README.md)) |
+
+Builds: Vite (dev) and webpack (`mode: "development"`) resolve the `development` export condition and load the dev build, which prints a warning for each block. Production builds omit those warnings but keep `console.error` for real errors. To get the warnings elsewhere (for example Node), run with `--conditions=development`.
 
 Quick searches: `grep -rnE "htmlString|innerHTML=|srcdoc=|href=\$\{|onclick=|JSON.stringify\(state" src`.
 
