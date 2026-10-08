@@ -93,7 +93,7 @@ router.currentRoute();            // RouteMatch | null
 
 ### `Router`
 
-`Router({ router })` retorna um valor reativo que renderiza o `component` da rota atual e se atualiza a cada navegação. Chame-o dentro de um elemento do template, como em `<main><${Router} router=${router} /></main>`.
+`Router` renderiza o `component` da rota atual e se atualiza a cada navegação. Use-o como componente, `<${Router} router=${router} />`, em qualquer posição do template (dentro de um elemento, na raiz ou aninhado em outros componentes). A forma direta `${Router({ router })}` também continua válida.
 
 ### `Link`
 
