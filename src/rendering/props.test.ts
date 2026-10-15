@@ -232,4 +232,30 @@ describe("rendering/props", () => {
       expect(el.hasAttribute("customProp")).toBe(false);
     });
   });
+
+  describe("value em <option>", () => {
+    it("grava o atributo value mesmo vazio (sem filhos, option.value já é \"\")", () => {
+      // Arrange
+      const option = document.createElement("option");
+
+      // Act
+      setProp(option, "value", "");
+
+      // Assert
+      expect(option.getAttribute("value")).toBe("");
+    });
+
+    it("o placeholder vazio continua vazio depois que o texto entra", () => {
+      // Arrange
+      const option = document.createElement("option");
+
+      // Act
+      setProp(option, "value", "");
+      option.textContent = "Escolha";
+
+      // Assert
+      expect(option.value).toBe("");
+    });
+  });
 });
+

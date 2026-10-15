@@ -425,6 +425,13 @@ export function applyPropUpdate(element: Elementish, update: PropUpdate): void {
       const ctl = element as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
       const next = String(update.value);
 
+      // <option>: o value é o atributo. Sem ele, option.value devolve o texto (vazio antes dos filhos entrarem), então
+      // comparar com a propriedade pularia o value="" do placeholder (e o select required aceitaria o placeholder).
+      if (element.tagName === "OPTION") {
+        element.setAttribute("value", next);
+        return;
+      }
+
       if (ctl.value !== next) ctl.value = next;
 
       if ("defaultValue" in ctl) {
