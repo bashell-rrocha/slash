@@ -308,9 +308,17 @@ function propsToAttrs(ctx: RenderContext, tag: string, props: Props | null): str
         if (value) attrs += " checked";
         attrs += ` data-reactive-checked="${marker}"`;
       } else {
-        const attr = genericAttr(tag, key, value, metaRefresh);
-        // Só reativos diretos ganham marcador em atributos comuns
-        attrs += attr && reactive ? `${attr} data-reactive-${key}="${marker}"` : attr;
+        // Mesma regra do atributo estático: booleano do HTML é presença; false/null somem (o cliente remove)
+        const attr = BOOLEAN_ATTRS.has(lowerKey)
+          ? value
+            ? ` ${key}`
+            : ""
+          : value != null && value !== false
+            ? genericAttr(tag, key, value, metaRefresh)
+            : "";
+        // Só reativos diretos ganham marcador em atributos comuns (mesmo sem o atributo, para o cliente achá-lo)
+        if (reactive) attrs += `${attr} data-reactive-${key}="${marker}"`;
+        else attrs += attr;
       }
       continue;
     }

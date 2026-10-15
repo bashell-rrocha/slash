@@ -106,3 +106,47 @@ describe("htmlString: atributos booleanos do HTML", () => {
     expect(out).toBe("<details>x</details>");
   });
 });
+
+// Atributo reativo ({ get, subscribe }): mesma regra do estático. false/null somem (o cliente remove o atributo) e
+// booleano do HTML vira presença; o marcador de hidratação continua para o cliente achar o atributo depois.
+describe("htmlString: atributo reativo segue a regra do estático", () => {
+  const reactive = <T>(value: T) => ({ get: () => value, subscribe: () => () => {} });
+
+  it("hidden reativo false não sai (não esconde o elemento no HTML do servidor)", () => {
+    // Arrange
+    const hidden = reactive(false);
+
+    // Act
+    const out = htmlString`<div hidden=${hidden}>x</div>`.value;
+
+    // Assert
+    expect(out).not.toMatch(/ hidden[ =>]/);
+    expect(out).toContain("data-reactive-hidden=");
+  });
+
+  // hidden fica fora da lista de booleanos (aceita "until-found"): true sai como hidden="true", que também esconde
+  it("hidden reativo true sai (esconde)", () => {
+    // Arrange
+    const hidden = reactive(true);
+
+    // Act
+    const out = htmlString`<div hidden=${hidden}>x</div>`.value;
+
+    // Assert
+    expect(out).toMatch(/<div hidden(="true")? data-reactive-hidden="[^"]+">x<\/div>/);
+  });
+
+  it("atributo comum reativo null não sai; string sai como antes", () => {
+    // Arrange
+    const title = reactive<string | null>(null);
+    const label = reactive("sim");
+
+    // Act
+    const out = htmlString`<div title=${title} aria-label=${label}>x</div>`.value;
+
+    // Assert
+    expect(out).not.toMatch(/ title=/);
+    expect(out).toContain('aria-label="sim" data-reactive-aria-label=');
+  });
+});
+
