@@ -104,7 +104,33 @@ const PROTOTYPE_ATTRS = new Set(["__proto__", "constructor", "prototype"]);
 const EVENT_ATTR = /^on/i;
 const RAW_TEXT_ELEMENTS = new Set(["script", "style"]);
 const RESERVED_ATTR_PREFIX = "data-reactive-";
-const BOOLEAN_ATTRS = new Set(["checked", "selected", "disabled", "readonly"]);
+// Atributos booleanos do HTML: valor verdadeiro vira presença (`open`), como a propriedade nativa no cliente; falso
+// some. `hidden` fica de fora: aceita "until-found".
+const BOOLEAN_ATTRS = new Set([
+  "allowfullscreen",
+  "async",
+  "autofocus",
+  "autoplay",
+  "checked",
+  "controls",
+  "default",
+  "defer",
+  "disabled",
+  "formnovalidate",
+  "inert",
+  "ismap",
+  "loop",
+  "multiple",
+  "muted",
+  "nomodule",
+  "novalidate",
+  "open",
+  "playsinline",
+  "readonly",
+  "required",
+  "reversed",
+  "selected",
+]);
 
 function captureSignal(ctx: RenderContext, signal: Reactive): string {
   const id = `s${ctx.counter++}`;
