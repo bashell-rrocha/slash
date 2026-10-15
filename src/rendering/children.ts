@@ -69,6 +69,9 @@ export function appendNodeSafe(parent: Node, node: Node): void {
   parent.appendChild(node);
 }
 
+// Nós de texto criados por appendChildSmart: só esses recebem o texto vizinho (um nó que veio de fora não é mexido)
+const OWN_TEXT = new WeakSet<Node>();
+
 export function appendChildSmart(parent: Node, child: Child): void {
   if (child == null || child === false) return;
 
@@ -99,5 +102,14 @@ export function appendChildSmart(parent: Node, child: Child): void {
     return;
   }
 
-  appendNodeSafe(parent, document.createTextNode(toStr(child)));
+  // Texto vizinho de outro texto criado aqui vai para o mesmo nó, como no HTML do servidor depois do parse (com um
+  // nó por pedaço, o navegador mede o texto em partes e um glifo pode cair noutro subpixel)
+  const last = parent.lastChild;
+  if (last && OWN_TEXT.has(last)) {
+    (last as Text).appendData(toStr(child));
+    return;
+  }
+  const text = document.createTextNode(toStr(child));
+  OWN_TEXT.add(text);
+  appendNodeSafe(parent, text);
 }

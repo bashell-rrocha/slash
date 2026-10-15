@@ -152,7 +152,9 @@ describe('Bundle Size Optimization', () => {
     }
   }, 30000);
 
-  test('core import deve produzir bundle de produção <= 8.64KB gzipado', async () => {
+  // 0.0.6: +0.11 KB pelas correções de paridade (elementos vazios sem />, textos vizinhos num nó só); o Bun do CI
+  // (1.3.6) minifica um pouco maior que o local (1.4.3), então o limite tem essa folga
+  test('core import deve produzir bundle de produção <= 8.75KB gzipado', async () => {
     const size = await buildTestApp(`import { createState, html, render } from "${ROOT}/src/core.ts";`);
 
     const gzipKB = (size.gzip / 1024).toFixed(2);
@@ -160,15 +162,15 @@ describe('Bundle Size Optimization', () => {
 
     console.log(`\n📦 Core bundle: ${gzipKB} KB gzip, ${brotliKB} KB brotli (${size.gzip} / ${size.brotli} bytes)\n`);
 
-    expect(size.gzip).toBeLessThanOrEqual(8.64 * 1024);
+    expect(size.gzip).toBeLessThanOrEqual(8.75 * 1024);
   }, 30000);
 
-  test('core import deve produzir bundle de produção <= 7.67KB brotli', async () => {
+  test('core import deve produzir bundle de produção <= 7.75KB brotli', async () => {
     const size = await buildTestApp(`import { createState, html, render } from "${ROOT}/src/core.ts";`);
 
     const brotliKB = (size.brotli / 1024).toFixed(2);
 
-    expect(size.brotli).toBeLessThanOrEqual(7.67 * 1024);
+    expect(size.brotli).toBeLessThanOrEqual(7.75 * 1024);
   }, 30000);
 
   test('full import deve ser <= 12KB gzipado', async () => {

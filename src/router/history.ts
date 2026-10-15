@@ -396,12 +396,21 @@ export function createHistoryMode(): History {
  */
 export function createHashMode(): History {
   const listeners = new Set<HistoryListener>()
+  // Só hash que começa com "/" é rota: `#ancora` (link para um campo, o topo da página) é âncora nativa e não troca
+  // a tela. A rota atual fica guardada para quando o hash for uma âncora.
+  const routeOf = (hash: string): string | null => {
+    const value = hash.slice(1)
+    return value === "" ? "/" : value.startsWith("/") ? value : null
+  }
+  let current = isBrowser() ? (routeOf(window.location.hash) ?? "/") : "/"
 
   // Setup hashchange listener in browser
   if (isBrowser()) {
     window.addEventListener("hashchange", () => {
-      const hash = window.location.hash.slice(1) || "/"
-      listeners.forEach((listener) => listener(hash))
+      const route = routeOf(window.location.hash)
+      if (route === null) return
+      current = route
+      listeners.forEach((listener) => listener(route))
     })
   }
 
@@ -410,7 +419,9 @@ export function createHashMode(): History {
       if (!isBrowser()) {
         return "/"
       }
-      return window.location.hash.slice(1) || "/"
+      const route = routeOf(window.location.hash)
+      if (route !== null) current = route
+      return current
     },
 
     push(path: string): void {
