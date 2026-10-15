@@ -1,0 +1,42 @@
+# Testes em todo PR e nos pushes da main e do develop; o check "test" é o que protege os merges.
+# Não publica nada: a publicação fica no workflow publish.
+name: test
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.6
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Instalar dependências
+        run: bun install --frozen-lockfile
+
+      - name: Testes
+        run: bun run test
+
+      - name: Build
+        run: bun run build
+
+      - name: Verificar dist e dist/dev (import e require de cada entrypoint, produção e desenvolvimento)
+        run: bun run verify:dist
