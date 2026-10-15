@@ -23,6 +23,8 @@ export type State<T = unknown> = {
   set: (value: T) => void;
   get: () => T;
   watch: (callback: StateWatcher<T>) => () => void;
+  /** O mesmo que watch: com ele, o State satisfaz Reactive (atributo e filho reativos sem adaptador). */
+  subscribe: (callback: StateWatcher<T>) => () => void;
   // Time-travel debugging (opcional, não-breaking)
   getHistory?: () => Readonly<StateHistory<T>>;
   clearHistory?: () => void;
@@ -215,7 +217,7 @@ export const createState = <S = unknown>(
     _history = clearHistoryCore(_history);
   };
 
-  const state: State<S> = { set, get, watch };
+  const state: State<S> = { set, get, watch, subscribe: watch };
 
   // Adicionar métodos opcionais se histórico habilitado
   if (_history !== null) {

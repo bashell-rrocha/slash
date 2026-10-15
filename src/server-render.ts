@@ -1,5 +1,6 @@
 // src/server-render.ts
 import htm from "htm";
+import { closeVoidTags } from "./void-elements";
 import { isDevMode, isWarningsEnabled } from "./dev-warnings";
 import { isSafeHtml, SafeHtml } from "./safe-html";
 import { markDynamic, unmark } from "./utils/dynamic-text";
@@ -466,7 +467,7 @@ export function hString(tag: unknown, props: Props | null, ...rawChildren: Child
 // O HTM não precisa saber que retorna SafeHtml - funciona normalmente
 const boundHtm = (htm as any).bind(hString) as (strings: TemplateStringsArray, ...values: unknown[]) => SafeHtml;
 export const htmlString = (strings: TemplateStringsArray, ...values: unknown[]): SafeHtml => {
-  const result = boundHtm(strings, ...values.map(markDynamic)) as unknown;
+  const result = boundHtm(closeVoidTags(strings), ...values.map(markDynamic)) as unknown;
   if (isSafeHtml(result)) return result;
   // O htm devolve a raiz como está quando não é um único elemento (texto, valor
   // dinâmico, várias raízes): normaliza para SafeHtml, tudo como dado escapado
