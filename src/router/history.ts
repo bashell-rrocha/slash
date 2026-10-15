@@ -2,47 +2,47 @@
  * History management for router
  */
 
-export type HistoryListener = (location: string) => void
+export type HistoryListener = (location: string) => void;
 
 /**
  * History interface
  */
 export interface History {
   /** Get current location */
-  location(): string
+  location(): string;
   /** Push new location */
-  push(path: string): void
+  push(path: string): void;
   /** Replace current location */
-  replace(path: string): void
+  replace(path: string): void;
   /** Go back in history */
-  back(): void
+  back(): void;
   /** Go forward in history */
-  forward(): void
+  forward(): void;
   /** Go to specific history entry */
-  go(delta: number): void
+  go(delta: number): void;
   /** Listen to location changes */
-  listen(listener: HistoryListener): () => void
+  listen(listener: HistoryListener): () => void;
 }
 
 /**
  * Check if running in browser
  */
 function isBrowser(): boolean {
-  return typeof window !== "undefined" && typeof window.history !== "undefined"
+  return typeof window !== "undefined" && typeof window.history !== "undefined";
 }
 
 // Base usada quando a location não é http(s) (about:blank em testes): só há caminhos do app
-const FALLBACK_BASE = "http://slash.invalid/"
+const FALLBACK_BASE = "http://slash.invalid/";
 
 // Base URL for resolving relative urls: document.baseURI (honours <base>) on http(s) pages
 function resolveBaseUri(): string {
-  const base = resolveBase()
-  return base === FALLBACK_BASE ? base : document.baseURI || base
+  const base = resolveBase();
+  return base === FALLBACK_BASE ? base : document.baseURI || base;
 }
 
 function resolveBase(): string {
-  const protocol = window.location.protocol
-  return protocol === "http:" || protocol === "https:" ? window.location.href : FALLBACK_BASE
+  const protocol = window.location.protocol;
+  return protocol === "http:" || protocol === "https:" ? window.location.href : FALLBACK_BASE;
 }
 
 /**
@@ -50,9 +50,9 @@ function resolveBase(): string {
  */
 function resolveUrl(raw: string): URL | null {
   try {
-    return new URL(raw, resolveBaseUri())
+    return new URL(raw, resolveBaseUri());
   } catch {
-    return null
+    return null;
   }
 }
 
@@ -63,19 +63,19 @@ function resolveUrl(raw: string): URL | null {
  * link is left to the browser (null).
  */
 function resolveAnchorUrl(anchor: Element, attr: string): URL | null {
-  const href = (anchor as { href?: unknown }).href
+  const href = (anchor as { href?: unknown }).href;
   const raw =
     typeof href === "string"
       ? href
       : typeof (href as { baseVal?: unknown } | undefined)?.baseVal === "string"
         ? (href as { baseVal: string }).baseVal
-        : attr
+        : attr;
   try {
-    const viaHref = new URL(raw, resolveBaseUri())
-    const viaBase = new URL(attr, resolveBaseUri())
-    return viaHref.origin === viaBase.origin ? viaBase : null
+    const viaHref = new URL(raw, resolveBaseUri());
+    const viaBase = new URL(attr, resolveBaseUri());
+    return viaHref.origin === viaBase.origin ? viaBase : null;
   } catch {
-    return null
+    return null;
   }
 }
 
@@ -85,36 +85,36 @@ function resolveAnchorUrl(anchor: Element, attr: string): URL | null {
  */
 function normalizedPath(url: string | URL | null | undefined): string | null {
   if (url === undefined || url === null) {
-    return null
+    return null;
   }
-  const resolved = resolveUrl(String(url))
-  return resolved ? resolved.pathname + resolved.search + resolved.hash : null
+  const resolved = resolveUrl(String(url));
+  return resolved ? resolved.pathname + resolved.search + resolved.hash : null;
 }
 
 function currentPath(): string {
-  return window.location.pathname + window.location.search + window.location.hash
+  return window.location.pathname + window.location.search + window.location.hash;
 }
 
 /**
  * Track if history has been patched globally
  */
-let historyPatched = false
+let historyPatched = false;
 
 /**
  * All history listeners (shared across instances)
  */
-const globalListeners = new Set<HistoryListener>()
+const globalListeners = new Set<HistoryListener>();
 
 /**
  * Store original history methods
  */
-let originalPushState: typeof window.history.pushState | undefined
-let originalReplaceState: typeof window.history.replaceState | undefined
+let originalPushState: typeof window.history.pushState | undefined;
+let originalReplaceState: typeof window.history.replaceState | undefined;
 
 /**
  * Store the click handler so we can remove it
  */
-let clickHandler: ((event: MouseEvent) => void) | undefined
+let clickHandler: ((event: MouseEvent) => void) | undefined;
 
 /**
  * Reset history interception state (for testing)
@@ -122,30 +122,30 @@ let clickHandler: ((event: MouseEvent) => void) | undefined
  */
 export function __resetHistoryForTesting__(): void {
   if (!isBrowser()) {
-    return
+    return;
   }
 
   // Clear all listeners
-  globalListeners.clear()
+  globalListeners.clear();
 
   // Remove click handler
   if (clickHandler) {
-    window.removeEventListener("click", clickHandler)
-    clickHandler = undefined
+    window.removeEventListener("click", clickHandler);
+    clickHandler = undefined;
   }
 
   // Restore original methods if they were patched
   if (originalPushState) {
-    window.history.pushState = originalPushState
+    window.history.pushState = originalPushState;
   }
   if (originalReplaceState) {
-    window.history.replaceState = originalReplaceState
+    window.history.replaceState = originalReplaceState;
   }
 
   // Reset state
-  historyPatched = false
-  originalPushState = undefined
-  originalReplaceState = undefined
+  historyPatched = false;
+  originalPushState = undefined;
+  originalReplaceState = undefined;
 }
 
 /**
@@ -153,68 +153,75 @@ export function __resetHistoryForTesting__(): void {
  */
 function setupHistoryInterception(): void {
   if (!isBrowser() || historyPatched) {
-    return
+    return;
   }
 
   // Save original methods before patching
   if (!originalPushState) {
-    originalPushState = window.history.pushState.bind(window.history)
+    originalPushState = window.history.pushState.bind(window.history);
   }
   if (!originalReplaceState) {
-    originalReplaceState = window.history.replaceState.bind(window.history)
+    originalReplaceState = window.history.replaceState.bind(window.history);
   }
+
+  const nativePush = originalPushState;
+  const nativeReplace = originalReplaceState;
 
   // Monkey patch history.pushState and replaceState
-  window.history.pushState = function (data, title, url) {
-    const normalized = normalizedPath(url)
-    const result = originalPushState!(data, title, url)
+  window.history.pushState = (data, title, url) => {
+    const normalized = normalizedPath(url);
+    const result = nativePush(data, title, url);
     // Listeners always receive the normalized same-origin path, never the raw url
-    const path = normalized ?? currentPath()
-    globalListeners.forEach((listener) => listener(path))
-    return result
-  }
+    const path = normalized ?? currentPath();
+    globalListeners.forEach((listener) => {
+      listener(path);
+    });
+    return result;
+  };
 
-  window.history.replaceState = function (data, title, url) {
-    const normalized = normalizedPath(url)
-    const result = originalReplaceState!(data, title, url)
-    const path = normalized ?? currentPath()
-    globalListeners.forEach((listener) => listener(path))
-    return result
-  }
+  window.history.replaceState = (data, title, url) => {
+    const normalized = normalizedPath(url);
+    const result = nativeReplace(data, title, url);
+    const path = normalized ?? currentPath();
+    globalListeners.forEach((listener) => {
+      listener(path);
+    });
+    return result;
+  };
 
   // Intercept clicks on <a href> for SPA navigation
   clickHandler = (event: MouseEvent) => {
     // Cliques no document, em nós de texto ou sem target não têm closest()
-    const target = event.target as HTMLElement | null
+    const target = event.target as HTMLElement | null;
     if (!target || typeof target.closest !== "function") {
-      return
+      return;
     }
-    const anchor = target.closest("a") as HTMLAnchorElement | null
+    const anchor = target.closest("a") as HTMLAnchorElement | null;
 
     if (!anchor) {
-      return
+      return;
     }
 
     if (!shouldInterceptLink(anchor, event)) {
-      return
+      return;
     }
 
     // Intercept the navigation
-    event.preventDefault()
-    const href = anchor.getAttribute("href")!
+    event.preventDefault();
+    const href = anchor.getAttribute("href") as string;
 
     // Use pushState which will trigger our monkey-patched version. preventDefault already ran, so
     // if pushState throws (SecurityError, listener error) fall back to native navigation.
     try {
-      window.history.pushState({}, "", href)
+      window.history.pushState({}, "", href);
     } catch {
-      window.location.assign(href)
+      window.location.assign(href);
     }
-  }
+  };
 
-  window.addEventListener("click", clickHandler)
+  window.addEventListener("click", clickHandler);
 
-  historyPatched = true
+  historyPatched = true;
 }
 
 /**
@@ -223,47 +230,47 @@ function setupHistoryInterception(): void {
 function shouldInterceptLink(anchor: HTMLAnchorElement, event: MouseEvent): boolean {
   // Ignore if event has modifiers (Ctrl+click, etc)
   if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
-    return false
+    return false;
   }
 
   // Ignore if target is not _self (attribute: SVG <a>.target is an SVGAnimatedString)
-  const targetAttr = anchor.getAttribute("target")
+  const targetAttr = anchor.getAttribute("target");
   if (targetAttr && targetAttr !== "_self") {
-    return false
+    return false;
   }
 
   // Ignore download links
   if (anchor.hasAttribute("download")) {
-    return false
+    return false;
   }
 
   // Opt-out: data-native forces traditional navigation
   if (anchor.hasAttribute("data-native")) {
-    return false
+    return false;
   }
 
-  const href = anchor.getAttribute("href")
+  const href = anchor.getAttribute("href");
   if (!href) {
-    return false
+    return false;
   }
 
   // Ignore hash-only links
   if (href.startsWith("#")) {
-    return false
+    return false;
   }
 
   // Resolve like the browser would (the browser applies <base>); only same-origin http(s) is
   // handled by the SPA. mailto:, tel:, sms:, //host, other schemes and cross-origin links stay native.
-  const url = resolveAnchorUrl(anchor, href)
+  const url = resolveAnchorUrl(anchor, href);
   if (!url || (url.protocol !== "http:" && url.protocol !== "https:")) {
-    return false
+    return false;
   }
   if (url.origin !== new URL(resolveBase()).origin) {
-    return false
+    return false;
   }
 
   // At this point, it's either a relative path or same-origin absolute URL
-  return true
+  return true;
 }
 
 /**
@@ -271,202 +278,208 @@ function shouldInterceptLink(anchor: HTMLAnchorElement, event: MouseEvent): bool
  */
 function canPushState(): boolean {
   if (typeof window.history?.pushState !== "function") {
-    return false
+    return false;
   }
-  const protocol = window.location.protocol
-  return protocol === "http:" || protocol === "https:"
+  const protocol = window.location.protocol;
+  return protocol === "http:" || protocol === "https:";
 }
 
 /**
  * Create history mode implementation (HTML5 pushState)
  */
 export function createHistoryMode(): History {
-  const listeners = new Set<HistoryListener>()
+  const listeners = new Set<HistoryListener>();
 
   // Internal state for test environments where pushState doesn't update location
-  let internalPath = ""
-  let useInternalPath = false
+  let internalPath = "";
+  let useInternalPath = false;
 
   // Setup instance-specific listeners in browser
   if (isBrowser()) {
     // Detecta (sem mexer no histórico) se pushState atualiza a location: em
     // ambientes de teste (about:blank) ele não atualiza, então usamos um caminho interno
-    const testPath = window.location.pathname
+    const testPath = window.location.pathname;
 
-    useInternalPath = !canPushState()
+    useInternalPath = !canPushState();
 
     if (useInternalPath) {
-      internalPath = testPath === "blank" ? "/" : testPath
+      internalPath = testPath === "blank" ? "/" : testPath;
     }
 
     // Setup global history interception
-    setupHistoryInterception()
+    setupHistoryInterception();
 
     // Listen to popstate (back/forward buttons)
     window.addEventListener("popstate", () => {
-      const location = currentPath()
-      listeners.forEach((listener) => listener(location))
-    })
+      const location = currentPath();
+      listeners.forEach((listener) => {
+        listener(location);
+      });
+    });
 
     // Register this instance's listeners with global set
     // Create a wrapper that forwards to instance listeners
     const instanceListener: HistoryListener = (location) => {
       if (useInternalPath) {
-        internalPath = location
+        internalPath = location;
       }
-      listeners.forEach((listener) => listener(location))
-    }
-    globalListeners.add(instanceListener)
+      listeners.forEach((listener) => {
+        listener(location);
+      });
+    };
+    globalListeners.add(instanceListener);
   }
 
   return {
     location(): string {
       if (!isBrowser()) {
-        return "/"
+        return "/";
       }
 
       if (useInternalPath) {
-        return internalPath
+        return internalPath;
       }
 
-      const pathname = window.location.pathname === "blank" ? "/" : window.location.pathname
-      return pathname + window.location.search
+      const pathname = window.location.pathname === "blank" ? "/" : window.location.pathname;
+      return pathname + window.location.search;
     },
 
     push(path: string): void {
       if (!isBrowser()) {
-        return
+        return;
       }
 
       if (useInternalPath) {
-        internalPath = path
+        internalPath = path;
       }
 
       // pushState will trigger our monkey-patched version which notifies listeners
       // No need to notify here to avoid double notification
-      window.history.pushState({}, "", path)
+      window.history.pushState({}, "", path);
     },
 
     replace(path: string): void {
       if (!isBrowser()) {
-        return
+        return;
       }
 
       if (useInternalPath) {
-        internalPath = path
+        internalPath = path;
       }
 
       // replaceState will trigger our monkey-patched version which notifies listeners
       // No need to notify here to avoid double notification
-      window.history.replaceState({}, "", path)
+      window.history.replaceState({}, "", path);
     },
 
     back(): void {
       if (!isBrowser()) {
-        return
+        return;
       }
-      window.history.back()
+      window.history.back();
     },
 
     forward(): void {
       if (!isBrowser()) {
-        return
+        return;
       }
-      window.history.forward()
+      window.history.forward();
     },
 
     go(delta: number): void {
       if (!isBrowser()) {
-        return
+        return;
       }
-      window.history.go(delta)
+      window.history.go(delta);
     },
 
     listen(listener: HistoryListener): () => void {
-      listeners.add(listener)
+      listeners.add(listener);
       return () => {
-        listeners.delete(listener)
-      }
+        listeners.delete(listener);
+      };
     },
-  }
+  };
 }
 
 /**
  * Create hash mode implementation (location.hash)
  */
 export function createHashMode(): History {
-  const listeners = new Set<HistoryListener>()
+  const listeners = new Set<HistoryListener>();
   // Só hash que começa com "/" é rota: `#ancora` (link para um campo, o topo da página) é âncora nativa e não troca
   // a tela. A rota atual fica guardada para quando o hash for uma âncora.
   const routeOf = (hash: string): string | null => {
-    const value = hash.slice(1)
-    return value === "" ? "/" : value.startsWith("/") ? value : null
-  }
-  let current = isBrowser() ? (routeOf(window.location.hash) ?? "/") : "/"
+    const value = hash.slice(1);
+    return value === "" ? "/" : value.startsWith("/") ? value : null;
+  };
+  let current = isBrowser() ? (routeOf(window.location.hash) ?? "/") : "/";
 
   // Setup hashchange listener in browser
   if (isBrowser()) {
     window.addEventListener("hashchange", () => {
-      const route = routeOf(window.location.hash)
-      if (route === null) return
-      current = route
-      listeners.forEach((listener) => listener(route))
-    })
+      const route = routeOf(window.location.hash);
+      if (route === null) return;
+      current = route;
+      listeners.forEach((listener) => {
+        listener(route);
+      });
+    });
   }
 
   return {
     location(): string {
       if (!isBrowser()) {
-        return "/"
+        return "/";
       }
-      const route = routeOf(window.location.hash)
-      if (route !== null) current = route
-      return current
+      const route = routeOf(window.location.hash);
+      if (route !== null) current = route;
+      return current;
     },
 
     push(path: string): void {
       if (!isBrowser()) {
-        return
+        return;
       }
-      window.location.hash = path
+      window.location.hash = path;
     },
 
     replace(path: string): void {
       if (!isBrowser()) {
-        return
+        return;
       }
-      const url = window.location.href.split("#")[0]
-      window.location.replace(url + "#" + path)
+      const url = window.location.href.split("#")[0];
+      window.location.replace(`${url}#${path}`);
     },
 
     back(): void {
       if (!isBrowser()) {
-        return
+        return;
       }
-      window.history.back()
+      window.history.back();
     },
 
     forward(): void {
       if (!isBrowser()) {
-        return
+        return;
       }
-      window.history.forward()
+      window.history.forward();
     },
 
     go(delta: number): void {
       if (!isBrowser()) {
-        return
+        return;
       }
-      window.history.go(delta)
+      window.history.go(delta);
     },
 
     listen(listener: HistoryListener): () => void {
-      listeners.add(listener)
+      listeners.add(listener);
       return () => {
-        listeners.delete(listener)
-      }
+        listeners.delete(listener);
+      };
     },
-  }
+  };
 }
 
 /**
@@ -474,7 +487,7 @@ export function createHashMode(): History {
  */
 export function createHistory(mode: "history" | "hash" = "history"): History {
   if (mode === "hash") {
-    return createHashMode()
+    return createHashMode();
   }
-  return createHistoryMode()
+  return createHistoryMode();
 }

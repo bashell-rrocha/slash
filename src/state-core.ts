@@ -8,9 +8,7 @@
 /**
  * Comando que representa uma decisão sobre atualização de estado
  */
-export type StateCommand<S> =
-  | { type: 'NO_CHANGE' }
-  | { type: 'UPDATE', oldState: S, newState: S }
+export type StateCommand<S> = { type: "NO_CHANGE" } | { type: "UPDATE"; oldState: S; newState: S };
 
 const MAX_CLONE_DEPTH = 1000;
 
@@ -22,12 +20,14 @@ const MAX_CLONE_DEPTH = 1000;
  * hitting the depth limit, so one error covers both cases.
  */
 export function deepClone<T>(obj: T): T {
-  if (obj === null || typeof obj !== 'object') return obj;
+  if (obj === null || typeof obj !== "object") return obj;
   try {
     return cloneNode(obj, 0);
   } catch (e) {
     if (e instanceof DepthLimit) {
-      throw new Error(`[slash] State is circular or nested deeper than ${MAX_CLONE_DEPTH} levels and cannot be cloned`);
+      throw new Error(
+        `[slash] State is circular or nested deeper than ${MAX_CLONE_DEPTH} levels and cannot be cloned`,
+      );
     }
     throw e;
   }
@@ -37,7 +37,7 @@ class DepthLimit extends Error {}
 
 function cloneNode<T>(obj: T, depth: number): T {
   // Primitivos e null
-  if (obj === null || typeof obj !== 'object') {
+  if (obj === null || typeof obj !== "object") {
     return obj;
   }
 
@@ -67,9 +67,14 @@ function cloneNode<T>(obj: T, depth: number): T {
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i];
     const value = cloneNode((obj as any)[key], depth + 1);
-    if (key === '__proto__') {
+    if (key === "__proto__") {
       // Copia como propriedade propria: atribuir invocaria o setter do prototipo (SEC-12)
-      Object.defineProperty(cloned, key, { value, enumerable: true, writable: true, configurable: true });
+      Object.defineProperty(cloned, key, {
+        value,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     } else {
       cloned[key] = value;
     }
@@ -81,7 +86,7 @@ function cloneNode<T>(obj: T, depth: number): T {
  * Cache usando WeakMap para evitar memory leaks
  * Chave: primeiro objeto -> Map(segundo objeto -> boolean)
  */
-const deepEqualCache = new WeakMap<object, Map<object, boolean>>()
+const deepEqualCache = new WeakMap<object, Map<object, boolean>>();
 
 /**
  * Comparação profunda para verificar mudanças de estado
@@ -99,30 +104,30 @@ export function deepEqual(a: unknown, b: unknown): boolean {
   if (typeof a !== "object" || typeof b !== "object") return false;
 
   // Tentar obter do cache (apenas para objects/arrays)
-  if (typeof a === 'object' && typeof b === 'object') {
-    let innerMap = deepEqualCache.get(a as object)
+  if (typeof a === "object" && typeof b === "object") {
+    const innerMap = deepEqualCache.get(a as object);
     if (innerMap !== undefined) {
-      const cached = innerMap.get(b as object)
+      const cached = innerMap.get(b as object);
       if (cached !== undefined) {
-        return cached
+        return cached;
       }
     }
   }
 
   // Computar resultado
-  const result = deepEqualImpl(a, b)
+  const result = deepEqualImpl(a, b);
 
   // Armazenar no cache (WeakMap gerencia memory automaticamente)
-  if (typeof a === 'object' && typeof b === 'object') {
-    let innerMap = deepEqualCache.get(a as object)
+  if (typeof a === "object" && typeof b === "object") {
+    let innerMap = deepEqualCache.get(a as object);
     if (innerMap === undefined) {
-      innerMap = new Map()
-      deepEqualCache.set(a as object, innerMap)
+      innerMap = new Map();
+      deepEqualCache.set(a as object, innerMap);
     }
-    innerMap.set(b as object, result)
+    innerMap.set(b as object, result);
   }
 
-  return result
+  return result;
 }
 
 /**
@@ -185,10 +190,7 @@ export function __clearDeepEqualCache(): void {
  * @param newPayload - Novo estado proposto
  * @returns Comando indicando se deve atualizar ou não
  */
-export function computeStateUpdate<S>(
-  currentState: S,
-  newPayload: S
-): StateCommand<S> {
+export function computeStateUpdate<S>(currentState: S, newPayload: S): StateCommand<S> {
   // Clonar o payload para garantir imutabilidade
   const newState = deepClone(newPayload);
 
@@ -196,13 +198,13 @@ export function computeStateUpdate<S>(
   const hasChanged = !deepEqual(currentState, newState);
 
   if (!hasChanged) {
-    return { type: 'NO_CHANGE' };
+    return { type: "NO_CHANGE" };
   }
 
   return {
-    type: 'UPDATE',
+    type: "UPDATE",
     oldState: currentState,
-    newState
+    newState,
   };
 }
 
@@ -214,11 +216,8 @@ export function computeStateUpdate<S>(
  * @param command - Comando de atualização
  * @returns Novo estado (ou mesmo estado se NO_CHANGE)
  */
-export function applyStateCommand<S>(
-  currentState: S,
-  command: StateCommand<S>
-): S {
-  if (command.type === 'NO_CHANGE') {
+export function applyStateCommand<S>(currentState: S, command: StateCommand<S>): S {
+  if (command.type === "NO_CHANGE") {
     return currentState;
   }
 
@@ -233,5 +232,5 @@ export function applyStateCommand<S>(
  * @returns true se deve notificar watchers
  */
 export function shouldNotifyWatchers<S>(command: StateCommand<S>): boolean {
-  return command.type === 'UPDATE';
+  return command.type === "UPDATE";
 }

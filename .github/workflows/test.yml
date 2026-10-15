@@ -32,6 +32,9 @@ jobs:
       - name: Instalar dependências
         run: bun install --frozen-lockfile
 
+      - name: Lint
+        run: bun x biome check .
+
       - name: Testes
         run: bun run test
 
@@ -40,3 +43,11 @@ jobs:
 
       - name: Verificar dist e dist/dev (import e require de cada entrypoint, produção e desenvolvimento)
         run: bun run verify:dist
+
+      # Dependabot não recebe os segredos do repositório: este passo falha para ele por desenho
+      # (refaça o PR numa branch de mantenedor ou rode de novo por lá).
+      - name: Fronteira
+        run: bun run boundary -- --also dist
+        env:
+          BOUNDARY_TERMS: ${{ secrets.BOUNDARY_TERMS }}
+          GITHUB_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}

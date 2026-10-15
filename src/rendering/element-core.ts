@@ -16,7 +16,7 @@ import type { State } from "../state";
  */
 export function diffTrackedStates(
   previous: ReadonlyMap<State<any>, unknown>,
-  next: ReadonlySet<State<any>>
+  next: ReadonlySet<State<any>>,
 ): { readonly add: ReadonlyArray<State<any>>; readonly remove: ReadonlyArray<State<any>> } {
   const add: State<any>[] = [];
   const remove: State<any>[] = [];

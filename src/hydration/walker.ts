@@ -1,7 +1,7 @@
+import { h } from "../hyper";
 import { setProp } from "../rendering/props";
 import type { Child, Elementish, Props } from "../types";
 import { isReactive } from "../utils/guards";
-import { h } from "../hyper";
 import { getHydrateContext, setHydrateContext } from "./context";
 
 /**

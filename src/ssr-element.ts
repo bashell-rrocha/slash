@@ -17,7 +17,11 @@ export interface SsrElement {
   readonly children: readonly unknown[];
 }
 
-export function ssrElement(tag: string, props: Record<string, unknown>, ...children: unknown[]): SsrElement {
+export function ssrElement(
+  tag: string,
+  props: Record<string, unknown>,
+  ...children: unknown[]
+): SsrElement {
   return Object.freeze({ [BRAND]: true, tag, props, children }) as SsrElement;
 }
 

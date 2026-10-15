@@ -12,7 +12,7 @@
  * PURE FUNCTION
  */
 export function enterBatch(depth: number): number {
-  return depth + 1
+  return depth + 1;
 }
 
 /**
@@ -21,6 +21,6 @@ export function enterBatch(depth: number): number {
  * PURE FUNCTION
  */
 export function exitBatch(depth: number): { depth: number; flush: boolean } {
-  const next = Math.max(0, depth - 1)
-  return { depth: next, flush: depth > 0 && next === 0 }
+  const next = Math.max(0, depth - 1);
+  return { depth: next, flush: depth > 0 && next === 0 };
 }

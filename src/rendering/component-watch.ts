@@ -8,14 +8,13 @@ type ComponentContext = {
   isTracking: boolean;
 };
 
-const currentContext: ComponentContext | null = null;
 let activeContext: ComponentContext | null = null;
 
 /**
  * Registra acesso a um state durante renderização de componente
  */
 export function trackStateAccess(state: State<any>): void {
-  if (activeContext && activeContext.isTracking) {
+  if (activeContext?.isTracking) {
     activeContext.accessedStates.add(state);
   }
 }
@@ -24,10 +23,7 @@ export function trackStateAccess(state: State<any>): void {
  * Wrapper para componentes que automaticamente rastreia states acessados
  * e re-renderiza quando qualquer state muda
  */
-export function renderComponent(
-  componentFn: () => Child,
-  parent: Node | null = null
-): Node {
+export function renderComponent(componentFn: () => Child, parent: Node | null = null): Node {
   // Container para o conteúdo do componente
   const container = document.createDocumentFragment();
   const anchor = document.createComment("component");

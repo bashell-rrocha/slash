@@ -1,16 +1,16 @@
 import { addCleanup } from "../lifecycle/cleanup";
-import type { Elementish, Props, Reactive } from "../types";
+import type { Elementish, Reactive } from "../types";
 import { isReactive } from "../utils/guards";
 import { processClassValue } from "../utils/helpers";
 import { parseEventProp } from "./events";
 import {
-  computePropUpdate,
   applyPropUpdate,
-  setClassName,
+  computePropUpdate,
   getElementType,
   hasNativeProperty,
   isMetaRefreshElement,
   resanitizeMetaContent,
+  setClassName,
 } from "./props-core";
 
 export function applyClass(element: Element, val: unknown): void {
@@ -23,7 +23,13 @@ export function setPropReactive(element: Element, key: string, sig: Reactive<unk
     // Functional Core: decide o que fazer (sem side effects)
     const elementType = getElementType(element as Elementish);
     const hasProp = hasNativeProperty(element as Elementish, key);
-    const update = computePropUpdate(elementType, key, val, hasProp, isMetaRefreshElement(element as Elementish));
+    const update = computePropUpdate(
+      elementType,
+      key,
+      val,
+      hasProp,
+      isMetaRefreshElement(element as Elementish),
+    );
 
     // Imperative Shell: executa o comando (com side effects)
     applyPropUpdate(element as Elementish, update);

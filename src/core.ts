@@ -1,28 +1,27 @@
 // src/core.ts - Core minimal da biblioteca (hyper + state)
+// biome-ignore-all assist/source/organizeImports: o bloco SEC-B (política de URLs) fica no fim do arquivo
 
+export { batch } from "./batch";
 export * from "./components";
+// Developer Experience - Warnings & Error Messages (optional)
 export {
+  isDevMode,
+  isWarningsEnabled,
+  setDevMode,
+  setErrorsThrow,
+  setWarningsEnabled,
+} from "./dev-warnings";
+export {
+  catchAsync,
   ErrorBoundary,
   safeRender,
   setupGlobalErrorHandler,
-  catchAsync,
 } from "./error-boundary";
 export { destroyNode, h, html, html as tsx, html as jsx, render } from "./hyper";
-export { createState } from "./state";
-export type { State } from "./state";
-export { batch } from "./batch";
-export { isSafeHtml, unsafeHtml } from "./safe-html";
 export type { SafeHtml } from "./safe-html";
-
-// Developer Experience - Warnings & Error Messages (optional)
-export {
-  setDevMode,
-  setWarningsEnabled,
-  setErrorsThrow,
-  isDevMode,
-  isWarningsEnabled,
-} from "./dev-warnings";
-
+export { isSafeHtml, unsafeHtml } from "./safe-html";
+export type { State } from "./state";
+export { createState } from "./state";
 // Tipos core
 export type {
   Child,
@@ -40,7 +39,7 @@ export type {
 } from "./types";
 
 // --- SEC-B: política de URLs (início do bloco; manter no fim do arquivo) ---
-export { isSafeUrl, unsafeUrl } from "./safe-url";
 export type { SafeUrl } from "./safe-url";
+export { isSafeUrl, unsafeUrl } from "./safe-url";
 export { BLOCKED_URL, sanitizeUrl } from "./utils/url-policy";
 // --- SEC-B (fim do bloco) ---
