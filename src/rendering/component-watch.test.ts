@@ -350,3 +350,18 @@ describe("createTrackedState - __proto__ no payload (SEC-12)", () => {
     expect(Object.getOwnPropertyDescriptor(inner, "__proto__")?.value).toEqual({ isAdmin: true });
   });
 });
+
+describe("createTrackedState é Reactive (0.0.6)", () => {
+  test("subscribe recebe o valor depois de set, como watch", () => {
+    // Arrange
+    const state = createTrackedState({ n: 1 });
+    const seen: number[] = [];
+
+    // Act
+    state.subscribe((v) => seen.push(v.n));
+    state.set({ n: 2 });
+
+    // Assert
+    expect(seen).toEqual([2]);
+  });
+});

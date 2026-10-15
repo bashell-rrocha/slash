@@ -563,16 +563,9 @@ describe("Router no SSR", () => {
 });
 
 describe("SSR usa a regra de reativo do cliente", () => {
-  test("SSR nao trata State como reativo (igual ao cliente)", () => {
-    const warn = console.warn;
-    console.warn = () => {};
-    try {
-      const { html, state } = renderToString(() => htmlString`<p>${createState(7) as never}</p>`);
-      expect(html).not.toContain("reactive-start");
-      expect(state).toEqual({});
-    } finally {
-      console.warn = warn;
-    }
+  test("SSR trata State como reativo (0.0.6: State tem subscribe, igual ao cliente)", () => {
+    const { html } = renderToString(() => htmlString`<p>${createState(7)}</p>`);
+    expect(html).toBe("<p><!--reactive-start:s0-->7<!--reactive-end:s0--></p>");
   });
 
   test("SSR com state.get() renderiza o valor sem marcadores", () => {
@@ -641,13 +634,10 @@ describe("serializeStateForScript", () => {
 });
 
 describe("regra de confianca e State em atributo no SSR", () => {
-  test("State como atributo nao e reativo (cai no fluxo comum, igual ao cliente)", () => {
-    const { html, state } = renderToString(
-      () => htmlString`<p title=${createState(1) as never}>a</p>`,
-    );
-    expect(html).not.toContain("data-reactive");
-    expect(html).toBe('<p title="[object Object]">a</p>');
-    expect(state).toEqual({});
+  test("State como atributo e reativo sem adaptador (0.0.6)", () => {
+    const { html } = renderToString(() => htmlString`<p title=${createState(1)}>a</p>`);
+    expect(html).toContain('title="1"');
+    expect(html).not.toContain("[object Object]");
   });
 
   test("state.get() com texto simples e escapado", () => {

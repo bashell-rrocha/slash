@@ -149,6 +149,11 @@ export function createTrackedState<T>(initialState: T): State<T> & {
         state._watchers.delete(callback);
       };
     },
+
+    // O mesmo que watch: o State satisfaz Reactive
+    subscribe(callback: (payload: T) => void): () => void {
+      return state.watch(callback);
+    },
   };
 
   return state as State<T> & { _isTracked: boolean };

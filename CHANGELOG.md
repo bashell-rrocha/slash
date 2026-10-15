@@ -2,6 +2,32 @@
 
 Todas as mudanças relevantes deste projeto são registradas aqui, seguindo [Conventional Commits](https://www.conventionalcommits.org/) e [SemVer](https://semver.org/).
 
+## [0.0.6] — 2026-10-15
+
+Duas correções na origem pedidas pelo `slash-ui` (fase 5). Uma muda comportamento: leia "Changed".
+
+### Changed
+
+- **`createState` é `Reactive`:** o `State` (e o `State` rastreado de `createTrackedState`) ganha `subscribe`, o mesmo
+  que `watch`. O adaptador `{ get, subscribe: state.watch }` deixa de ser necessário: o `State` vai direto no
+  template, como atributo ou filho reativo. Um `State` passado direto ao template passa a ser reativo também no SSR
+  (antes caía no fluxo comum e saía `[object Object]` em atributo).
+
+### Fixed
+
+- **Elemento vazio sem `/>`:** `html` e `htmlString` fecham os elementos vazios do HTML escritos sem a barra
+  (`<br>`, `<img src=${x}>`, `<input … disabled>`), inclusive com interpolação dentro da tag, e descartam o
+  `</input>` que o HTML ignora. Antes, o `htm` tratava o resto do template como filho do `<br>`: `<p>a<br>b</p>` virava
+  `pa<br>` em silêncio.
+- **Textos vizinhos no cliente:** `html` criava um nó de texto por pedaço (`${a} b`), e o HTML do servidor, depois do
+  parse, tem um só. O navegador media o texto em partes e um glifo podia cair noutro subpixel: a mesma página saía
+  diferente vinda do servidor ou do cliente. Textos vizinhos criados pelo `html` vão agora para o mesmo nó (um nó de
+  texto que veio de fora não é mexido; texto reativo continua entre os marcadores).
+
+- **Âncora no modo hash do roteador:** em modo hash (app aberto de `file://`, Capacitor/Tauri), qualquer `hashchange`
+  virava rota, e um `<a href="#campo">` (resumo de erros de formulário, "voltar ao topo") trocava a tela pelo 404.
+  Agora só hash que começa com `/` é rota; `#ancora` continua âncora nativa e a rota atual não muda.
+
 ## [0.0.5] — 2026-10-15
 
 Mais duas correções de paridade entre o renderizador de DOM (`html`) e o de string (`htmlString`), achadas pelos
