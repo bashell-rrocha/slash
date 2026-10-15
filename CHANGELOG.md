@@ -2,7 +2,10 @@
 
 Todas as mudanças relevantes deste projeto são registradas aqui, seguindo [Conventional Commits](https://www.conventionalcommits.org/) e [SemVer](https://semver.org/).
 
-## [Não lançado]
+## [0.0.7] — 2026-10-15
+
+Sem mudança de API. O código passa no lint (Biome) sem erro nem aviso, e o CI ganhou o lint e a verificação de fronteira.
+
 
 ### Fixed
 
