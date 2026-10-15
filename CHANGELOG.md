@@ -2,6 +2,24 @@
 
 Todas as mudanças relevantes deste projeto são registradas aqui, seguindo [Conventional Commits](https://www.conventionalcommits.org/) e [SemVer](https://semver.org/).
 
+## [0.0.6] — 2026-10-15
+
+Duas correções na origem pedidas pelo `slash-ui` (fase 5). Uma muda comportamento: leia "Changed".
+
+### Changed
+
+- **`createState` é `Reactive`:** o `State` (e o `State` rastreado de `createTrackedState`) ganha `subscribe`, o mesmo
+  que `watch`. O adaptador `{ get, subscribe: state.watch }` deixa de ser necessário: o `State` vai direto no
+  template, como atributo ou filho reativo. Um `State` passado direto ao template passa a ser reativo também no SSR
+  (antes caía no fluxo comum e saía `[object Object]` em atributo).
+
+### Fixed
+
+- **Elemento vazio sem `/>`:** `html` e `htmlString` fecham os elementos vazios do HTML escritos sem a barra
+  (`<br>`, `<img src=${x}>`, `<input … disabled>`), inclusive com interpolação dentro da tag, e descartam o
+  `</input>` que o HTML ignora. Antes, o `htm` tratava o resto do template como filho do `<br>`: `<p>a<br>b</p>` virava
+  `pa<br>` em silêncio.
+
 ## [0.0.5] — 2026-10-15
 
 Mais duas correções de paridade entre o renderizador de DOM (`html`) e o de string (`htmlString`), achadas pelos
