@@ -8,18 +8,18 @@
 /**
  * Tipo de mensagem de desenvolvimento
  */
-export type DevMessageType = 'error' | 'warning' | 'info';
+export type DevMessageType = "error" | "warning" | "info";
 
 /**
  * Categoria de mensagem
  */
 export type DevMessageCategory =
-  | 'STATE_MUTATION'
-  | 'REACTIVITY_VIOLATION'
-  | 'MEMORY_LEAK'
-  | 'PERFORMANCE'
-  | 'API_MISUSE'
-  | 'TYPE_MISMATCH';
+  | "STATE_MUTATION"
+  | "REACTIVITY_VIOLATION"
+  | "MEMORY_LEAK"
+  | "PERFORMANCE"
+  | "API_MISUSE"
+  | "TYPE_MISMATCH";
 
 /**
  * Estrutura de mensagem de desenvolvimento
@@ -36,9 +36,7 @@ export interface DevMessage {
 /**
  * Resultado de validação
  */
-export type ValidationResult =
-  | { valid: true }
-  | { valid: false; messages: readonly DevMessage[] };
+export type ValidationResult = { valid: true } | { valid: false; messages: readonly DevMessage[] };
 
 /**
  * PURE: Cria uma mensagem de desenvolvimento
@@ -48,7 +46,7 @@ export const createDevMessage = (
   category: DevMessageCategory,
   message: string,
   hint?: string,
-  context?: Record<string, unknown>
+  context?: Record<string, unknown>,
 ): DevMessage => ({
   type,
   category,
@@ -64,7 +62,7 @@ export const createDevMessage = (
 export const detectDirectStateMutation = <T>(
   oldState: T,
   newState: T,
-  usedSetMethod: boolean
+  usedSetMethod: boolean,
 ): ValidationResult => {
   // Se usou .set(), é válido
   if (usedSetMethod) {
@@ -81,11 +79,11 @@ export const detectDirectStateMutation = <T>(
     valid: false,
     messages: [
       createDevMessage(
-        'error',
-        'STATE_MUTATION',
-        'Direct state mutation detected. Use state.set() instead of mutating state directly.',
-        'Replace: state.myProp = value\nWith: state.set({ ...state.get(), myProp: value })',
-        { oldState, newState }
+        "error",
+        "STATE_MUTATION",
+        "Direct state mutation detected. Use state.set() instead of mutating state directly.",
+        "Replace: state.myProp = value\nWith: state.set({ ...state.get(), myProp: value })",
+        { oldState, newState },
       ),
     ],
   };
@@ -96,7 +94,7 @@ export const detectDirectStateMutation = <T>(
  */
 export const detectWatchWithoutCleanup = (
   watcherCount: number,
-  maxWatchers: number = 1000
+  maxWatchers: number = 1000,
 ): ValidationResult => {
   if (watcherCount <= maxWatchers) {
     return { valid: true };
@@ -106,11 +104,11 @@ export const detectWatchWithoutCleanup = (
     valid: false,
     messages: [
       createDevMessage(
-        'warning',
-        'MEMORY_LEAK',
+        "warning",
+        "MEMORY_LEAK",
         `High number of watchers detected (${watcherCount}). This may indicate missing cleanup.`,
-        'Make sure to call the cleanup function returned by state.watch():\nconst unwatch = state.watch(callback);\n// Later: unwatch();',
-        { watcherCount, maxWatchers }
+        "Make sure to call the cleanup function returned by state.watch():\nconst unwatch = state.watch(callback);\n// Later: unwatch();",
+        { watcherCount, maxWatchers },
       ),
     ],
   };
@@ -121,9 +119,9 @@ export const detectWatchWithoutCleanup = (
  */
 export const detectLargeObjectComparison = (
   obj: unknown,
-  maxKeys: number = 1000
+  maxKeys: number = 1000,
 ): ValidationResult => {
-  if (typeof obj !== 'object' || obj === null) {
+  if (typeof obj !== "object" || obj === null) {
     return { valid: true };
   }
 
@@ -137,11 +135,11 @@ export const detectLargeObjectComparison = (
     valid: false,
     messages: [
       createDevMessage(
-        'warning',
-        'PERFORMANCE',
+        "warning",
+        "PERFORMANCE",
         `Large object detected in state comparison (${keyCount} keys). Consider breaking into smaller states.`,
-        'Split large states into multiple smaller states for better performance:\nconst userState = createState({ ... });\nconst settingsState = createState({ ... });',
-        { keyCount, maxKeys }
+        "Split large states into multiple smaller states for better performance:\nconst userState = createState({ ... });\nconst settingsState = createState({ ... });",
+        { keyCount, maxKeys },
       ),
     ],
   };
@@ -150,9 +148,7 @@ export const detectLargeObjectComparison = (
 /**
  * PURE: Detecta criação de state dentro de componentes (anti-pattern)
  */
-export const detectStateInComponent = (
-  stackTrace: string
-): ValidationResult => {
+export const detectStateInComponent = (stackTrace: string): ValidationResult => {
   // Detecta se está dentro de uma função de componente
   // (padrão: funções que retornam JSX/VNode geralmente têm 'render' ou 'component' no stack)
   const isInComponent = /component|render/i.test(stackTrace);
@@ -165,11 +161,11 @@ export const detectStateInComponent = (
     valid: false,
     messages: [
       createDevMessage(
-        'warning',
-        'REACTIVITY_VIOLATION',
-        'State created inside component. This may cause memory leaks and unexpected behavior.',
-        'Move state creation outside of component:\n// ❌ Bad:\nfunction MyComponent() {\n  const state = createState({});\n}\n\n// ✅ Good:\nconst myState = createState({});\nfunction MyComponent() { ... }',
-        { stackTrace }
+        "warning",
+        "REACTIVITY_VIOLATION",
+        "State created inside component. This may cause memory leaks and unexpected behavior.",
+        "Move state creation outside of component:\n// ❌ Bad:\nfunction MyComponent() {\n  const state = createState({});\n}\n\n// ✅ Good:\nconst myState = createState({});\nfunction MyComponent() { ... }",
+        { stackTrace },
       ),
     ],
   };
@@ -178,9 +174,7 @@ export const detectStateInComponent = (
 /**
  * PURE: Detecta uso incorreto de batch (nested batches)
  */
-export const detectNestedBatch = (
-  currentBatchDepth: number
-): ValidationResult => {
+export const detectNestedBatch = (currentBatchDepth: number): ValidationResult => {
   if (currentBatchDepth <= 1) {
     return { valid: true };
   }
@@ -189,11 +183,11 @@ export const detectNestedBatch = (
     valid: false,
     messages: [
       createDevMessage(
-        'warning',
-        'API_MISUSE',
+        "warning",
+        "API_MISUSE",
         `Nested batch detected (depth: ${currentBatchDepth}). Nested batches are redundant.`,
-        'Remove nested batch() calls:\n// ❌ Bad:\nbatch(() => {\n  batch(() => { ... });\n});\n\n// ✅ Good:\nbatch(() => { ... });',
-        { currentBatchDepth }
+        "Remove nested batch() calls:\n// ❌ Bad:\nbatch(() => {\n  batch(() => { ... });\n});\n\n// ✅ Good:\nbatch(() => { ... });",
+        { currentBatchDepth },
       ),
     ],
   };
@@ -202,9 +196,9 @@ export const detectNestedBatch = (
 /**
  * PURE: Valida tipo de payload do state
  */
-export const validateStatePayload = <T>(
+export const validateStatePayload = (
   payload: unknown,
-  expectedType: string = 'object'
+  expectedType: string = "object",
 ): ValidationResult => {
   const actualType = typeof payload;
 
@@ -214,10 +208,10 @@ export const validateStatePayload = <T>(
       valid: false,
       messages: [
         createDevMessage(
-          'error',
-          'TYPE_MISMATCH',
-          'State payload cannot be null.',
-          'Pass an object to state.set():\nstate.set({ ...state.get(), key: value });'
+          "error",
+          "TYPE_MISMATCH",
+          "State payload cannot be null.",
+          "Pass an object to state.set():\nstate.set({ ...state.get(), key: value });",
         ),
       ],
     };
@@ -228,11 +222,11 @@ export const validateStatePayload = <T>(
       valid: false,
       messages: [
         createDevMessage(
-          'error',
-          'TYPE_MISMATCH',
+          "error",
+          "TYPE_MISMATCH",
           `State payload must be an object, received ${actualType}.`,
           `Pass an object to state.set():\nstate.set({ key: value });`,
-          { payload, expectedType, actualType }
+          { payload, expectedType, actualType },
         ),
       ],
     };
@@ -245,7 +239,7 @@ export const validateStatePayload = <T>(
  * PURE: Formata mensagem para console
  */
 export const formatDevMessage = (msg: DevMessage): string => {
-  const icon = msg.type === 'error' ? '❌' : msg.type === 'warning' ? '⚠️' : 'ℹ️';
+  const icon = msg.type === "error" ? "❌" : msg.type === "warning" ? "⚠️" : "ℹ️";
   const prefix = `[SLASH ${msg.type.toUpperCase()}] [${msg.category}]`;
 
   let output = `${icon} ${prefix} ${msg.message}`;
@@ -265,7 +259,7 @@ export const formatDevMessage = (msg: DevMessage): string => {
  * PURE: Agrupa múltiplas mensagens
  */
 export const groupDevMessages = (
-  messages: readonly DevMessage[]
+  messages: readonly DevMessage[],
 ): Map<DevMessageCategory, DevMessage[]> => {
   const grouped = new Map<DevMessageCategory, DevMessage[]>();
 

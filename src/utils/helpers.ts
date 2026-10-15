@@ -13,4 +13,3 @@ export function processClassValue(val: unknown): string {
   }
   return "";
 }
-

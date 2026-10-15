@@ -3,9 +3,9 @@ import type { State } from "../state";
 import type { Child, Elementish, Props } from "../types";
 import { SVG_NS, SVG_TAGS } from "../utils/constants";
 import { appendChildSmart } from "./children";
+import { diffTrackedStates } from "./element-core";
 import { setProp } from "./props";
 import { isValidTagName } from "./props-core";
-import { diffTrackedStates } from "./element-core";
 
 export function h(tag: unknown, props: Props, ...children: Child[]): Node {
   // Componente (função) — pode retornar qualquer Child; empacotar se não for Node
@@ -54,7 +54,7 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
           state.watch(() => {
             // Apenas re-renderizar se ainda estiver no DOM
             if (anchor.parentNode) render();
-          })
+          }),
         );
       }
     };
@@ -88,7 +88,9 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
 
         // Montagem da saída (ex.: reativos que leem states): ninguém rastreia,
         // nem este componente nem o pai que o envolve
-        (globalThis as any).__SLASH_TRACK_STATE__ = () => {};
+        (globalThis as any).__SLASH_TRACK_STATE__ = () => {
+          // sem rastreio
+        };
 
         // Uma renderização mais nova começou durante esta: ela já entregou o resultado
         if (gen !== renderGen) return;
@@ -182,7 +184,7 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
   ) as Elementish;
 
   // Para select, guardar value para aplicar depois
-  let selectValue: unknown = undefined;
+  let selectValue: unknown;
   const isSelect = tagName.toLowerCase() === "select";
 
   if (props) {

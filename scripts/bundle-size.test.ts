@@ -226,6 +226,6 @@ describe('package exports: builds de desenvolvimento e produção', () => {
   test('build.ts nunca remove console.*, só debugger', () => {
     const script = readFileSync(resolve(ROOT, 'scripts/build.ts'), 'utf-8');
     expect(script).not.toMatch(/drop:[^\n]*console/);
-    expect(script).toMatch(/drop:\s*\[\s*'debugger'\s*\]/);
+    expect(script).toMatch(/drop:\s*\[\s*['"]debugger['"]\s*\]/);
   });
 });

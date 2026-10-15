@@ -2,21 +2,23 @@
  * Router components
  */
 
-import type { RouterInstance } from "./types"
-import type { Reactive, Child } from "../types"
-import { h as originalH } from "../hyper"
-import { ssrElement } from "../ssr-element"
-import { securityWarn } from "../utils/security-warn"
-import { BLOCKED_URL, sanitizeUrl } from "../utils/url-policy"
+import { h as originalH } from "../hyper";
+import { ssrElement } from "../ssr-element";
+import type { Child, Reactive } from "../types";
+import { securityWarn } from "../utils/security-warn";
+import { BLOCKED_URL, sanitizeUrl } from "../utils/url-policy";
+import type { RouterInstance } from "./types";
 
 // Ensure h function exists
-const h = originalH || ((tag: any, props: any, ...children: any[]) => {
-  if (typeof tag === "function") {
-    return tag({ ...props, children })
-  }
-  // Fallback for tests/SSR
-  return { tag, props, children }
-})
+const h =
+  originalH ||
+  ((tag: any, props: any, ...children: any[]) => {
+    if (typeof tag === "function") {
+      return tag({ ...props, children });
+    }
+    // Fallback for tests/SSR
+    return { tag, props, children };
+  });
 
 /**
  * Router component - renders the current route's component
@@ -24,11 +26,11 @@ const h = originalH || ((tag: any, props: any, ...children: any[]) => {
 export function Router({ router }: { router: RouterInstance }): Reactive<Child> {
   return {
     get(): Child {
-      const state = router.get()
+      const state = router.get();
       if (!state.currentRoute) {
-        return null
+        return null;
       }
-      return state.currentRoute.route.component(state)
+      return state.currentRoute.route.component(state);
     },
     subscribe(fn: (v: Child) => void): () => void {
       // Re-renderiza só quando a identidade da rota renderizada muda: caminho
@@ -36,36 +38,34 @@ export function Router({ router }: { router: RouterInstance }): Reactive<Child> 
       // devolve clones). Alternar isNavigating ou um bloqueio por guard não
       // muda a chave e não reconstrói a página atual (preserva estado local).
       const identity = (s: ReturnType<typeof router.get>): string =>
-        s.currentRoute
-          ? JSON.stringify([s.currentRoute.path, s.params, s.query])
-          : "null"
-      let last = identity(router.get())
+        s.currentRoute ? JSON.stringify([s.currentRoute.path, s.params, s.query]) : "null";
+      let last = identity(router.get());
       return router.watch(() => {
-        const state = router.get()
-        const key = identity(state)
-        if (key === last) return
-        last = key
-        fn(state.currentRoute ? state.currentRoute.route.component(state) : null)
-      })
+        const state = router.get();
+        const key = identity(state);
+        if (key === last) return;
+        last = key;
+        fn(state.currentRoute ? state.currentRoute.route.component(state) : null);
+      });
     },
-  }
+  };
 }
 
 // Normaliza `to`: remove espaços nas pontas. Retorna null se houver caracteres
 // de controle (\t \n \r \0...), que os navegadores removem silenciosamente e
 // permitiriam disfarçar "//host" como "/\t/host".
 function normalizeTo(to: unknown): string | null {
-  if (typeof to !== "string") return null
-  const t = to.trim()
+  if (typeof to !== "string") return null;
+  const t = to.trim();
   // biome-ignore lint/suspicious/noControlCharactersInRegex: detecção intencional de C0
-  return /[\u0000-\u001f\u007f]/.test(t) ? null : t
+  return /[\u0000-\u001f\u007f]/.test(t) ? null : t;
 }
 
 // Caminho do app: "/x", "?q" ou "#h". "//host", "/\\host" e "\\host" NÃO são
 // (protocol-relative / outra origem).
-const APP_PATH = /^(?:\/(?![/\\])|[?#])/
+const APP_PATH = /^(?:\/(?![/\\])|[?#])/;
 // Destinos externos aceitos com a prop `external`
-const EXTERNAL_URL = /^(?:https?:|mailto:|tel:|sms:)/i
+const EXTERNAL_URL = /^(?:https?:|mailto:|tel:|sms:)/i;
 
 /**
  * Link component - navigation link that uses router.push
@@ -85,64 +85,68 @@ export function Link({
   external,
   ...props
 }: {
-  to: string
-  router: RouterInstance
-  children?: Child
+  to: string;
+  router: RouterInstance;
+  children?: Child;
   /** Permite link nativo para URL absoluta http(s), mailto ou tel */
-  external?: boolean
-  [key: string]: any
+  external?: boolean;
+  [key: string]: any;
 }): Node {
-  const target = normalizeTo(to)
-  const appPath = target !== null && APP_PATH.test(target)
+  const target = normalizeTo(to);
+  const appPath = target !== null && APP_PATH.test(target);
   const nativeExternal =
-    !appPath && external === true && target !== null && EXTERNAL_URL.test(target)
+    !appPath && external === true && target !== null && EXTERNAL_URL.test(target);
 
-  let href: string
+  let href: string;
   if (appPath) {
-    href = target as string
+    href = target as string;
   } else if (nativeExternal) {
-    href = sanitizeUrl("href", target as string, "a")
+    href = sanitizeUrl("href", target as string, "a");
   } else {
-    href = BLOCKED_URL
+    href = BLOCKED_URL;
     if (process.env.NODE_ENV !== "production") {
       securityWarn(
         `Link: "to" must be an app path (/..., ?... or #...) or, with the external prop, an http(s)/mailto/tel/sms URL; received ${JSON.stringify(String(to).slice(0, 40))}`,
         "link:to",
-      )
+      );
     }
   }
 
   const handleClick = (e: Event) => {
     if (appPath) {
       // Modifier keys, non-left buttons, target != _self and download stay native
-      const m = e as Partial<MouseEvent>
-      const t = (props as { target?: unknown }).target
+      const m = e as Partial<MouseEvent>;
+      const t = (props as { target?: unknown }).target;
       if (
-        m.ctrlKey || m.metaKey || m.shiftKey || m.altKey ||
+        m.ctrlKey ||
+        m.metaKey ||
+        m.shiftKey ||
+        m.altKey ||
         (typeof m.button === "number" && m.button !== 0) ||
         (typeof t === "string" && t !== "" && t !== "_self") ||
-        (props as { download?: unknown }).download != null && (props as { download?: unknown }).download !== false
+        ((props as { download?: unknown }).download != null &&
+          (props as { download?: unknown }).download !== false)
       ) {
-        return
+        return;
       }
-      e.preventDefault()
+      e.preventDefault();
       router.push(target as string).catch((err) => {
-        console.error("Navigation error:", err)
-      })
+        console.error("Navigation error:", err);
+      });
     } else if (href === BLOCKED_URL) {
       // Nunca navega (nem para about:blank)
-      e.preventDefault()
+      e.preventDefault();
     }
     // external válido: comportamento nativo do navegador
-  }
+  };
 
   // SSR (flag do renderToString): descritor que o renderizador de string expande em <a href>
   if ((globalThis as { __SLASH_SSR__?: boolean }).__SLASH_SSR__) {
     return ssrElement(
       "a",
       { ...props, href, ...(nativeExternal ? { rel: "noopener noreferrer" } : {}) },
-      children
-    ) as unknown as Node
+      children,
+    ) as unknown as Node;
   }
 
   return h(
@@ -153,6 +157,6 @@ export function Link({
       ...(nativeExternal ? { rel: "noopener noreferrer" } : {}),
       onClick: handleClick,
     },
-    children
-  ) as Node
+    children,
+  ) as Node;
 }

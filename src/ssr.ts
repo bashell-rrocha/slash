@@ -1,8 +1,22 @@
 // src/ssr.ts - Server-Side Rendering exports
+// biome-ignore-all assist/source/organizeImports: o bloco SEC-B (política de URLs) fica no fim do arquivo
 
-export { htmlString, renderToStream, renderToString, serializeStateForScript } from "./server-render";
-export { isSafeHtml, unsafeHtml } from "./safe-html";
 export type { SafeHtml } from "./safe-html";
+export { isSafeHtml, unsafeHtml } from "./safe-html";
+export {
+  htmlString,
+  renderToStream,
+  renderToString,
+  serializeStateForScript,
+} from "./server-render";
+// Tipos SSR
+export type {
+  LoaderContext,
+  LoaderFunction,
+  RenderMode,
+  StreamChunk,
+  UniversalRenderOptions,
+} from "./types";
 export {
   createLoader,
   deserializeLoaderData,
@@ -12,17 +26,8 @@ export {
   serializeLoaderData,
 } from "./universal-loader";
 
-// Tipos SSR
-export type {
-  LoaderContext,
-  LoaderFunction,
-  RenderMode,
-  StreamChunk,
-  UniversalRenderOptions,
-} from "./types";
-
 // --- SEC-B: política de URLs (início do bloco; manter no fim do arquivo) ---
-export { isSafeUrl, unsafeUrl } from "./safe-url";
 export type { SafeUrl } from "./safe-url";
+export { isSafeUrl, unsafeUrl } from "./safe-url";
 export { BLOCKED_URL, sanitizeUrl } from "./utils/url-policy";
 // --- SEC-B (fim do bloco) ---

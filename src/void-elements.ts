@@ -5,7 +5,7 @@
 
 const VOID = /^(area|base|br|col|embed|hr|img|input|link|meta|source|track|wbr)$/i;
 // comentário | fechamento | abertura | aspas | > | espaço | outro caractere
-const TOKEN = /<!--|-->|<\/([a-zA-Z][\w-]*)\s*>|<([a-zA-Z][\w-]*)|["'>]|\s|[^]/g;
+const TOKEN = /<!--|-->|<\/([a-zA-Z][\w-]*)\s*>|<([a-zA-Z][\w-]*)|["'>]|\s|[\s\S]/g;
 
 // Mesmo template → mesmo array: o htm guarda o parse por identidade das partes
 const cache = new WeakMap<TemplateStringsArray, TemplateStringsArray>();

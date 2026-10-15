@@ -5,13 +5,13 @@
  * FCIS Pattern: Este módulo orquestra o Functional Core + side effects
  */
 
-import type { DevMessage, ValidationResult } from './dev-warnings-core';
-import { formatDevMessage } from './dev-warnings-core';
+import type { DevMessage, ValidationResult } from "./dev-warnings-core";
+import { formatDevMessage } from "./dev-warnings-core";
 
 /**
  * Configuração de warnings (mutável, side effect)
  */
-let __DEV_MODE__ = process.env.NODE_ENV !== 'production';
+let __DEV_MODE__ = process.env.NODE_ENV !== "production";
 let __WARNINGS_ENABLED__ = true;
 let __ERRORS_THROW__ = false;
 
@@ -56,19 +56,19 @@ export const emitDevMessage = (msg: DevMessage): void => {
   }
 
   // Skip se warnings desabilitados
-  if (!__WARNINGS_ENABLED__ && msg.type !== 'error') {
+  if (!__WARNINGS_ENABLED__ && msg.type !== "error") {
     return;
   }
 
   const formatted = formatDevMessage(msg);
 
   // Side effect: console
-  if (msg.type === 'error') {
+  if (msg.type === "error") {
     if (__ERRORS_THROW__) {
       throw new Error(formatted);
     }
     console.error(formatted);
-  } else if (msg.type === 'warning') {
+  } else if (msg.type === "warning") {
     console.warn(formatted);
   } else {
     console.info(formatted);
@@ -96,7 +96,7 @@ export const processValidationResult = (result: ValidationResult): boolean => {
  */
 export const captureStackTrace = (): string => {
   const error = new Error();
-  return error.stack ?? '';
+  return error.stack ?? "";
 };
 
 /**

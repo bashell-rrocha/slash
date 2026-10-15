@@ -1,22 +1,35 @@
 // src/server-render.ts
 import htm from "htm";
-import { closeVoidTags } from "./void-elements";
 import { isDevMode, isWarningsEnabled } from "./dev-warnings";
 import { isSafeHtml, SafeHtml } from "./safe-html";
-import { markDynamic, unmark } from "./utils/dynamic-text";
-import type { Child, Props, Reactive } from "./types";
-import { isForbiddenStyleKey, isSafeCssDeclaration, sanitizeStyleString, styleKeyToCssName, styleObjectTooLong } from "./utils/css-policy";
-import { isEventHandler, isEventTuple, isReactive } from "./utils/guards";
-import { escapeJsonForScript } from "./utils/script-json";
 import { isSafeUrl } from "./safe-url";
 import { isSsrElement } from "./ssr-element";
-import { evaluateMetaRefresh, isRefreshHttpEquiv, isUrlAttribute, sanitizeUrl } from "./utils/url-policy";
+import type { Child, Props, Reactive } from "./types";
+import {
+  isForbiddenStyleKey,
+  isSafeCssDeclaration,
+  sanitizeStyleString,
+  styleKeyToCssName,
+  styleObjectTooLong,
+} from "./utils/css-policy";
+import { markDynamic, unmark } from "./utils/dynamic-text";
+import { isEventHandler, isEventTuple, isReactive } from "./utils/guards";
+import { escapeJsonForScript } from "./utils/script-json";
+import {
+  evaluateMetaRefresh,
+  isRefreshHttpEquiv,
+  isUrlAttribute,
+  sanitizeUrl,
+} from "./utils/url-policy";
+import { closeVoidTags } from "./void-elements";
 
 // Flag global para indicar modo SSR
 declare global {
   var __SLASH_SSR__: boolean | undefined;
   var __SLASH_TRACK_STATE__: ((state: Reactive) => void) | undefined;
-  var __SLASH_TRACK_ACCESS__: ((state: Reactive, prop: string | symbol, value: unknown) => void) | undefined;
+  var __SLASH_TRACK_ACCESS__:
+    | ((state: Reactive, prop: string | symbol, value: unknown) => void)
+    | undefined;
 }
 
 // Contexto de UM render: registry de reativos, contador de ids e valores lidos via
@@ -84,7 +97,8 @@ function generated(html: string): SafeHtml {
   return out;
 }
 
-const RAW_TEXT_DROPPED = "A dynamic value inside <script>/<style> was dropped (strings are data, not code). For JSON use unsafeHtml(serializeStateForScript(x))";
+const RAW_TEXT_DROPPED =
+  "A dynamic value inside <script>/<style> was dropped (strings are data, not code). For JSON use unsafeHtml(serializeStateForScript(x))";
 
 function warnOnce(message: string): void {
   if (!isDevMode() || !isWarningsEnabled() || warned.has(message)) return;
@@ -175,20 +189,23 @@ function processClass(val: unknown): string {
 
 function styleObjectToString(style: Record<string, unknown>): string {
   if (styleObjectTooLong(style)) {
-    if (process.env.NODE_ENV !== "production") warnOnce("style declaration rejected (unsafe CSS name or value)");
+    if (process.env.NODE_ENV !== "production")
+      warnOnce("style declaration rejected (unsafe CSS name or value)");
     return "";
   }
   const decls: string[] = [];
   for (const [k, v] of Object.entries(style)) {
     if (v == null || v === false) continue;
     if (isForbiddenStyleKey(k)) {
-      if (process.env.NODE_ENV !== "production") warnOnce("style declaration rejected (unsafe CSS name or value)");
+      if (process.env.NODE_ENV !== "production")
+        warnOnce("style declaration rejected (unsafe CSS name or value)");
       continue;
     }
     const name = styleKeyToCssName(k);
     const value = String(v).trim();
     if (!isSafeCssDeclaration(name, value)) {
-      if (process.env.NODE_ENV !== "production") warnOnce("style declaration rejected (unsafe CSS name or value)");
+      if (process.env.NODE_ENV !== "production")
+        warnOnce("style declaration rejected (unsafe CSS name or value)");
       continue;
     }
     decls.push(`${name}: ${value}`);
@@ -212,7 +229,11 @@ function genericAttr(tag: string, key: string, value: unknown, metaRefresh = fal
 
   if (lower === "srcdoc") {
     if (isSafeHtml(value)) return ` ${key}="${escapeHtml(value.value)}"`;
-    if (process.env.NODE_ENV !== "production") warnOnce("srcdoc only accepts SafeHtml; use srcdoc=${unsafeHtml(html)} (never with user input)");
+    if (process.env.NODE_ENV !== "production")
+      warnOnce(
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: exemplo literal na mensagem
+        "srcdoc only accepts SafeHtml; use srcdoc=${unsafeHtml(html)} (never with user input)",
+      );
     return "";
   }
 
@@ -226,7 +247,8 @@ function genericAttr(tag: string, key: string, value: unknown, metaRefresh = fal
   } else if (lower === "content" && metaRefresh) {
     const result = evaluateMetaRefresh(str);
     str = result.value;
-    if (result.blocked && process.env.NODE_ENV !== "production") warnOnce("meta refresh: blocked URL in content");
+    if (result.blocked && process.env.NODE_ENV !== "production")
+      warnOnce("meta refresh: blocked URL in content");
   } else if (lower === "style") {
     str = styleStringToString(str);
     // Sem nenhuma declaração segura: o atributo style some (mesma regra do cliente)
@@ -239,7 +261,8 @@ function genericAttr(tag: string, key: string, value: unknown, metaRefresh = fal
 function hasRefreshHttpEquiv(props: NonNullable<Props>): boolean {
   for (const [k, v] of Object.entries(props)) {
     const lower = k.toLowerCase();
-    if ((lower === "http-equiv" || lower === "httpequiv") && isRefreshHttpEquiv(unmark(v))) return true;
+    if ((lower === "http-equiv" || lower === "httpequiv") && isRefreshHttpEquiv(unmark(v)))
+      return true;
   }
   return false;
 }
@@ -250,7 +273,8 @@ function demoteSafeUrl(tag: string, key: string, value: unknown, metaRefresh: bo
   if (!isSafeUrl(value)) return value;
   const lower = key.toLowerCase();
   if (isUrlAttribute(lower, tag) || (metaRefresh && lower === "content")) return value;
-  if (process.env.NODE_ENV !== "production") warnOnce("unsafeUrl() only applies to URL attributes; treated as the plain string");
+  if (process.env.NODE_ENV !== "production")
+    warnOnce("unsafeUrl() only applies to URL attributes; treated as the plain string");
   return value.value;
 }
 
@@ -278,7 +302,8 @@ function propsToAttrs(ctx: RenderContext, tag: string, props: Props | null): str
     }
 
     if (key.toLowerCase().startsWith(RESERVED_ATTR_PREFIX)) {
-      if (process.env.NODE_ENV !== "production") warnOnce("data-reactive-* attributes are reserved for hydration and were dropped");
+      if (process.env.NODE_ENV !== "production")
+        warnOnce("data-reactive-* attributes are reserved for hydration and were dropped");
       continue;
     }
 
@@ -287,7 +312,10 @@ function propsToAttrs(ctx: RenderContext, tag: string, props: Props | null): str
     if (EVENT_ATTR.test(key)) {
       if (!isEventHandler(val) && !isEventTuple(val) && val != null && val !== false) {
         if (process.env.NODE_ENV !== "production") {
-          warnOnce('on* attribute dropped; use onClick=${fn} (handlers only exist on the client); a plain attribute needs the data- prefix');
+          warnOnce(
+            // biome-ignore lint/suspicious/noTemplateCurlyInString: exemplo literal na mensagem
+            "on* attribute dropped; use onClick=${fn} (handlers only exist on the client); a plain attribute needs the data- prefix",
+          );
         }
       }
       continue;
@@ -404,7 +432,8 @@ function childToString(child: Child, ctx: RenderContext, rawText = false): strin
   // Node ou outros objetos (não devem acontecer no SSR)
   if (typeof child === "object") {
     const name = (child as { constructor?: { name?: string } }).constructor?.name ?? "Object";
-    if (process.env.NODE_ENV !== "production") warnOnce(`Unexpected object in child position (${name}). Use htmlString instead of html.`);
+    if (process.env.NODE_ENV !== "production")
+      warnOnce(`Unexpected object in child position (${name}). Use htmlString instead of html.`);
     return "[Object]";
   }
 
@@ -417,7 +446,10 @@ function childToString(child: Child, ctx: RenderContext, rawText = false): strin
   }
   if (typeof child === "string") {
     if (LOOKS_LIKE_MARKUP.test(child)) {
-      if (process.env.NODE_ENV !== "production") warnOnce("string rendered as text. For trusted HTML use unsafeHtml() (never with user input)");
+      if (process.env.NODE_ENV !== "production")
+        warnOnce(
+          "string rendered as text. For trusted HTML use unsafeHtml() (never with user input)",
+        );
     }
   }
   const text = escapeHtml(String(child));
@@ -433,7 +465,9 @@ export function hString(tag: unknown, props: Props | null, ...rawChildren: Child
   // Componente função: pode devolver SafeHtml, string (texto) ou qualquer Child
   if (typeof tag === "function") {
     // O componente recebe valores simples, nunca o marcador interno
-    const plainProps = Object.fromEntries(Object.entries(props || {}).map(([k, v]) => [k, unmark(v)]));
+    const plainProps = Object.fromEntries(
+      Object.entries(props || {}).map(([k, v]) => [k, unmark(v)]),
+    );
     const result = (tag as (p: Record<string, unknown>) => Child)({
       ...plainProps,
       children: rawChildren.map(unmark),
@@ -458,14 +492,19 @@ export function hString(tag: unknown, props: Props | null, ...rawChildren: Child
   const rawText = RAW_TEXT_ELEMENTS.has(tagName.toLowerCase());
   // String solta (não marcada) = texto estático do template: cru em raw text, escapado nos demais
   const childHtml = rawChildren
-    .map((c) => (typeof c === "string" ? (rawText ? c : escapeHtml(c)) : childToString(c, ctx, rawText)))
+    .map((c) =>
+      typeof c === "string" ? (rawText ? c : escapeHtml(c)) : childToString(c, ctx, rawText),
+    )
     .join("");
   return generated(`<${tagName}${attrs}>${childHtml}</${tagName}>`);
 }
 
 // Template literal tag usando HTM (versão string)
 // O HTM não precisa saber que retorna SafeHtml - funciona normalmente
-const boundHtm = (htm as any).bind(hString) as (strings: TemplateStringsArray, ...values: unknown[]) => SafeHtml;
+const boundHtm = (htm as any).bind(hString) as (
+  strings: TemplateStringsArray,
+  ...values: unknown[]
+) => SafeHtml;
 export const htmlString = (strings: TemplateStringsArray, ...values: unknown[]): SafeHtml => {
   const result = boundHtm(closeVoidTags(strings), ...values.map(markDynamic)) as unknown;
   if (isSafeHtml(result)) return result;

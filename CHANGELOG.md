@@ -2,9 +2,20 @@
 
 Todas as mudanças relevantes deste projeto são registradas aqui, seguindo [Conventional Commits](https://www.conventionalcommits.org/) e [SemVer](https://semver.org/).
 
+## [0.0.7] — 2026-10-15
+
+Sem mudança de API. O código passa no lint (Biome) sem erro nem aviso, e o CI ganhou o lint e a verificação de fronteira.
+
+
+### Fixed
+
+- **`pushState`/`replaceState` do roteador:** os ganchos de navegação chamam sempre as funções nativas guardadas na
+  carga do módulo. Depois de `resetHistory`, a navegação não passa mais por um `pushState` já substituído por outro
+  código.
+
 ## [0.0.6] — 2026-10-15
 
-Duas correções na origem pedidas pelo `slash-ui` (fase 5). Uma muda comportamento: leia "Changed".
+Duas correções na origem, achadas por testes de paridade entre os renderizadores. Uma muda comportamento: leia "Changed".
 
 ### Changed
 
@@ -35,8 +46,8 @@ Duas correções na origem pedidas pelo `slash-ui` (fase 5). Uma muda comportame
 
 ## [0.0.5] — 2026-10-15
 
-Mais duas correções de paridade entre o renderizador de DOM (`html`) e o de string (`htmlString`), achadas pelos
-componentes base do `slash-ui` (fase 3). Sem mudanças de API.
+Mais duas correções de paridade entre o renderizador de DOM (`html`) e o de string (`htmlString`), achadas por
+testes de paridade entre os renderizadores. Sem mudanças de API.
 
 ### Fixed
 
@@ -49,7 +60,7 @@ componentes base do `slash-ui` (fase 3). Sem mudanças de API.
 
 ## [0.0.4] — 2026-10-14
 
-Correções de paridade entre o renderizador de DOM (`html`) e o de string (`htmlString`), achadas pelo teste servidor × cliente do `slash-ui`. Sem mudanças de API.
+Correções de paridade entre o renderizador de DOM (`html`) e o de string (`htmlString`), achadas por teste de paridade entre os renderizadores. Sem mudanças de API.
 
 ### Fixed
 

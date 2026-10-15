@@ -1,9 +1,9 @@
 import htm from "htm";
 import { isSafeHtml } from "./safe-html";
-import { closeVoidTags } from "./void-elements";
 import type { Child, HTMModule, HTMTemplate, Props } from "./types";
 import { markDynamic, unmark, unmarkDeep } from "./utils/dynamic-text";
 import { securityWarn } from "./utils/security-warn";
+import { closeVoidTags } from "./void-elements";
 
 export type { HydrateContext } from "./hydration/context";
 export { getHydrateContext, setHydrateContext } from "./hydration/context";
@@ -44,10 +44,17 @@ const keepRawTextChild = (c: unknown): boolean =>
 // h() as seen by the html template: dynamic strings arrive wrapped in DynamicText.
 // `this[0] = 3` turns off htm's static-subtree cache: with it, an element with no dynamic value is created once per
 // template and the SAME DOM node comes back on every call, so in a list only the last instance keeps it.
-function hTemplate(this: unknown[] | undefined, tag: unknown, props: Props, ...children: Child[]): Node {
+function hTemplate(
+  this: unknown[] | undefined,
+  tag: unknown,
+  props: Props,
+  ...children: Child[]
+): Node {
   if (this) this[0] = 3;
   const realTag = unmark(tag);
-  const plainProps = props ? (Object.fromEntries(Object.entries(props).map(([k, v]) => [k, unmark(v)])) as Props) : props;
+  const plainProps = props
+    ? (Object.fromEntries(Object.entries(props).map(([k, v]) => [k, unmark(v)])) as Props)
+    : props;
   let kids: unknown[] = children.map(unmarkDeep);
   if (typeof realTag === "string" && RAW_TEXT_TAGS.has(realTag.toLowerCase())) {
     const kept = children.filter(keepRawTextChild);

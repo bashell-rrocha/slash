@@ -1,5 +1,5 @@
 import { addCleanup } from "../lifecycle/cleanup";
-import type { EventHandler, EventOptions, EventTuple } from "../types";
+import type { EventHandler, EventOptions } from "../types";
 import { isEventHandler, isEventTuple } from "../utils/guards";
 
 export function parseEventProp(

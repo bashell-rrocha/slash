@@ -8,15 +8,15 @@
  */
 export interface EnvironmentAdapter {
   /** Check if running in SSR mode */
-  isSSR(): boolean
+  isSSR(): boolean;
   /** Check if running in browser */
-  isBrowser(): boolean
+  isBrowser(): boolean;
   /** Get current location */
-  getCurrentLocation(): string
+  getCurrentLocation(): string;
   /** Caminho vindo de location.hash (sem o "#"), usado no modo hash */
-  getHashLocation?(): string
+  getHashLocation?(): string;
   /** Get serialized server state (for hydration) */
-  getServerState(): any | null
+  getServerState(): any | null;
 }
 
 /**
@@ -25,61 +25,61 @@ export interface EnvironmentAdapter {
 export function createBrowserAdapter(): EnvironmentAdapter {
   return {
     isSSR(): boolean {
-      return typeof globalThis !== "undefined" && (globalThis as any).__SLASH_SSR__
+      return typeof globalThis !== "undefined" && (globalThis as any).__SLASH_SSR__;
     },
 
     isBrowser(): boolean {
-      return typeof window !== "undefined" && typeof window.history !== "undefined"
+      return typeof window !== "undefined" && typeof window.history !== "undefined";
     },
 
     getCurrentLocation(): string {
       if (typeof window === "undefined") {
-        return "/"
+        return "/";
       }
-      return window.location.pathname + window.location.search
+      return window.location.pathname + window.location.search;
     },
 
     getHashLocation(): string {
       if (typeof window === "undefined") {
-        return ""
+        return "";
       }
-      return window.location.hash.slice(1)
+      return window.location.hash.slice(1);
     },
 
     getServerState(): any | null {
       if (typeof document === "undefined") {
-        return null
+        return null;
       }
 
       try {
-        const stateEl = document.querySelector('script#__SLASH_STATE__[type="application/json"]')
-        if (stateEl && stateEl.textContent) {
-          return JSON.parse(stateEl.textContent)
+        const stateEl = document.querySelector('script#__SLASH_STATE__[type="application/json"]');
+        if (stateEl?.textContent) {
+          return JSON.parse(stateEl.textContent);
         }
       } catch {
         // Ignore parse errors
       }
 
-      return null
+      return null;
     },
-  }
+  };
 }
 
 /**
  * Mock environment adapter for testing
  */
 export function createMockAdapter(config: {
-  isSSR?: boolean
-  isBrowser?: boolean
-  currentLocation?: string
-  serverState?: any
+  isSSR?: boolean;
+  isBrowser?: boolean;
+  currentLocation?: string;
+  serverState?: any;
 }): EnvironmentAdapter {
   return {
     isSSR: () => config.isSSR ?? false,
     isBrowser: () => config.isBrowser ?? true,
     getCurrentLocation: () => config.currentLocation ?? "/",
     getServerState: () => config.serverState ?? null,
-  }
+  };
 }
 
 /**
@@ -89,32 +89,32 @@ export function createMockAdapter(config: {
 export function detectInitialPath(
   adapter: EnvironmentAdapter,
   configuredInitialPath?: string,
-  mode: "history" | "hash" = "history"
+  mode: "history" | "hash" = "history",
 ): string | undefined {
   // If explicitly configured, use it
   if (configuredInitialPath) {
-    return configuredInitialPath
+    return configuredInitialPath;
   }
 
   // SSR mode - no detection needed
   if (adapter.isSSR()) {
-    return undefined
+    return undefined;
   }
 
   // Client-side - try to get from server state first
-  const serverState = adapter.getServerState()
+  const serverState = adapter.getServerState();
   if (serverState?.currentRoute?.path) {
-    return serverState.currentRoute.path
+    return serverState.currentRoute.path;
   }
 
   // Fallback to current browser location
   if (adapter.isBrowser()) {
     // Modo hash: a rota vem de location.hash (inclusive query), como em history.ts
     if (mode === "hash" && adapter.getHashLocation) {
-      return adapter.getHashLocation() || "/"
+      return adapter.getHashLocation() || "/";
     }
-    return adapter.getCurrentLocation()
+    return adapter.getCurrentLocation();
   }
 
-  return undefined
+  return undefined;
 }
