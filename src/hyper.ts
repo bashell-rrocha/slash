@@ -1,5 +1,6 @@
 import htm from "htm";
 import { isSafeHtml } from "./safe-html";
+import { closeVoidTags } from "./void-elements";
 import type { Child, HTMModule, HTMTemplate, Props } from "./types";
 import { markDynamic, unmark, unmarkDeep } from "./utils/dynamic-text";
 import { securityWarn } from "./utils/security-warn";
@@ -65,4 +66,4 @@ const boundHtm = (htm as unknown as HTMModule).bind(hTemplate);
 
 // The result never carries the marker: strings come back as strings, arrays are unmarked deeply
 export const html: HTMTemplate = ((strings: TemplateStringsArray, ...values: unknown[]) =>
-  unmarkDeep(boundHtm(strings, ...values.map(markDynamic)))) as HTMTemplate;
+  unmarkDeep(boundHtm(closeVoidTags(strings), ...values.map(markDynamic)))) as HTMTemplate;
