@@ -2,6 +2,14 @@
 
 Todas as mudanças relevantes deste projeto são registradas aqui, seguindo [Conventional Commits](https://www.conventionalcommits.org/) e [SemVer](https://semver.org/).
 
+## [Não lançado]
+
+### Fixed
+
+- **`pushState`/`replaceState` do roteador:** os ganchos de navegação chamam sempre as funções nativas guardadas na
+  carga do módulo. Depois de `resetHistory`, a navegação não passa mais por um `pushState` já substituído por outro
+  código.
+
 ## [0.0.6] — 2026-10-15
 
 Duas correções na origem, achadas por testes de paridade entre os renderizadores. Uma muda comportamento: leia "Changed".

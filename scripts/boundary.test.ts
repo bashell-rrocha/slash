@@ -29,6 +29,17 @@ describe("scanText", () => {
     expect(achados).toEqual([{ file: "x.md", line: 2, term: 1 }]);
   });
 
+  test("linhas CRLF contam normalmente", () => {
+    // Arrange
+    const texto = "um\r\ndois termo-falso\r\n";
+
+    // Act
+    const achados = scanText("x.md", texto, ["termo-falso"]);
+
+    // Assert
+    expect(achados).toEqual([{ file: "x.md", line: 2, term: 1 }]);
+  });
+
   test("não devolve achado quando nenhum termo aparece", () => {
     // Arrange
     const texto = "nada a ver";
@@ -86,10 +97,21 @@ describe("missingTermsVerdict", () => {
 
 describe("processo", () => {
   const script = join(import.meta.dir, "boundary.ts");
-  // Roda num repositório git vazio, para o scanner não ler este próprio arquivo de teste.
-  const roda = (env: Record<string, string>, ...args: string[]) => {
+  // Roda num repositório git vazio (ou numa pasta sem git), para o scanner não ler este próprio arquivo de teste.
+  const roda = (
+    env: Record<string, string>,
+    args: string[] = [],
+    opcoes: { git?: boolean; versionados?: Record<string, string> } = {},
+  ) => {
     const repo = mkdtempSync(join(tmpdir(), "fronteira-repo-"));
-    Bun.spawnSync(["git", "init", "-q"], { cwd: repo });
+    const git = (...a: string[]) =>
+      Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@t", ...a], { cwd: repo });
+    if (opcoes.git !== false) git("init", "-q");
+    for (const [nome, conteudo] of Object.entries(opcoes.versionados ?? {})) {
+      writeFileSync(join(repo, nome), conteudo);
+      git("add", nome);
+    }
+    if (opcoes.versionados) git("commit", "-q", "-m", "x");
     const r = Bun.spawnSync(["bun", script, ...args], {
       cwd: repo,
       env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...env },
@@ -104,7 +126,7 @@ describe("processo", () => {
     writeFileSync(join(dir, "a.txt"), "linha 1\nvazou o Termo-Falso\n");
 
     // Act
-    const r = roda({ BOUNDARY_TERMS: "termo-falso" }, "--also", dir);
+    const r = roda({ BOUNDARY_TERMS: "termo-falso" }, ["--also", dir]);
     const saida = `${r.stdout}${r.stderr}`;
     rmSync(dir, { recursive: true });
 
@@ -114,6 +136,46 @@ describe("processo", () => {
     expect(saida.toLowerCase()).not.toContain("termo-falso");
   });
 
+  test("arquivo versionado com o termo: sai com 1 e aponta arquivo:linha", () => {
+    // Arrange
+    const versionados = { "a.md": "ok\nvazou termo-falso aqui\n" };
+
+    // Act
+    const r = roda({ BOUNDARY_TERMS: "termo-falso" }, [], { versionados });
+    const saida = `${r.stdout}${r.stderr}`;
+
+    // Assert
+    expect(r.exitCode).toBe(1);
+    expect(saida).toContain("a.md:2: termo #1");
+    expect(saida).not.toContain("termo-falso");
+  });
+
+  test("nome de arquivo com o termo não vaza no log", () => {
+    // Arrange
+    const versionados = { "zz-termo-falso.md": "termo-falso\n" };
+
+    // Act
+    const r = roda({ BOUNDARY_TERMS: "termo-falso" }, [], { versionados });
+    const saida = `${r.stdout}${r.stderr}`;
+
+    // Assert
+    expect(r.exitCode).toBe(1);
+    expect(saida).toContain("arquivo #1:1: termo #1");
+    expect(saida).not.toContain("termo-falso");
+  });
+
+  test("fora de um repositório git: erro claro e sai com 1", () => {
+    // Arrange
+    const opcoes = { git: false };
+
+    // Act
+    const r = roda({ BOUNDARY_TERMS: "termo-falso" }, [], opcoes);
+
+    // Assert
+    expect(r.exitCode).toBe(1);
+    expect(`${r.stdout}${r.stderr}`).toContain("git ls-files");
+  });
+
   test("sai com 0 quando a pasta extra está limpa e ignora binários", () => {
     // Arrange
     const dir = mkdtempSync(join(tmpdir(), "fronteira-"));
@@ -121,7 +183,7 @@ describe("processo", () => {
     writeFileSync(join(dir, "b.bin"), Buffer.from([0, 1, 2, ...Buffer.from("termo-falso")]));
 
     // Act
-    const r = roda({ BOUNDARY_TERMS: "termo-falso" }, "--also", dir);
+    const r = roda({ BOUNDARY_TERMS: "termo-falso" }, ["--also", dir]);
     rmSync(dir, { recursive: true });
 
     // Assert
@@ -133,22 +195,11 @@ describe("processo", () => {
     const dir = join(tmpdir(), "fronteira-nao-existe-xyz");
 
     // Act
-    const r = roda({ BOUNDARY_TERMS: "termo-falso" }, "--also", dir);
+    const r = roda({ BOUNDARY_TERMS: "termo-falso" }, ["--also", dir]);
 
     // Assert
     expect(r.exitCode).toBe(1);
     expect(`${r.stdout}${r.stderr}`).toContain("pasta --also inexistente");
-  });
-
-  test("linhas CRLF contam normalmente", () => {
-    // Arrange
-    const texto = "um\r\ndois termo-falso\r\n";
-
-    // Act
-    const achados = scanText("x.md", texto, ["termo-falso"]);
-
-    // Assert
-    expect(achados).toEqual([{ file: "x.md", line: 2, term: 1 }]);
   });
 
   test("sem BOUNDARY_TERMS sai com 1 e avisa", () => {

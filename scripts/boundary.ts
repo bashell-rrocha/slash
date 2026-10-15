@@ -46,10 +46,15 @@ function walk(dir: string): string[] {
   });
 }
 
-function trackedFiles(): string[] {
+function trackedFiles(): string[] | null {
   const r = Bun.spawnSync(["git", "ls-files", "-z"]);
-  if (r.exitCode !== 0) throw new Error("git ls-files falhou");
+  if (r.exitCode !== 0) return null;
   return r.stdout.toString().split("\0").filter(Boolean);
+}
+
+/** O nome do arquivo também pode conter um termo: nesse caso o log mostra só a posição na lista. */
+function label(file: string, index: number, terms: string[]): string {
+  return scanText(file, file, terms).length > 0 ? `arquivo #${index + 1}` : file;
 }
 
 function alsoDirs(argv: string[]): string[] {
@@ -69,16 +74,25 @@ export function main(argv: string[], env: Record<string, string | undefined>): n
     return 1;
   }
   const terms = parseTerms(raw);
-  const files = new Set(trackedFiles());
+  const tracked = trackedFiles();
+  if (tracked === null) {
+    console.error(
+      "falha ao listar os arquivos versionados (git ls-files): rode dentro de um repositório git",
+    );
+    return 1;
+  }
+  const files = new Set(tracked);
   for (const dir of alsoDirs(argv)) {
     if (!statSync(dir, { throwIfNoEntry: false })?.isDirectory()) {
-      console.error(`pasta --also inexistente: ${dir}`);
+      console.error(
+        `pasta --also inexistente: ${label(dir, 0, terms).replace("arquivo #1", "(nome oculto)")}`,
+      );
       return 1;
     }
     for (const file of walk(dir)) files.add(file);
   }
   let total = 0;
-  for (const file of [...files].sort()) {
+  for (const [index, file] of [...files].sort().entries()) {
     let buf: Buffer;
     try {
       if (!statSync(file).isFile()) continue;
@@ -88,7 +102,7 @@ export function main(argv: string[], env: Record<string, string | undefined>): n
     }
     if (isBinary(buf)) continue;
     for (const f of scanText(file, buf.toString("utf8"), terms)) {
-      console.log(`${f.file}:${f.line}: termo #${f.term}`);
+      console.log(`${label(file, index, terms)}:${f.line}: termo #${f.term}`);
       total++;
     }
   }

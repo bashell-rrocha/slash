@@ -48,3 +48,4 @@ jobs:
         run: bun run boundary -- --also dist
         env:
           BOUNDARY_TERMS: ${{ secrets.BOUNDARY_TERMS }}
+          GITHUB_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
