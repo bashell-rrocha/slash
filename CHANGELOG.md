@@ -28,6 +28,11 @@ Duas correções na origem pedidas pelo `slash-ui` (fase 5). Uma muda comportame
   virava rota, e um `<a href="#campo">` (resumo de erros de formulário, "voltar ao topo") trocava a tela pelo 404.
   Agora só hash que começa com `/` é rota; `#ancora` continua âncora nativa e a rota atual não muda.
 
+### Build
+
+- Orçamento do bundle do core: 8,75 KB gzip e 7,75 KB brotli (antes 8,64 e 7,67), pelas correções acima. A
+  publicação da 0.0.6 parou nesse teste no CI, que usa o Bun 1.3.6.
+
 ## [0.0.5] — 2026-10-15
 
 Mais duas correções de paridade entre o renderizador de DOM (`html`) e o de string (`htmlString`), achadas pelos
