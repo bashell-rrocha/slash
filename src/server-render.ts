@@ -104,10 +104,11 @@ const PROTOTYPE_ATTRS = new Set(["__proto__", "constructor", "prototype"]);
 const EVENT_ATTR = /^on/i;
 const RAW_TEXT_ELEMENTS = new Set(["script", "style"]);
 const RESERVED_ATTR_PREFIX = "data-reactive-";
-// Atributos booleanos do HTML: valor verdadeiro vira presença (`open`), como a propriedade nativa no cliente; falso
-// some. `hidden` fica de fora: aceita "until-found".
+// Atributos booleanos do HTML que o cliente aplica pela propriedade de mesmo nome (element.open = valor): valor
+// verdadeiro vira presença (`open`), falso e "" somem, como a propriedade faz. Os que não têm propriedade com o nome
+// em minúsculas (playsinline → playsInline, readonly → readOnly, novalidate…) o cliente aplica como atributo
+// (presente com "" ou "true"), e aqui seguem o mesmo caminho genérico. `hidden` fica de fora: aceita "until-found".
 const BOOLEAN_ATTRS = new Set([
-  "allowfullscreen",
   "async",
   "autofocus",
   "autoplay",
@@ -116,17 +117,11 @@ const BOOLEAN_ATTRS = new Set([
   "default",
   "defer",
   "disabled",
-  "formnovalidate",
   "inert",
-  "ismap",
   "loop",
   "multiple",
   "muted",
-  "nomodule",
-  "novalidate",
   "open",
-  "playsinline",
-  "readonly",
   "required",
   "reversed",
   "selected",

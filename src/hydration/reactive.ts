@@ -1,6 +1,13 @@
 import { addCleanup } from "../lifecycle/cleanup";
 import { safeHtmlToFragment } from "../rendering/children";
-import { applyPropUpdate, computePropUpdate, getElementType, isMetaRefreshElement, resanitizeMetaContent } from "../rendering/props-core";
+import {
+  applyPropUpdate,
+  computePropUpdate,
+  getElementType,
+  isMetaRefreshElement,
+  resanitizeMetaContent,
+  setClassName,
+} from "../rendering/props-core";
 import { isSafeHtml } from "../safe-html";
 import type { Elementish, Reactive } from "../types";
 import { processClassValue } from "../utils/helpers";
@@ -30,7 +37,8 @@ export function hydrateReactiveAttributes(
       } else if (lower === "checked") {
         (element as HTMLInputElement).checked = Boolean(value);
       } else if (lower === "class") {
-        element.className = processClassValue(value);
+        // Em SVG, className é só leitura: setClassName usa o atributo
+        setClassName(element, processClassValue(value));
       } else {
         // SEC-13: o nome vem do DOM (data-reactive-*); passa pela mesma política das
         // props (nome válido, sem on*/innerHTML/srcdoc, URLs sanitizadas)

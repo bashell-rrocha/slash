@@ -51,6 +51,39 @@ describe("htmlString: atributos booleanos do HTML", () => {
     for (const [server, client] of pairs) expect(server).toBe(client);
   });
 
+  it("true, \"\" e false saem com a mesma presença que no cliente, inclusive sem propriedade de mesmo nome", () => {
+    // Arrange
+    const cases = [
+      ["details", "open"],
+      ["input", "required"],
+      ["input", "readonly"],
+      ["video", "playsinline"],
+      ["iframe", "allowfullscreen"],
+      ["form", "novalidate"],
+      ["script", "nomodule"],
+    ] as const;
+    const values = [true, "", false] as const;
+    const parse = (markup: string, attr: string) => {
+      const holder = document.createElement("div");
+      holder.innerHTML = markup;
+      return holder.firstElementChild?.hasAttribute(attr) ?? false;
+    };
+
+    // Act
+    const pairs = cases.flatMap(([tag, attr]) =>
+      values.map((value) => {
+        const parts = [`<${tag} ${attr}=`, `></${tag}>`];
+        const strings = Object.assign([...parts], { raw: parts }) as unknown as TemplateStringsArray;
+        const server = parse(htmlString(strings, value).value, attr);
+        const client = (html(strings, value) as unknown as Element).hasAttribute(attr);
+        return [`${tag} ${attr}=${JSON.stringify(value)}: ${server}`, `${tag} ${attr}=${JSON.stringify(value)}: ${client}`];
+      }),
+    );
+
+    // Assert
+    for (const [server, client] of pairs) expect(server).toBe(client);
+  });
+
   it("atributo que não é booleano do HTML continua com o texto \"true\"", () => {
     // Arrange
     const flag = true;
