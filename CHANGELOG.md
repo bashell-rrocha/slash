@@ -24,6 +24,10 @@ Duas correções na origem pedidas pelo `slash-ui` (fase 5). Uma muda comportame
   diferente vinda do servidor ou do cliente. Textos vizinhos criados pelo `html` vão agora para o mesmo nó (um nó de
   texto que veio de fora não é mexido; texto reativo continua entre os marcadores).
 
+- **Âncora no modo hash do roteador:** em modo hash (app aberto de `file://`, Capacitor/Tauri), qualquer `hashchange`
+  virava rota, e um `<a href="#campo">` (resumo de erros de formulário, "voltar ao topo") trocava a tela pelo 404.
+  Agora só hash que começa com `/` é rota; `#ancora` continua âncora nativa e a rota atual não muda.
+
 ## [0.0.5] — 2026-10-15
 
 Mais duas correções de paridade entre o renderizador de DOM (`html`) e o de string (`htmlString`), achadas pelos
