@@ -2,6 +2,20 @@
 
 Todas as mudanças relevantes deste projeto são registradas aqui, seguindo [Conventional Commits](https://www.conventionalcommits.org/) e [SemVer](https://semver.org/).
 
+## [0.0.5] — 2026-10-15
+
+Mais duas correções de paridade entre o renderizador de DOM (`html`) e o de string (`htmlString`), achadas pelos
+componentes base do `slash-ui` (fase 3). Sem mudanças de API.
+
+### Fixed
+
+- **`value` de `<option>` no cliente:** ao criar a opção, ela ainda não tem texto, então `option.value` já valia `""` e
+  o `value=""` do placeholder não era gravado; depois, `option.value` passava a devolver o texto, e um `<select required>`
+  aceitava o placeholder como escolha. Em `<option>`, o `value` agora vai sempre como atributo.
+- **Atributo reativo no SSR:** um valor reativo (`{ get, subscribe }`) com `false` ou `null` saía como texto
+  (`hidden="false"`, que esconde o elemento no HTML do servidor), e booleanos do HTML não viravam presença. Agora segue a
+  regra do atributo estático; o marcador de hidratação continua.
+
 ## [0.0.4] — 2026-10-14
 
 Correções de paridade entre o renderizador de DOM (`html`) e o de string (`htmlString`), achadas pelo teste servidor × cliente do `slash-ui`. Sem mudanças de API.
