@@ -25,7 +25,7 @@ export function isSafeUrl(x: unknown): x is SafeUrl {
   return (
     typeof x === "object" &&
     x !== null &&
-    Object.prototype.hasOwnProperty.call(x, BRAND) &&
+    Object.hasOwn(x, BRAND) &&
     (x as Record<symbol, unknown>)[BRAND] === true &&
     typeof (x as { value?: unknown }).value === "string"
   );

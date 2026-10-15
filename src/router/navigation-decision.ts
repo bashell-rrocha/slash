@@ -4,23 +4,23 @@
  * without executing side effects
  */
 
-import type { RouteConfig, RouteMatch, NavigationGuard, RouteQuery } from "./types"
-import { matchRouteNested } from "./route-matcher"
-import { sanitizePath, parseQuery, splitPath } from "./utils"
-import { executeGuards } from "./guards"
+import { executeGuards } from "./guards";
+import { matchRouteNested } from "./route-matcher";
+import type { NavigationGuard, RouteConfig, RouteMatch, RouteQuery } from "./types";
+import { parseQuery, sanitizePath, splitPath } from "./utils";
 
 /**
  * Navigation decision result
  */
 export interface NavigationDecision {
   /** Whether navigation should proceed */
-  shouldNavigate: boolean
+  shouldNavigate: boolean;
   /** New route to navigate to (null if no match) */
-  newRoute: RouteMatch | null
+  newRoute: RouteMatch | null;
   /** Redirect path (if guard returned redirect) */
-  redirect?: string
+  redirect?: string;
   /** Error message (if navigation failed) */
-  error?: string
+  error?: string;
 }
 
 /**
@@ -28,11 +28,11 @@ export interface NavigationDecision {
  */
 export interface NavigationInput {
   /** Sanitized pathname */
-  pathname: string
+  pathname: string;
   /** Parsed query parameters */
-  query: RouteQuery
+  query: RouteQuery;
   /** Original full path */
-  fullPath: string
+  fullPath: string;
 }
 
 /**
@@ -41,16 +41,16 @@ export interface NavigationInput {
  */
 export function parseNavigationPath(path: string): NavigationInput {
   // The fragment never takes part in route matching or in the query
-  const hashIndex = path.indexOf("#")
-  const [pathname, search] = splitPath(hashIndex === -1 ? path : path.slice(0, hashIndex))
-  const sanitizedPath = sanitizePath(pathname)
-  const query = parseQuery(search)
+  const hashIndex = path.indexOf("#");
+  const [pathname, search] = splitPath(hashIndex === -1 ? path : path.slice(0, hashIndex));
+  const sanitizedPath = sanitizePath(pathname);
+  const query = parseQuery(search);
 
   return {
     pathname: sanitizedPath,
     query,
     fullPath: path,
-  }
+  };
 }
 
 /**
@@ -61,33 +61,33 @@ export function findRouteMatch(
   pathname: string,
   query: RouteQuery,
   routes: RouteConfig[],
-  fallback?: string
+  fallback?: string,
 ): RouteMatch | null {
   // Try to match the requested path
-  let match = matchRouteNested(pathname, routes)
+  let match = matchRouteNested(pathname, routes);
 
   // If no match and fallback exists, try fallback
   if (!match && fallback) {
-    match = matchRouteNested(fallback, routes)
+    match = matchRouteNested(fallback, routes);
   }
 
   // Add query to match if found
   if (match) {
-    match.query = query
+    match.query = query;
   }
 
-  return match
+  return match;
 }
 
 /** Limite de redirects encadeados por navegação (evita loops de guards) */
-export const MAX_REDIRECTS = 10
+export const MAX_REDIRECTS = 10;
 
 /**
  * Indica se a cadeia de redirects passou do limite
  * Pure function - no side effects
  */
 export function isRedirectLimitExceeded(depth: number): boolean {
-  return depth > MAX_REDIRECTS
+  return depth > MAX_REDIRECTS;
 }
 
 /**
@@ -95,7 +95,7 @@ export function isRedirectLimitExceeded(depth: number): boolean {
  * Pure function - no side effects
  */
 export function hasApplicableGuards(match: RouteMatch, globalGuards: NavigationGuard[]): boolean {
-  return globalGuards.length > 0 || (match.route.guards?.length ?? 0) > 0
+  return globalGuards.length > 0 || (match.route.guards?.length ?? 0) > 0;
 }
 
 /**
@@ -114,13 +114,13 @@ export async function computeNavigation(
   routes: RouteConfig[],
   guards: NavigationGuard[],
   currentRoute: RouteMatch | null,
-  fallback?: string
+  fallback?: string,
 ): Promise<NavigationDecision> {
   // Parse the path
-  const input = parseNavigationPath(path)
+  const input = parseNavigationPath(path);
 
   // Find matching route
-  const match = findRouteMatch(input.pathname, input.query, routes, fallback)
+  const match = findRouteMatch(input.pathname, input.query, routes, fallback);
 
   // If no match found, navigation fails
   if (!match) {
@@ -128,15 +128,15 @@ export async function computeNavigation(
       shouldNavigate: false,
       newRoute: null,
       error: "No route match found",
-    }
+    };
   }
 
   // Combine global guards with route-specific guards
-  const routeGuards = match.route.guards || []
-  const allGuards = [...guards, ...routeGuards]
+  const routeGuards = match.route.guards || [];
+  const allGuards = [...guards, ...routeGuards];
 
   // Execute guards
-  const guardResult = await executeGuards(allGuards, match, currentRoute)
+  const guardResult = await executeGuards(allGuards, match, currentRoute);
 
   // If guard blocked navigation
   if (!guardResult.allowed) {
@@ -146,7 +146,7 @@ export async function computeNavigation(
         shouldNavigate: false,
         newRoute: null,
         redirect: guardResult.redirect,
-      }
+      };
     }
 
     // Otherwise just block
@@ -154,12 +154,12 @@ export async function computeNavigation(
       shouldNavigate: false,
       newRoute: null,
       error: "Navigation blocked by guard",
-    }
+    };
   }
 
   // Navigation allowed
   return {
     shouldNavigate: true,
     newRoute: match,
-  }
+  };
 }

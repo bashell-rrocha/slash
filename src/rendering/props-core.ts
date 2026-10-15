@@ -9,11 +9,25 @@
 import { isSafeHtml } from "../safe-html";
 import { isSafeUrl } from "../safe-url";
 import type { Elementish } from "../types";
-import { isForbiddenCssName, isForbiddenStyleKey, isSafeCssValue, isVendorStyleKey, sanitizeStyleString, styleKeyToCssName, styleObjectTooLong } from "../utils/css-policy";
+import {
+  isForbiddenCssName,
+  isForbiddenStyleKey,
+  isSafeCssValue,
+  isVendorStyleKey,
+  sanitizeStyleString,
+  styleKeyToCssName,
+  styleObjectTooLong,
+} from "../utils/css-policy";
 import { isEventHandler, isEventTuple } from "../utils/guards";
 import { processClassValue } from "../utils/helpers";
 import { securityWarn } from "../utils/security-warn";
-import { blockedUrlMessage, evaluateMetaRefresh, evaluateUrl, isRefreshHttpEquiv, isUrlAttribute } from "../utils/url-policy";
+import {
+  blockedUrlMessage,
+  evaluateMetaRefresh,
+  evaluateUrl,
+  isRefreshHttpEquiv,
+  isUrlAttribute,
+} from "../utils/url-policy";
 
 /**
  * Nomes de atributo válidos (subconjunto seguro do HTML/SVG/XML): impede que uma
@@ -96,7 +110,7 @@ export function computePropUpdate(
   key: string,
   value: unknown,
   hasProperty: boolean,
-  isMetaRefresh = false
+  isMetaRefresh = false,
 ): PropUpdate {
   // Toda decisão de política usa o nome em minúsculas: setAttribute minusculiza o nome em HTML,
   // então `STYLE`/`Style`/`HREF`/`SrcDoc` não podem escapar da política por diferença de caixa.
@@ -109,16 +123,25 @@ export function computePropUpdate(
 
   // 1.0) unsafeUrl()/SafeUrl só isenta atributos de URL (e o content de um meta refresh).
   // Em qualquer outro lugar vale como a string, que segue as regras do atributo.
-  if (isSafeUrl(value) && !(isUrlAttribute(key, elementType) || (isMetaRefresh && lowerKey === "content"))) {
+  if (
+    isSafeUrl(value) &&
+    !(isUrlAttribute(key, elementType) || (isMetaRefresh && lowerKey === "content"))
+  ) {
     const update = computePropUpdate(elementType, key, value.value, hasProperty, isMetaRefresh);
     if (process.env.NODE_ENV === "production") return update;
-    const warning = update.metadata?.warning ?? `${key}: unsafeUrl() only applies to URL attributes; treated as the plain string`;
+    const warning =
+      update.metadata?.warning ??
+      `${key}: unsafeUrl() only applies to URL attributes; treated as the plain string`;
     return { ...update, metadata: { ...update.metadata, warning } };
   }
 
   // 1.1) Nome de atributo inválido (S5): descarta, nunca chega ao DOM
   if (!isValidAttributeName(key)) {
-    return blocked(key, value, process.env.NODE_ENV !== "production" ? `invalid attribute name: ${JSON.stringify(key)}` : "");
+    return blocked(
+      key,
+      value,
+      process.env.NODE_ENV !== "production" ? `invalid attribute name: ${JSON.stringify(key)}` : "",
+    );
   }
 
   // 1.15) <script>/<style>: text, textContent and innerText are code sinks. Only SafeHtml
@@ -131,7 +154,9 @@ export function computePropUpdate(
       return blocked(
         key,
         value,
-        process.env.NODE_ENV !== "production" ? `${key} on <${elementType}> only accepts unsafeHtml() (a string would run as code)` : "",
+        process.env.NODE_ENV !== "production"
+          ? `${key} on <${elementType}> only accepts unsafeHtml() (a string would run as code)`
+          : "",
       );
     }
   }
@@ -146,7 +171,9 @@ export function computePropUpdate(
       return blocked(
         key,
         value,
-        process.env.NODE_ENV !== "production" ? `${key}: reactive handlers are not supported; pass a function` : "",
+        process.env.NODE_ENV !== "production"
+          ? `${key}: reactive handlers are not supported; pass a function`
+          : "",
       );
     }
     if (value == null || value === false) return { type: "NO_OP", key, value };
@@ -168,11 +195,17 @@ export function computePropUpdate(
     return blocked(
       key,
       value,
-      process.env.NODE_ENV !== "production" ? `${key} blocked (injects HTML). For trusted HTML use an unsafeHtml() child` : "",
+      process.env.NODE_ENV !== "production"
+        ? `${key} blocked (injects HTML). For trusted HTML use an unsafeHtml() child`
+        : "",
     );
   }
   if (PROTOTYPE_PROPS.has(lowerKey)) {
-    return blocked(key, value, process.env.NODE_ENV !== "production" ? `${key} cannot be a prop` : "");
+    return blocked(
+      key,
+      value,
+      process.env.NODE_ENV !== "production" ? `${key} cannot be a prop` : "",
+    );
   }
 
   // 2) SET_CLASS: class ou className
@@ -202,7 +235,9 @@ export function computePropUpdate(
         type: "SET_STYLE",
         key,
         value: {},
-        ...(process.env.NODE_ENV !== "production" ? { metadata: { warning: "style ignored: more than 8 KB" } } : {}),
+        ...(process.env.NODE_ENV !== "production"
+          ? { metadata: { warning: "style ignored: more than 8 KB" } }
+          : {}),
       };
     }
     const safe: Record<string, unknown> = {};
@@ -211,7 +246,12 @@ export function computePropUpdate(
       const v = (value as Record<string, unknown>)[k];
       // Mesma política de valores do SSR (url/expression/javascript, funções de URL...)
       const emptyValue = v == null || v === false;
-      if (STYLE_KEY.test(k) && !isForbiddenStyleKey(k) && !isForbiddenCssName(styleKeyToCssName(k)) && (emptyValue || isSafeCssValue(String(v).trim()))) {
+      if (
+        STYLE_KEY.test(k) &&
+        !isForbiddenStyleKey(k) &&
+        !isForbiddenCssName(styleKeyToCssName(k)) &&
+        (emptyValue || isSafeCssValue(String(v).trim()))
+      ) {
         safe[k] = v;
       } else {
         dropped.push(k);
@@ -221,7 +261,9 @@ export function computePropUpdate(
       type: "SET_STYLE",
       key,
       value: safe,
-      ...(process.env.NODE_ENV !== "production" && dropped.length ? { metadata: { warning: `style ignores ${dropped.join(", ")}` } } : {}),
+      ...(process.env.NODE_ENV !== "production" && dropped.length
+        ? { metadata: { warning: `style ignores ${dropped.join(", ")}` } }
+        : {}),
     };
   }
 
@@ -284,13 +326,15 @@ export function computePropUpdate(
     const result = evaluateMetaRefresh(String(value));
     finalValue = result.value;
     if (result.blocked) {
-      warning = process.env.NODE_ENV !== "production" ? blockedUrlMessage(key, String(value)) : undefined;
+      warning =
+        process.env.NODE_ENV !== "production" ? blockedUrlMessage(key, String(value)) : undefined;
     }
   } else if (isUrlAttribute(key, elementType)) {
     const result = evaluateUrl(key, String(value), elementType);
     finalValue = result.value;
     if (result.blocked) {
-      warning = process.env.NODE_ENV !== "production" ? blockedUrlMessage(key, String(value)) : undefined;
+      warning =
+        process.env.NODE_ENV !== "production" ? blockedUrlMessage(key, String(value)) : undefined;
     }
   }
 
@@ -335,12 +379,17 @@ function emitPropWarning(update: PropUpdate): void {
 export function hasNativeProperty(element: Elementish, key: string): boolean {
   // A key that names a DOM method (appendChild, setAttribute...) is never a property:
   // assigning it would shadow the method on this element. It falls back to an attribute.
-  return key in element && typeof (element as unknown as Record<string, unknown>)[key] !== "function";
+  return (
+    key in element && typeof (element as unknown as Record<string, unknown>)[key] !== "function"
+  );
 }
 
 /** Shell: o elemento é <meta http-equiv="refresh"> (lê o atributo já gravado)? */
 export function isMetaRefreshElement(element: Elementish): boolean {
-  return getElementType(element) === "meta" && isRefreshHttpEquiv((element as Element).getAttribute("http-equiv"));
+  return (
+    getElementType(element) === "meta" &&
+    isRefreshHttpEquiv((element as Element).getAttribute("http-equiv"))
+  );
 }
 
 /**
@@ -355,7 +404,8 @@ export function resanitizeMetaContent(element: Elementish, key: string): void {
   const result = evaluateMetaRefresh(content);
   if (result.blocked) {
     (element as Element).setAttribute("content", result.value);
-    if (process.env.NODE_ENV !== "production") securityWarn(blockedUrlMessage("content", content), "url:meta-refresh");
+    if (process.env.NODE_ENV !== "production")
+      securityWarn(blockedUrlMessage("content", content), "url:meta-refresh");
   }
 }
 

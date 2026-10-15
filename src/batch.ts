@@ -6,24 +6,24 @@
  * lote mais externo cada notificador roda uma única vez, com o valor final.
  */
 
-import { enterBatch, exitBatch } from './batch-core'
+import { enterBatch, exitBatch } from "./batch-core";
 
 /**
  * Profundidade atual de lotes (0 = fora de lote)
  */
-let batchDepth = 0
+let batchDepth = 0;
 
 /**
  * Notificadores de estados alterados durante o lote.
  * Set preserva a ordem do primeiro enfileiramento e deduplica por identidade.
  */
-let pendingNotifiers = new Set<() => void>()
+let pendingNotifiers = new Set<() => void>();
 
 /**
  * Filas em execução (flush em andamento; mais de uma se houver batch dentro
  * de um watcher). Permite descartar notificadores que já notificaram.
  */
-const inFlightQueues = new Set<Set<() => void>>()
+const inFlightQueues = new Set<Set<() => void>>();
 
 /**
  * Verifica se está atualmente em modo batch
@@ -31,7 +31,7 @@ const inFlightQueues = new Set<Set<() => void>>()
  * @returns true se está batching
  */
 export function isInBatch(): boolean {
-  return batchDepth > 0
+  return batchDepth > 0;
 }
 
 /**
@@ -41,7 +41,7 @@ export function isInBatch(): boolean {
  * @internal
  */
 export function __enqueueBatchNotify(notify: () => void): void {
-  pendingNotifiers.add(notify)
+  pendingNotifiers.add(notify);
 }
 
 /**
@@ -52,7 +52,7 @@ export function __enqueueBatchNotify(notify: () => void): void {
  * @internal
  */
 export function __dropInFlightNotify(notify: () => void): void {
-  for (const queue of inFlightQueues) queue.delete(notify)
+  for (const queue of inFlightQueues) queue.delete(notify);
 }
 
 /**
@@ -61,7 +61,7 @@ export function __dropInFlightNotify(notify: () => void): void {
  * @internal
  */
 export function __pendingBatchNotifyCount(): number {
-  return pendingNotifiers.size
+  return pendingNotifiers.size;
 }
 
 /**
@@ -71,28 +71,28 @@ export function __pendingBatchNotifyCount(): number {
 function flushPending(): void {
   // Esvazia antes de rodar: sets feitos por observadores (já fora do lote)
   // notificam normalmente, sem se misturar a esta fila.
-  const toRun = pendingNotifiers
-  pendingNotifiers = new Set()
+  const toRun = pendingNotifiers;
+  pendingNotifiers = new Set();
 
-  let firstError: unknown
-  let hasError = false
-  inFlightQueues.add(toRun)
+  let firstError: unknown;
+  let hasError = false;
+  inFlightQueues.add(toRun);
   try {
     // Set iterado ao vivo: itens removidos antes de visitados são pulados
     for (const notify of toRun) {
       try {
-        notify()
+        notify();
       } catch (error) {
         if (!hasError) {
-          hasError = true
-          firstError = error
+          hasError = true;
+          firstError = error;
         }
       }
     }
   } finally {
-    inFlightQueues.delete(toRun)
+    inFlightQueues.delete(toRun);
   }
-  if (hasError) throw firstError
+  if (hasError) throw firstError;
 }
 
 /**
@@ -117,31 +117,31 @@ function flushPending(): void {
  * @param fn - Função contendo as atualizações a serem agrupadas
  */
 export function batch(fn: () => void): void {
-  batchDepth = enterBatch(batchDepth)
+  batchDepth = enterBatch(batchDepth);
 
-  let fnError: unknown
-  let fnFailed = false
+  let fnError: unknown;
+  let fnFailed = false;
   try {
-    fn()
+    fn();
   } catch (error) {
-    fnFailed = true
-    fnError = error
+    fnFailed = true;
+    fnError = error;
   }
 
-  const exit = exitBatch(batchDepth)
-  batchDepth = exit.depth
+  const exit = exitBatch(batchDepth);
+  batchDepth = exit.depth;
 
   if (exit.flush) {
     try {
-      flushPending()
+      flushPending();
     } catch (flushError) {
       // O erro de fn tem prioridade; o do watcher é reportado, não engolido
-      if (!fnFailed) throw flushError
-      console.error('[slash] error in watcher during batch flush', flushError)
+      if (!fnFailed) throw flushError;
+      console.error("[slash] error in watcher during batch flush", flushError);
     }
   }
 
-  if (fnFailed) throw fnError
+  if (fnFailed) throw fnError;
 }
 
 /**
@@ -150,7 +150,7 @@ export function batch(fn: () => void): void {
  * @internal
  */
 export function __resetBatchContext(): void {
-  batchDepth = 0
-  pendingNotifiers = new Set()
-  inFlightQueues.clear()
+  batchDepth = 0;
+  pendingNotifiers = new Set();
+  inFlightQueues.clear();
 }

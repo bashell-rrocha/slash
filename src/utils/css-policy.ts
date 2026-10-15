@@ -29,7 +29,6 @@ function isAllowedCssUrl(url: string): boolean {
   return !evaluateUrl("src", url, "img").blocked;
 }
 
-
 // Chaves de CSSStyleDeclaration que não são propriedades CSS: cssText injeta CSS arbitrário e
 // os métodos não podem ser sobrescritos. Comparados em minúsculas. Valem para style em forma de objeto (cliente e SSR).
 const STYLE_FORBIDDEN_KEYS = new Set([
@@ -46,14 +45,17 @@ const STYLE_FORBIDDEN_KEYS = new Set([
   "item",
 ]);
 
-export const isForbiddenStyleKey = (key: string): boolean => STYLE_FORBIDDEN_KEYS.has(key.toLowerCase());
+export const isForbiddenStyleKey = (key: string): boolean =>
+  STYLE_FORBIDDEN_KEYS.has(key.toLowerCase());
 
 export const CSS_PROP_NAME = /^-{0,2}[a-z][a-z0-9-]*$/i;
-const CSS_FORBIDDEN_VALUE = /expression\s*\(|javascript:|vbscript:|behaviou?r\s*:|-moz-binding|@import/i;
+const CSS_FORBIDDEN_VALUE =
+  /expression\s*\(|javascript:|vbscript:|behaviou?r\s*:|-moz-binding|@import/i;
 
 // Funções que carregam URLs além de url() (inclui as variantes com prefixo de vendor):
 // rejeitadas por inteiro, inclusive as strings dentro delas
-const CSS_URL_FUNCTIONS = /(?:image-set|image|cross-fade|element|paint)\s*\(|(?:^|[^a-z0-9_-])src\s*\(/i;
+const CSS_URL_FUNCTIONS =
+  /(?:image-set|image|cross-fade|element|paint)\s*\(|(?:^|[^a-z0-9_-])src\s*\(/i;
 
 // Escapes só são decodificados DENTRO de strings; um escape hex consome um espaço ou tab
 // (newline cru não existe dentro de string). Regex linear: grupos de tamanho fixo.
@@ -68,7 +70,9 @@ function decodeEscapes(css: string): string {
   return css.replace(CSS_ESCAPE, (_m, hex?: string, ch?: string) => {
     if (hex) {
       const n = Number.parseInt(hex, 16);
-      return n === 0 || n > 0x10ffff || (n >= 0xd800 && n <= 0xdfff) ? "\ufffd" : String.fromCodePoint(n);
+      return n === 0 || n > 0x10ffff || (n >= 0xd800 && n <= 0xdfff)
+        ? "\ufffd"
+        : String.fromCodePoint(n);
     }
     return ch as string;
   });
@@ -153,7 +157,9 @@ const CSS_FORBIDDEN_NAME = /^(?:-moz-binding|behaviou?r)$/i;
 export const isForbiddenCssName = (name: string): boolean => CSS_FORBIDDEN_NAME.test(name);
 
 export function isSafeCssDeclaration(name: string, value: string): boolean {
-  return CSS_PROP_NAME.test(name) && !isForbiddenCssName(name) && value !== "" && isSafeCssValue(value);
+  return (
+    CSS_PROP_NAME.test(name) && !isForbiddenCssName(name) && value !== "" && isSafeCssValue(value)
+  );
 }
 
 /**
@@ -224,4 +230,5 @@ export function styleKeyToCssName(key: string): string {
 }
 
 /** Chave com prefixo de vendor em camelCase (WebkitX, webkitX, MozX, msX) */
-export const isVendorStyleKey = (key: string): boolean => /^(?:[Ww]ebkit|[Mm]oz|ms|Ms)[A-Z]/.test(key);
+export const isVendorStyleKey = (key: string): boolean =>
+  /^(?:[Ww]ebkit|[Mm]oz|ms|Ms)[A-Z]/.test(key);

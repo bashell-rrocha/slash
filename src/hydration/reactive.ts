@@ -43,7 +43,16 @@ export function hydrateReactiveAttributes(
         // SEC-13: o nome vem do DOM (data-reactive-*); passa pela mesma política das
         // props (nome válido, sem on*/innerHTML/srcdoc, URLs sanitizadas)
         const el = element as Elementish;
-        applyPropUpdate(el, computePropUpdate(getElementType(el), prop, String(value ?? ""), false, isMetaRefreshElement(el)));
+        applyPropUpdate(
+          el,
+          computePropUpdate(
+            getElementType(el),
+            prop,
+            String(value ?? ""),
+            false,
+            isMetaRefreshElement(el),
+          ),
+        );
         resanitizeMetaContent(el, prop);
       }
     });
@@ -56,7 +65,10 @@ export function hydrateReactiveAttributes(
 /**
  * Hidrata nós de texto reativos (marcados com comentários reactive-start/reactive-end)
  */
-export function hydrateReactiveNodes(container: Node, reactives: Map<string, Reactive<unknown>>): void {
+export function hydrateReactiveNodes(
+  container: Node,
+  reactives: Map<string, Reactive<unknown>>,
+): void {
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_COMMENT);
 
   const reactiveNodes: Array<{
@@ -65,8 +77,11 @@ export function hydrateReactiveNodes(container: Node, reactives: Map<string, Rea
     id: string;
   }> = [];
 
-  let node: Comment | null;
-  while ((node = walker.nextNode() as Comment | null)) {
+  for (
+    let node = walker.nextNode() as Comment | null;
+    node;
+    node = walker.nextNode() as Comment | null
+  ) {
     const match = node.textContent?.match(/^reactive-start:(.+)$/);
     if (match) {
       const id = match[1];

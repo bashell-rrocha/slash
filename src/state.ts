@@ -7,15 +7,15 @@
  * - state-history.ts: Time-travel debugging (opcional)
  */
 
+import { __dropInFlightNotify, __enqueueBatchNotify, isInBatch } from "./batch";
 import {
-  deepClone,
-  computeStateUpdate,
   applyStateCommand,
-  shouldNotifyWatchers
-} from './state-core'
-import type { StateHistory } from './state-history'
-import { createHistory, addToHistory, clearHistory as clearHistoryCore } from './state-history'
-import { isInBatch, __enqueueBatchNotify, __dropInFlightNotify } from './batch'
+  computeStateUpdate,
+  deepClone,
+  shouldNotifyWatchers,
+} from "./state-core";
+import type { StateHistory } from "./state-history";
+import { addToHistory, clearHistory as clearHistoryCore, createHistory } from "./state-history";
 
 export type StateWatcher<T> = (params: T) => void;
 
@@ -40,10 +40,7 @@ export interface StateOptions {
 /**
  * IMPERATIVE SHELL: Gerencia side effects e mutações
  */
-export const createState = <S = unknown>(
-  initialState: S,
-  options?: StateOptions
-): State<S> => {
+export const createState = <S = unknown>(initialState: S, options?: StateOptions): State<S> => {
   // Estado interno mutável (encapsulado)
   let _state = deepClone(initialState);
   const _watchers = new Set<StateWatcher<S>>();
@@ -135,10 +132,15 @@ export const createState = <S = unknown>(
     const cloned = deepClone(_state);
 
     // Em SSR, criar Proxy para rastrear acessos a propriedades
-    if (typeof globalThis !== "undefined" && (globalThis as any).__SLASH_SSR__ && typeof cloned === 'object' && cloned !== null) {
+    if (
+      typeof globalThis !== "undefined" &&
+      (globalThis as any).__SLASH_SSR__ &&
+      typeof cloned === "object" &&
+      cloned !== null
+    ) {
       const handler: ProxyHandler<any> = {
         get(target, prop) {
-          let value = target[prop];
+          const value = target[prop];
 
           // Se o valor é um array, criar Proxy para interceptar métodos como .map()
           if (Array.isArray(value)) {
@@ -147,9 +149,9 @@ export const createState = <S = unknown>(
                 const arrValue = arrTarget[arrProp as any];
 
                 // Interceptar métodos que retornam novos arrays
-                if (arrProp === 'map' || arrProp === 'filter' || arrProp === 'slice') {
-                  return function(...args: any[]) {
-                    const result = (arrValue as Function).apply(arrTarget, args);
+                if (arrProp === "map" || arrProp === "filter" || arrProp === "slice") {
+                  return (...args: any[]) => {
+                    const result = (arrValue as (...a: any[]) => any).apply(arrTarget, args);
                     // Side effect: Rastrear o resultado do método
                     if ((globalThis as any).__SLASH_TRACK_ACCESS__) {
                       (globalThis as any).__SLASH_TRACK_ACCESS__(state, arrProp, result);
@@ -159,7 +161,7 @@ export const createState = <S = unknown>(
                 }
 
                 return arrValue;
-              }
+              },
             };
             const arrayProxy = new Proxy(value, arrayHandler);
 
@@ -177,7 +179,7 @@ export const createState = <S = unknown>(
           }
 
           return value;
-        }
+        },
       };
       return new Proxy(cloned, handler);
     }
@@ -202,7 +204,7 @@ export const createState = <S = unknown>(
    */
   const getHistory = (): Readonly<StateHistory<S>> => {
     if (_history === null) {
-      throw new Error('History not enabled. Create state with { enableHistory: true }');
+      throw new Error("History not enabled. Create state with { enableHistory: true }");
     }
     return _history;
   };
@@ -212,7 +214,7 @@ export const createState = <S = unknown>(
    */
   const clearHistory = (): void => {
     if (_history === null) {
-      throw new Error('History not enabled. Create state with { enableHistory: true }');
+      throw new Error("History not enabled. Create state with { enableHistory: true }");
     }
     _history = clearHistoryCore(_history);
   };

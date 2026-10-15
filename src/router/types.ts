@@ -2,29 +2,29 @@
  * Router types for the Slash framework
  */
 
-import type { State } from "../state"
+import type { State } from "../state";
 
 /**
  * Route parameters extracted from dynamic segments
  * Example: /users/:id → { id: "123" }
  */
-export type RouteParams = Record<string, string>
+export type RouteParams = Record<string, string>;
 
 /**
  * Query string parameters
  * Example: ?search=foo&page=2 → { search: "foo", page: "2" }
  */
-export type RouteQuery = Record<string, string>
+export type RouteQuery = Record<string, string>;
 
 /**
  * Route metadata (custom data attached to routes)
  */
-export type RouteMeta = Record<string, any>
+export type RouteMeta = Record<string, any>;
 
 /**
  * Component function that renders the route
  */
-export type RouteComponent = (state: RouterState) => any
+export type RouteComponent = (state: RouterState) => any;
 
 /**
  * Navigation guard function
@@ -34,19 +34,24 @@ export type RouteComponent = (state: RouterState) => any
  */
 export type NavigationGuard = (
   to: RouteMatch,
-  from: RouteMatch | null
-) => void | boolean | string | Promise<void | boolean | string>
+  from: RouteMatch | null,
+) =>
+  | void
+  | boolean
+  | string
+  // biome-ignore lint/suspicious/noConfusingVoidType: guards async sem retorno são Promise<void>; undefined quebraria a API pública
+  | Promise<void | boolean | string>;
 
 /**
  * Link interception options
  */
 export interface LinkInterceptionOptions {
   /** Enable automatic link interception (default: true) */
-  enabled?: boolean
+  enabled?: boolean;
   /** Selector for links to intercept (default: "a[href]") */
-  selector?: string
+  selector?: string;
   /** Function to determine if a link should be intercepted */
-  shouldIntercept?: (anchor: HTMLAnchorElement) => boolean
+  shouldIntercept?: (anchor: HTMLAnchorElement) => boolean;
 }
 
 /**
@@ -54,17 +59,17 @@ export interface LinkInterceptionOptions {
  */
 export interface RouteConfig {
   /** Route path pattern (e.g., "/users/:id") */
-  path: string
+  path: string;
   /** Component to render for this route */
-  component: RouteComponent
+  component: RouteComponent;
   /** Route name (optional, for named routes) */
-  name?: string
+  name?: string;
   /** Route metadata */
-  meta?: RouteMeta
+  meta?: RouteMeta;
   /** Navigation guards for this route */
-  guards?: NavigationGuard[]
+  guards?: NavigationGuard[];
   /** Nested/child routes */
-  children?: RouteConfig[]
+  children?: RouteConfig[];
 }
 
 /**
@@ -72,15 +77,15 @@ export interface RouteConfig {
  */
 export interface RouteMatch {
   /** Matched route configuration */
-  route: RouteConfig
+  route: RouteConfig;
   /** Extracted route parameters */
-  params: RouteParams
+  params: RouteParams;
   /** Query string parameters */
-  query: RouteQuery
+  query: RouteQuery;
   /** Full matched path */
-  path: string
+  path: string;
   /** Route metadata */
-  meta: RouteMeta
+  meta: RouteMeta;
 }
 
 /**
@@ -88,36 +93,36 @@ export interface RouteMatch {
  */
 export interface RouterState {
   /** Currently active route */
-  currentRoute: RouteMatch | null
+  currentRoute: RouteMatch | null;
   /** Route parameters */
-  params: RouteParams
+  params: RouteParams;
   /** Query parameters */
-  query: RouteQuery
+  query: RouteQuery;
   /** Route metadata */
-  meta: RouteMeta
+  meta: RouteMeta;
   /** Navigation in progress flag */
-  isNavigating: boolean
+  isNavigating: boolean;
 }
 
 /**
  * Router mode
  */
-export type RouterMode = "history" | "hash"
+export type RouterMode = "history" | "hash";
 
 /**
  * Router configuration
  */
 export interface RouterConfig {
   /** Array of route definitions */
-  routes: RouteConfig[]
+  routes: RouteConfig[];
   /** Router mode (default: "history") */
-  mode?: RouterMode
+  mode?: RouterMode;
   /** Fallback path for 404 (default: null) */
-  fallback?: string
+  fallback?: string;
   /** Global navigation guards */
-  guards?: NavigationGuard[]
+  guards?: NavigationGuard[];
   /** Initial path (for SSR) */
-  initialPath?: string
+  initialPath?: string;
 }
 
 /**
@@ -125,17 +130,17 @@ export interface RouterConfig {
  */
 export interface RouterInstance extends State<RouterState> {
   /** Navigate to a path */
-  push(path: string): Promise<void>
+  push(path: string): Promise<void>;
   /** Replace current path */
-  replace(path: string): Promise<void>
+  replace(path: string): Promise<void>;
   /** Go back in history */
-  back(): void
+  back(): void;
   /** Go forward in history */
-  forward(): void
+  forward(): void;
   /** Go to specific history entry */
-  go(delta: number): void
+  go(delta: number): void;
   /** Get current route */
-  currentRoute(): RouteMatch | null
+  currentRoute(): RouteMatch | null;
   /** Resolve quando a navegação inicial termina (já resolvida se não houve guard) */
-  ready: Promise<void>
+  ready: Promise<void>;
 }

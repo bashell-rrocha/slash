@@ -12,12 +12,16 @@ export function destroyNode(node: Node): void {
     for (const f of fns) {
       try {
         f();
-      } catch {}
+      } catch {
+        // um cleanup que falha não impede os demais
+      }
     }
     CLEANUPS.delete(node);
   }
   if (node instanceof Element && node.hasChildNodes()) {
-    node.childNodes.forEach((child) => destroyNode(child));
+    node.childNodes.forEach((child) => {
+      destroyNode(child);
+    });
   }
 }
 

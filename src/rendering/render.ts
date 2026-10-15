@@ -46,7 +46,7 @@ function resolveContainer(target: RenderContainer): Element {
 function hydrateInternal(
   view: RootView,
   container: Element,
-  state: Record<string, unknown>,
+  _state: Record<string, unknown>,
 ): Node | Node[] {
   container.innerHTML = "";
 
@@ -58,19 +58,23 @@ function hydrateInternal(
   }
 
   const nodes = Array.from(container.childNodes) as Node[];
-  return nodes.length === 1 ? nodes[0]! : nodes;
+  return nodes.length === 1 ? (nodes[0] as Node) : nodes;
 }
 
 export function render(view: RootView, container: RenderContainer): Node | Node[] {
   const resolved = resolveContainer(container);
 
   const stateScript =
-    typeof document !== "undefined" ? document.querySelector('script#__SLASH_STATE__[type="application/json"]') : null;
+    typeof document !== "undefined"
+      ? document.querySelector('script#__SLASH_STATE__[type="application/json"]')
+      : null;
 
   if (typeof document !== "undefined" && !stateScript && process.env.NODE_ENV !== "production") {
     // Presence check only, drives the dev warning; the real read uses script#__SLASH_STATE__[type="application/json"]
     if (document.getElementById("__SLASH_STATE__")) {
-      securityWarn('#__SLASH_STATE__ was ignored: it must be a <script type="application/json"> element');
+      securityWarn(
+        '#__SLASH_STATE__ was ignored: it must be a <script type="application/json"> element',
+      );
     }
   }
 
@@ -90,5 +94,5 @@ export function render(view: RootView, container: RenderContainer): Node | Node[
   for (const p of parts) appendChildSmart(resolved, p);
 
   const inserted = Array.from(resolved.childNodes) as Node[];
-  return inserted.length === 1 ? inserted[0]! : inserted;
+  return inserted.length === 1 ? (inserted[0] as Node) : inserted;
 }

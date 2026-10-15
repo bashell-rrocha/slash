@@ -124,8 +124,8 @@ function parseSrcset(value: string): Array<{ url: string; desc: string }> {
     while (i < n && re.test(value[i] as string)) i++;
     return i;
   };
-  let i = 0;
-  while ((i = skip(/[\s,]/, i)) < n) {
+  let i = skip(/[\s,]/, 0);
+  for (; i < n; i = skip(/[\s,]/, i)) {
     const end = skip(/\S/, i);
     const url = value.slice(i, end);
     i = end;
@@ -160,7 +160,11 @@ function evaluateSrcset(value: string, tag?: string): { value: string; blocked: 
 }
 
 // SMIL: `values` é uma lista separada por ";"; `to`/`from` são valores únicos
-function evaluateSmil(name: string, value: string, tag?: string): { value: string; blocked: boolean } {
+function evaluateSmil(
+  name: string,
+  value: string,
+  tag?: string,
+): { value: string; blocked: boolean } {
   let blocked = false;
   const items = (name === "values" ? value.split(";") : [value]).map((item) => {
     if (isAllowedSingleUrl(name, item, tag)) return item;

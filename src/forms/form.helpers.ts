@@ -1,6 +1,7 @@
 // packages/slash/src/forms/form.helpers.ts
-import type { Reactive } from "../types";
+
 import type { State } from "../state";
+import type { Reactive } from "../types";
 import type {
   ButtonEvent,
   CheckboxElement,
@@ -13,7 +14,6 @@ import type {
   SelectElement,
   SelectEvent,
   TextFieldControlMode,
-  TextFieldElement,
   TextFieldEvent,
 } from "./form.types";
 
@@ -185,7 +185,12 @@ export function formToObject(
   fd.forEach((value, key) => {
     const existing = Object.hasOwn(out, key) ? out[key] : undefined;
     if (existing === undefined) {
-      Object.defineProperty(out, key, { value, writable: true, enumerable: true, configurable: true });
+      Object.defineProperty(out, key, {
+        value,
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
     } else if (Array.isArray(existing)) {
       (existing as FormDataEntryValue[]).push(value);
     } else {
