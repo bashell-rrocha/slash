@@ -60,7 +60,9 @@ export function main(argv: string[], env: Record<string, string | undefined>): n
   const raw = env.BOUNDARY_TERMS;
   if (raw === undefined || parseTerms(raw).length === 0) {
     if (missingTermsVerdict(env) === "skip") {
-      console.log("::warning::BOUNDARY_TERMS ausente (PR de fork, sem segredos): fronteira não verificada");
+      console.log(
+        "::warning::BOUNDARY_TERMS ausente (PR de fork, sem segredos): fronteira não verificada",
+      );
       return 0;
     }
     console.error("BOUNDARY_TERMS ausente");
