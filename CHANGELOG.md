@@ -2,6 +2,16 @@
 
 Todas as mudanças relevantes deste projeto são registradas aqui, seguindo [Conventional Commits](https://www.conventionalcommits.org/) e [SemVer](https://semver.org/).
 
+## [0.0.4] — 2026-10-14
+
+Correções de paridade entre o renderizador de DOM (`html`) e o de string (`htmlString`), achadas pelo teste servidor × cliente do `slash-ui`. Sem mudanças de API.
+
+### Fixed
+
+- **Nós estáticos reaproveitados no cliente:** o `htm` guardava, por template, os elementos sem valor dinâmico e devolvia o mesmo nó DOM a cada chamada; numa lista, só o último item ficava com o nó (ícones, `<br>`, `<span>` estáticos sumiam dos anteriores). O `h` do template desliga esse cache (`this[0] = 3`).
+- **`class` em SVG:** era aplicada por `className`, que em `SVGElement` é só leitura (no navegador, `TypeError` em modo estrito). Agora vai por `setAttribute("class", …)`, no render, nas atualizações reativas e na hidratação.
+- **Atributos booleanos do HTML no SSR:** `open`, `required`, `muted`, `autoplay`, `controls`, `multiple`, `loop`, `inert` e os demais que o cliente aplica pela propriedade de mesmo nome saem como presença (`open`) com `true` e somem com `false` ou `""`, como no cliente; antes, só `checked`, `selected`, `disabled` e `readonly` eram tratados e `open=${true}` saía `open="true"`. `readonly`, `playsinline`, `novalidate` e outros sem propriedade de mesmo nome seguem como atributo comum (`""` fica presente), igual ao cliente.
+
 ## [0.0.3] — 2026-10-08
 
 Primeira versão utilizável do `slash` no npm: **a 0.0.1 e a 0.0.2 tinham o build CJS quebrado** (todo `require("@_bashell/slash...")` falhava) e a **0.0.2 foi descartada** (rejeitada antes de ser liberada). Esta versão também torna o core **seguro por padrão**, o que traz mudanças incompatíveis: leia a seção "Breaking changes" e o [guia de migração](./MIGRATION.md#migrating-to-003-secure-by-default).
