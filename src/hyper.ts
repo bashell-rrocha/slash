@@ -40,8 +40,11 @@ const RAW_TEXT_TAGS = new Set(["script", "style"]);
 const keepRawTextChild = (c: unknown): boolean =>
   c == null || c === false || typeof c === "string" || isSafeHtml(c);
 
-// h() as seen by the html template: dynamic strings arrive wrapped in DynamicText
-function hTemplate(tag: unknown, props: Props, ...children: Child[]): Node {
+// h() as seen by the html template: dynamic strings arrive wrapped in DynamicText.
+// `this[0] = 3` turns off htm's static-subtree cache: with it, an element with no dynamic value is created once per
+// template and the SAME DOM node comes back on every call, so in a list only the last instance keeps it.
+function hTemplate(this: unknown[] | undefined, tag: unknown, props: Props, ...children: Child[]): Node {
+  if (this) this[0] = 3;
   const realTag = unmark(tag);
   const plainProps = props ? (Object.fromEntries(Object.entries(props).map(([k, v]) => [k, unmark(v)])) as Props) : props;
   let kids: unknown[] = children.map(unmarkDeep);
