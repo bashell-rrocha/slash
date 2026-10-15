@@ -1,109 +1,101 @@
-// Fronteira público × privado: procura, no conteúdo dos arquivos versionados (e dos diretórios de --also), os termos
-// de BOUNDARY_TERMS (um por linha). A saída nunca imprime o termo (os logs do CI público são abertos): só
-// `arquivo:linha: termo #n`, com n a posição do termo na lista (base 1).
-//
-// Uso: bun run boundary [-- --also <dir>]...
-
+/**
+ * Fronteira público/privado: falha se algum termo de BOUNDARY_TERMS (um por linha, `#` comenta, sem diferenciar
+ * maiúsculas) aparecer no conteúdo dos arquivos versionados ou das pastas `--also`. O termo nunca é impresso:
+ * a saída traz só `<arquivo>:<linha>: termo #<n>`.
+ */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 export type Finding = { file: string; line: number; term: number };
 
-/** Uma entrada por linha; ignora linhas em branco e as que começam com `#`. */
 export function parseTerms(text: string): string[] {
   return text
     .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line !== "" && !line.startsWith("#"));
+    .map((l) => l.trim().toLowerCase())
+    .filter((l) => l !== "" && !l.startsWith("#"));
 }
 
-/** Achados de `terms` (sem diferenciar maiúsculas) em `text`; `term` é o índice na lista, base 1. */
 export function scanText(file: string, text: string, terms: string[]): Finding[] {
-  const needles = terms.map((term) => term.toLowerCase());
-  const findings: Finding[] = [];
-  const lines = text.split(/\r?\n/);
-  for (let i = 0; i < lines.length; i++) {
-    const line = (lines[i] as string).toLowerCase();
-    needles.forEach((needle, index) => {
-      if (line.includes(needle)) findings.push({ file, line: i + 1, term: index + 1 });
+  const found: Finding[] = [];
+  text.split(/\r?\n/).forEach((raw, i) => {
+    const line = raw.toLowerCase();
+    terms.forEach((t, n) => {
+      if (line.includes(t)) found.push({ file, line: i + 1, term: n + 1 });
     });
-  }
-  return findings;
+  });
+  return found;
 }
 
-/** Sem BOUNDARY_TERMS: PR de fork não recebe segredos (pula); qualquer outro caso falha. */
 export function missingTermsVerdict(env: Record<string, string | undefined>): "skip" | "fail" {
-  const fromFork =
+  const fork =
     env.GITHUB_EVENT_NAME === "pull_request" &&
-    Boolean(env.GITHUB_HEAD_REPO) &&
+    !!env.GITHUB_HEAD_REPO &&
     env.GITHUB_HEAD_REPO !== env.GITHUB_REPOSITORY;
-  return fromFork ? "skip" : "fail";
+  return fork ? "skip" : "fail";
 }
 
-function isBinary(bytes: Uint8Array): boolean {
-  return bytes.subarray(0, 8000).includes(0);
+function isBinary(buf: Buffer): boolean {
+  return buf.subarray(0, 8000).includes(0);
 }
 
 function walk(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(dir, entry.name);
-    return entry.isDirectory() ? walk(path) : entry.isFile() ? [path] : [];
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    if (e.name === ".git") return [];
+    const p = join(dir, e.name);
+    return e.isDirectory() ? walk(p) : [p];
   });
 }
 
 function trackedFiles(): string[] {
-  const proc = Bun.spawnSync(["git", "ls-files", "-z"]);
-  if (proc.exitCode !== 0) throw new Error("git ls-files falhou");
-  return proc.stdout.toString().split("\0").filter(Boolean);
+  const r = Bun.spawnSync(["git", "ls-files", "-z"]);
+  if (r.exitCode !== 0) throw new Error("git ls-files falhou");
+  return r.stdout.toString().split("\0").filter(Boolean);
 }
 
 function alsoDirs(argv: string[]): string[] {
-  const dirs: string[] = [];
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === "--also" && argv[i + 1]) dirs.push(argv[++i] as string);
-  }
-  return dirs;
+  return argv.flatMap((a, i) => (a === "--also" && argv[i + 1] ? [argv[i + 1] as string] : []));
 }
 
 export function main(argv: string[], env: Record<string, string | undefined>): number {
-  const terms = parseTerms(env.BOUNDARY_TERMS ?? "");
-  if (terms.length === 0) {
+  const raw = env.BOUNDARY_TERMS;
+  if (raw === undefined || parseTerms(raw).length === 0) {
     if (missingTermsVerdict(env) === "skip") {
-      console.log(
-        "::warning::BOUNDARY_TERMS ausente (PR de fork, sem segredos): fronteira não verificada",
-      );
+      console.log("::warning::BOUNDARY_TERMS ausente (PR de fork, sem segredos): fronteira não verificada");
       return 0;
     }
     console.error("BOUNDARY_TERMS ausente");
     return 1;
   }
-
+  const terms = parseTerms(raw);
   const files = new Set(trackedFiles());
   for (const dir of alsoDirs(argv)) {
-    if (statSync(dir, { throwIfNoEntry: false })?.isDirectory()) {
-      for (const file of walk(dir)) files.add(file);
+    if (!statSync(dir, { throwIfNoEntry: false })?.isDirectory()) {
+      console.error(`pasta --also inexistente: ${dir}`);
+      return 1;
     }
+    for (const file of walk(dir)) files.add(file);
   }
-
   let total = 0;
   for (const file of [...files].sort()) {
-    if (!statSync(file, { throwIfNoEntry: false })?.isFile()) continue;
-    const bytes = readFileSync(file);
-    if (isBinary(bytes)) continue;
-    for (const f of scanText(file, bytes.toString("utf-8"), terms)) {
+    let buf: Buffer;
+    try {
+      if (!statSync(file).isFile()) continue;
+      buf = readFileSync(file);
+    } catch {
+      continue;
+    }
+    if (isBinary(buf)) continue;
+    for (const f of scanText(file, buf.toString("utf8"), terms)) {
       console.log(`${f.file}:${f.line}: termo #${f.term}`);
       total++;
     }
   }
-
   if (total > 0) {
-    console.error(`${total} achado(s) na fronteira`);
+    console.error(`Fronteira violada: ${total} achado(s).`);
     return 1;
   }
-  console.log(`fronteira limpa (${files.size} arquivos)`);
+  console.log("Fronteira ok.");
   return 0;
 }
 
-if (import.meta.main) {
-  process.exit(main(process.argv.slice(2), process.env));
-}
+if (import.meta.main) process.exit(main(process.argv.slice(2), process.env));
