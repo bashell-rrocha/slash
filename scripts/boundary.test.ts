@@ -190,6 +190,20 @@ describe("processo", () => {
     expect(r.exitCode).toBe(0);
   });
 
+  test("--also inexistente com o termo no nome não vaza no log", () => {
+    // Arrange
+    const dir = join(tmpdir(), "fronteira-termo-falso-nao-existe");
+
+    // Act
+    const r = roda({ BOUNDARY_TERMS: "termo-falso" }, ["--also", dir]);
+    const saida = `${r.stdout}${r.stderr}`;
+
+    // Assert
+    expect(r.exitCode).toBe(1);
+    expect(saida).toContain("pasta --also inexistente: (nome oculto)");
+    expect(saida).not.toContain("termo-falso");
+  });
+
   test("--also com pasta inexistente falha e avisa", () => {
     // Arrange
     const dir = join(tmpdir(), "fronteira-nao-existe-xyz");

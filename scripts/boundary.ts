@@ -57,6 +57,11 @@ function label(file: string, index: number, terms: string[]): string {
   return scanText(file, file, terms).length > 0 ? `arquivo #${index + 1}` : file;
 }
 
+/** Nome (de pasta) que contém um termo nunca vai ao log. */
+function maskName(name: string, terms: string[]): string {
+  return scanText(name, name, terms).length > 0 ? "(nome oculto)" : name;
+}
+
 function alsoDirs(argv: string[]): string[] {
   return argv.flatMap((a, i) => (a === "--also" && argv[i + 1] ? [argv[i + 1] as string] : []));
 }
@@ -84,9 +89,7 @@ export function main(argv: string[], env: Record<string, string | undefined>): n
   const files = new Set(tracked);
   for (const dir of alsoDirs(argv)) {
     if (!statSync(dir, { throwIfNoEntry: false })?.isDirectory()) {
-      console.error(
-        `pasta --also inexistente: ${label(dir, 0, terms).replace("arquivo #1", "(nome oculto)")}`,
-      );
+      console.error(`pasta --also inexistente: ${maskName(dir, terms)}`);
       return 1;
     }
     for (const file of walk(dir)) files.add(file);
