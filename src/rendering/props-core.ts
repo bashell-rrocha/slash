@@ -370,6 +370,15 @@ export function getElementType(element: Elementish): string {
 }
 
 /**
+ * Aplica a classe já processada. Em HTML, `className`; em SVG (e outros namespaces) `className` é um
+ * SVGAnimatedString só de leitura, então vai por atributo.
+ */
+export function setClassName(element: Element, className: string): void {
+  if (element instanceof HTMLElement) element.className = className;
+  else if (element instanceof Element) element.setAttribute("class", className);
+}
+
+/**
  * IMPERATIVE SHELL: Aplica o comando de atualização de prop ao DOM
  *
  * Esta função contém TODOS os side effects e mutações de DOM.
@@ -389,9 +398,7 @@ export function applyPropUpdate(element: Elementish, update: PropUpdate): void {
       return;
 
     case "SET_CLASS": {
-      if (element instanceof HTMLElement) {
-        element.className = update.metadata?.processedClassName || "";
-      }
+      setClassName(element as Element, update.metadata?.processedClassName || "");
       return;
     }
 
@@ -417,6 +424,13 @@ export function applyPropUpdate(element: Elementish, update: PropUpdate): void {
     case "SET_VALUE": {
       const ctl = element as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
       const next = String(update.value);
+
+      // <option>: o value é o atributo. Sem ele, option.value devolve o texto (vazio antes dos filhos entrarem), então
+      // comparar com a propriedade pularia o value="" do placeholder (e o select required aceitaria o placeholder).
+      if (element.tagName === "OPTION") {
+        element.setAttribute("value", next);
+        return;
+      }
 
       if (ctl.value !== next) ctl.value = next;
 

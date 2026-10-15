@@ -6,6 +6,7 @@ import { parseEventProp } from "./events";
 import {
   computePropUpdate,
   applyPropUpdate,
+  setClassName,
   getElementType,
   hasNativeProperty,
   isMetaRefreshElement,
@@ -13,14 +14,7 @@ import {
 } from "./props-core";
 
 export function applyClass(element: Element, val: unknown): void {
-  if (element instanceof HTMLElement) {
-    const className = processClassValue(val);
-    if (val == null || val === false) {
-      element.className = "";
-    } else {
-      element.className = className;
-    }
-  }
+  setClassName(element, val == null || val === false ? "" : processClassValue(val));
 }
 
 export function setPropReactive(element: Element, key: string, sig: Reactive<unknown>): void {

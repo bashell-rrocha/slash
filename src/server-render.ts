@@ -104,7 +104,28 @@ const PROTOTYPE_ATTRS = new Set(["__proto__", "constructor", "prototype"]);
 const EVENT_ATTR = /^on/i;
 const RAW_TEXT_ELEMENTS = new Set(["script", "style"]);
 const RESERVED_ATTR_PREFIX = "data-reactive-";
-const BOOLEAN_ATTRS = new Set(["checked", "selected", "disabled", "readonly"]);
+// Atributos booleanos do HTML que o cliente aplica pela propriedade de mesmo nome (element.open = valor): valor
+// verdadeiro vira presença (`open`), falso e "" somem, como a propriedade faz. Os que não têm propriedade com o nome
+// em minúsculas (playsinline → playsInline, readonly → readOnly, novalidate…) o cliente aplica como atributo
+// (presente com "" ou "true"), e aqui seguem o mesmo caminho genérico. `hidden` fica de fora: aceita "until-found".
+const BOOLEAN_ATTRS = new Set([
+  "async",
+  "autofocus",
+  "autoplay",
+  "checked",
+  "controls",
+  "default",
+  "defer",
+  "disabled",
+  "inert",
+  "loop",
+  "multiple",
+  "muted",
+  "open",
+  "required",
+  "reversed",
+  "selected",
+]);
 
 function captureSignal(ctx: RenderContext, signal: Reactive): string {
   const id = `s${ctx.counter++}`;
@@ -287,9 +308,17 @@ function propsToAttrs(ctx: RenderContext, tag: string, props: Props | null): str
         if (value) attrs += " checked";
         attrs += ` data-reactive-checked="${marker}"`;
       } else {
-        const attr = genericAttr(tag, key, value, metaRefresh);
-        // Só reativos diretos ganham marcador em atributos comuns
-        attrs += attr && reactive ? `${attr} data-reactive-${key}="${marker}"` : attr;
+        // Mesma regra do atributo estático: booleano do HTML é presença; false/null somem (o cliente remove)
+        const attr = BOOLEAN_ATTRS.has(lowerKey)
+          ? value
+            ? ` ${key}`
+            : ""
+          : value != null && value !== false
+            ? genericAttr(tag, key, value, metaRefresh)
+            : "";
+        // Só reativos diretos ganham marcador em atributos comuns (mesmo sem o atributo, para o cliente achá-lo)
+        if (reactive) attrs += `${attr} data-reactive-${key}="${marker}"`;
+        else attrs += attr;
       }
       continue;
     }
