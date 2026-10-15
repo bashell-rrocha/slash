@@ -164,6 +164,20 @@ describe("processo", () => {
     expect(saida).not.toContain("termo-falso");
   });
 
+  test("nome de arquivo com o termo e conteúdo limpo também é achado, mascarado", () => {
+    // Arrange
+    const versionados = { "termo-falso.md": "conteúdo limpo\n" };
+
+    // Act
+    const r = roda({ BOUNDARY_TERMS: "termo-falso" }, [], { versionados });
+    const saida = `${r.stdout}${r.stderr}`;
+
+    // Assert
+    expect(r.exitCode).toBe(1);
+    expect(saida).toContain("arquivo #1: termo #1");
+    expect(saida).not.toContain("termo-falso");
+  });
+
   test("fora de um repositório git: erro claro e sai com 1", () => {
     // Arrange
     const opcoes = { git: false };

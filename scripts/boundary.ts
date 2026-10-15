@@ -96,6 +96,10 @@ export function main(argv: string[], env: Record<string, string | undefined>): n
   }
   let total = 0;
   for (const [index, file] of [...files].sort().entries()) {
+    for (const f of scanText(file, file, terms)) {
+      console.log(`arquivo #${index + 1}: termo #${f.term}`);
+      total++;
+    }
     let buf: Buffer;
     try {
       if (!statSync(file).isFile()) continue;
