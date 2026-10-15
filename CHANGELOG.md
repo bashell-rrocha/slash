@@ -19,6 +19,10 @@ Duas correções na origem pedidas pelo `slash-ui` (fase 5). Uma muda comportame
   (`<br>`, `<img src=${x}>`, `<input … disabled>`), inclusive com interpolação dentro da tag, e descartam o
   `</input>` que o HTML ignora. Antes, o `htm` tratava o resto do template como filho do `<br>`: `<p>a<br>b</p>` virava
   `pa<br>` em silêncio.
+- **Textos vizinhos no cliente:** `html` criava um nó de texto por pedaço (`${a} b`), e o HTML do servidor, depois do
+  parse, tem um só. O navegador media o texto em partes e um glifo podia cair noutro subpixel: a mesma página saía
+  diferente vinda do servidor ou do cliente. Textos vizinhos criados pelo `html` vão agora para o mesmo nó (um nó de
+  texto que veio de fora não é mexido; texto reativo continua entre os marcadores).
 
 ## [0.0.5] — 2026-10-15
 

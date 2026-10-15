@@ -150,7 +150,8 @@ describe("rendering/children", () => {
       const textNodes = Array.from(parent.childNodes).filter(
         (n) => n.nodeType === Node.TEXT_NODE
       );
-      expect(textNodes.length).toBe(3);
+      // Textos vizinhos num nó só, como o HTML do servidor depois do parse
+      expect(textNodes.length).toBe(1);
       expect(textNodes.map((n) => n.textContent).join("")).toBe("abc");
     });
 
